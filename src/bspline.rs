@@ -1,5 +1,6 @@
 //! B-splines, and the conversions between B-splines and piecewise polynomials.
 
+use crate::scalar::count;
 use crate::{
     search, Extrapolate, Hint, InterpolateError, Interpolator, PPoly, ParamReason, Scalar, Value,
 };
@@ -42,7 +43,9 @@ const MAX_ORDER: usize = MAX_DEGREE + 1;
 /// interval that has it at its left end or inside; the right end of the domain
 /// belongs to the last interval of positive width. Outside the domain the result
 /// follows the [`Extrapolate`] mode, which is [`Extrapolate::Extend`] unless
-/// [`with_extrapolate`](BSpline::with_extrapolate) changes it.
+/// [`with_extrapolate`](BSpline::with_extrapolate) changes it. Under
+/// [`Extrapolate::Periodic`] a period holds its left end only: the right end of
+/// the domain is the left end again, as in SciPy.
 ///
 /// The degree is at most [`BSPLINE_MAX_DEGREE`].
 ///
@@ -340,6 +343,314 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
         })
     }
 
+    /// Returns the derivative of order `nu` as a B-spline.
+    ///
+    /// SciPy's `BSpline.derivative`. Every order takes one knot off each end and
+    /// one control point away, and lowers the degree by one; the domain stays.
+    /// Order 0 gives a copy.
+    ///
+    /// Two cases SciPy raises an error for have a result here, as they have for
+    /// [`PPoly`]:
+    ///
+    /// - An order above the degree gives the spline of degree 0 on the same
+    ///   domain that is zero everywhere.
+    /// - Knots repeated `degree + 1` times inside the domain, as
+    ///   [`from_ppoly`](BSpline::from_ppoly) makes them, are differentiated
+    ///   piece by piece.
+    ///
+    /// The derivative keeps the extrapolation mode, except that
+    /// [`Extrapolate::Clamp`] becomes [`Extrapolate::Forbid`]: a clamped function
+    /// is constant outside its domain, and no mode gives the zero its derivative
+    /// is there. [`eval_derivative`](BSpline::eval_derivative) does return it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InterpolateError::NonFinite`] when a control point overflows.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{BSpline, InterpolateError, Interpolator};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// // x^2 on [0, 1].
+    /// let square = BSpline::new(&[0.0, 0.0, 0.0, 1.0, 1.0, 1.0], &[0.0, 0.0, 1.0], 2)?;
+    /// let slope = square.derivative(1)?; // 2x
+    /// assert_eq!(slope.degree(), 1);
+    /// assert_eq!(slope.knots(), [0.0, 0.0, 1.0, 1.0]);
+    /// assert_eq!(slope.control_points(), [0.0, 2.0]);
+    /// assert_eq!(slope.eval(&0.25), Some(0.5));
+    ///
+    /// assert_eq!(square.derivative(3)?.eval(&0.25), Some(0.0));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn derivative(&self, nu: usize) -> Result<Self, InterpolateError> {
+        if nu == 0 {
+            return Ok(self.clone());
+        }
+        let extrapolate = self.extrapolate.of_derivative();
+        if nu > self.degree {
+            let (lo, hi) = self.domain();
+            return Ok(
+                Self::from_owned(vec![lo, hi], vec![V::zero()], 0)?.with_extrapolate(extrapolate)
+            );
+        }
+        let mut control_points = self.control_points.clone();
+        let mut degree = count::<T>(self.degree);
+        for step in 0..nu {
+            // The knots of this step are `self.knots` without `step` at each end.
+            let k = self.degree - step;
+            for i in 0..control_points.len() - 1 {
+                let width = self.knots[step + i + k + 1] - self.knots[step + i + 1];
+                // Over equal knots the basis function is zero everywhere, so any
+                // control point does.
+                control_points[i] = if width > T::zero() {
+                    let rise = control_points[i + 1].axpy(-T::one(), control_points[i]);
+                    V::zero().axpy(degree / width, rise)
+                } else {
+                    V::zero()
+                };
+            }
+            control_points.pop();
+            degree = degree - T::one();
+        }
+        let knots = self.knots[nu..self.knots.len() - nu].to_vec();
+        Ok(
+            Self::from_owned(knots, control_points, self.degree - nu)?
+                .with_extrapolate(extrapolate),
+        )
+    }
+
+    /// Returns the antiderivative of order `nu` as a B-spline.
+    ///
+    /// SciPy's `BSpline.antiderivative`. Every order repeats the knot at each end
+    /// once more, adds a control point, and raises the degree by one; the domain
+    /// stays. Order 0 gives a copy.
+    ///
+    /// The antiderivative is zero at the left end of the domain, as are its
+    /// derivatives below order `nu`. SciPy's is so when the first knot is
+    /// repeated `degree + 1` times, as `make_interp_spline` returns it; for other
+    /// knots SciPy's differs from this one by a constant.
+    ///
+    /// [`Extrapolate::Extend`] is kept. Every other mode becomes
+    /// [`Extrapolate::Forbid`]: the antiderivative of a periodic function is not
+    /// periodic in general (SciPy drops the mode as well), and that of a clamped
+    /// function is linear outside the domain. [`integrate`](BSpline::integrate)
+    /// follows the mode of this spline.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InterpolateError::InvalidParameter`] when the degree of the
+    /// result would be over [`BSPLINE_MAX_DEGREE`], and
+    /// [`InterpolateError::NonFinite`] when a control point overflows.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{BSpline, InterpolateError, Interpolator};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// // 2x on [0, 1].
+    /// let line = BSpline::new(&[0.0, 0.0, 1.0, 1.0], &[0.0, 2.0], 1)?;
+    /// let area = line.antiderivative(1)?; // x^2
+    /// assert_eq!(area.degree(), 2);
+    /// assert_eq!(area.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    /// assert_eq!(area.control_points(), [0.0, 0.0, 1.0]);
+    /// assert_eq!(area.eval(&0.5), Some(0.25));
+    ///
+    /// assert!(line.antiderivative(15).is_err());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn antiderivative(&self, nu: usize) -> Result<Self, InterpolateError> {
+        let max = MAX_DEGREE - self.degree;
+        if nu > max {
+            return Err(InterpolateError::InvalidParameter {
+                name: "nu",
+                reason: ParamReason::TooLarge { max },
+            });
+        }
+        let mut spline = self.clone();
+        for _ in 0..nu {
+            spline = spline.primitive()?;
+        }
+        Ok(if nu == 0 {
+            spline
+        } else {
+            spline.with_extrapolate(self.extrapolate.of_antiderivative())
+        })
+    }
+
+    /// Returns the derivative of order `nu` at `x`.
+    ///
+    /// SciPy's `BSpline.__call__(x, nu)`. This is the derivative of the function
+    /// [`eval`](Interpolator::eval) gives, piece by piece:
+    ///
+    /// - Order 0 is `eval`, bit for bit.
+    /// - `x` belongs to the same knot interval as in `eval`. Where the derivative
+    ///   jumps at a knot, the result is that of the piece on the right; at the
+    ///   right end of the domain, of the piece on the left.
+    /// - Outside the domain, [`Extrapolate::Extend`] differentiates the end piece
+    ///   continued, [`Extrapolate::Periodic`] wraps `x`, and
+    ///   [`Extrapolate::Forbid`] gives `None`. Under [`Extrapolate::Clamp`] the
+    ///   function is constant there, so an order of 1 or more gives zero.
+    /// - An order above the degree gives zero wherever there is a value.
+    ///
+    /// This does not allocate. For many points, build
+    /// [`derivative`](BSpline::derivative) once and call
+    /// [`eval_batch_into`](Interpolator::eval_batch_into) on it, which is also
+    /// faster per point.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{BSpline, Extrapolate, InterpolateError};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// // The polygon through (0, 0), (1, 1), (2, 0): the slope jumps at 1.
+    /// let hat = BSpline::new(&[0.0, 0.0, 1.0, 2.0, 2.0], &[0.0, 1.0, 0.0], 1)?;
+    /// assert_eq!(hat.eval_derivative(0.5, 1), Some(1.0));
+    /// assert_eq!(hat.eval_derivative(1.0, 1), Some(-1.0));
+    /// assert_eq!(hat.eval_derivative(2.0, 1), Some(-1.0));
+    /// assert_eq!(hat.eval_derivative(0.5, 2), Some(0.0));
+    ///
+    /// let hat = hat.with_extrapolate(Extrapolate::Clamp);
+    /// assert_eq!(hat.eval_derivative(5.0, 1), Some(0.0));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn eval_derivative(&self, x: T, nu: usize) -> Option<V> {
+        if nu == 0 {
+            return self.eval(&x);
+        }
+        search::eval_derivative(self.grid(), self.extrapolate, x, V::zero(), |i, x| {
+            if nu > self.degree {
+                V::zero()
+            } else {
+                self.combine(self.first + i, x, nu)
+            }
+        })
+    }
+
+    /// Returns the integral from `a` to `b`.
+    ///
+    /// SciPy's `BSpline.integrate`. This is the integral of the function
+    /// [`eval`](Interpolator::eval) gives, so outside the domain it follows the
+    /// [`Extrapolate`] mode:
+    ///
+    /// - [`Extrapolate::Extend`] integrates the end pieces continued.
+    /// - [`Extrapolate::Clamp`] integrates the end values, which are constant.
+    /// - [`Extrapolate::Periodic`] integrates the function repeated.
+    /// - [`Extrapolate::Forbid`] gives `None` when `a` or `b` is outside the
+    ///   domain. (SciPy integrates over the part inside the domain.)
+    ///
+    /// With `a > b` the result is minus the integral from `b` to `a`. A limit
+    /// that is NaN or infinite gives `None`.
+    ///
+    /// This does not allocate: the control points of the antiderivative are
+    /// summed up on the way, not stored. Its cost grows with the number of knot
+    /// intervals between `a` and `b`. A spline of any degree up to
+    /// [`BSPLINE_MAX_DEGREE`] can be integrated.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{BSpline, Extrapolate, InterpolateError};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// // The polygon through (0, 0), (1, 1), (2, 0).
+    /// let hat = BSpline::new(&[0.0, 0.0, 1.0, 2.0, 2.0], &[0.0, 1.0, 0.0], 1)?;
+    /// assert_eq!(hat.integrate(0.0, 2.0), Some(1.0));
+    /// assert_eq!(hat.integrate(2.0, 0.0), Some(-1.0));
+    /// assert_eq!(hat.integrate(0.0, 0.5), Some(0.125));
+    ///
+    /// let hat = hat.with_extrapolate(Extrapolate::Forbid);
+    /// assert_eq!(hat.integrate(1.0, 4.0), None);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn integrate(&self, a: T, b: T) -> Option<V> {
+        search::integrate(
+            self.grid(),
+            self.extrapolate,
+            a,
+            b,
+            |i, x| self.combine(self.first + i, x, 0),
+            |i, a, j, b| self.integral_between(self.first + i, a, self.first + j, b),
+        )
+    }
+
+    /// The antiderivative of order one that is zero at the left end of the
+    /// domain, with the default extrapolation mode.
+    fn primitive(&self) -> Result<Self, InterpolateError> {
+        let k = self.degree;
+        let scale = count::<T>(k + 1).recip();
+        let mut knots = Vec::with_capacity(self.knots.len() + 2);
+        knots.push(self.knots[0]);
+        knots.extend_from_slice(&self.knots);
+        knots.push(self.knots[self.knots.len() - 1]);
+        // Control point `j + 1` is control point `j` plus the integral of basis
+        // function `j` times its control point.
+        let mut sum = V::zero();
+        let mut control_points = Vec::with_capacity(self.control_points.len() + 1);
+        control_points.push(sum);
+        for (j, c) in self.control_points.iter().enumerate() {
+            sum = sum.axpy((self.knots[j + k + 1] - self.knots[j]) * scale, *c);
+            control_points.push(sum);
+        }
+        let raised = Self::from_owned(knots, control_points, k + 1)?;
+        // The basis functions add up to one, so taking a value off every control
+        // point takes it off the spline. With `k + 1` equal knots at the left end
+        // the value is zero already.
+        let at_left = raised.combine(raised.first, raised.knots[raised.first], 0);
+        let control_points = raised
+            .control_points
+            .iter()
+            .map(|c| c.axpy(-T::one(), at_left))
+            .collect();
+        Self::from_owned(raised.knots, control_points, k + 1)
+    }
+
+    /// The integral from `a` to `b`, with `a` taken to be in knot interval
+    /// `span_a` and `b` in `span_b`, `span_a <= span_b`.
+    ///
+    /// This is `F(b) - F(a)` for the antiderivative `F` of
+    /// [`primitive`](BSpline::primitive), without its control points being
+    /// stored. `F` at a point is a sum over `degree + 2` of them, weighted by
+    /// basis functions of degree `degree + 1` that add up to one. So the
+    /// difference does not change when every control point is moved by the same
+    /// value, and the running sum can start from zero at the first one `a` uses.
+    ///
+    /// The basis functions of `F` on a knot interval of the domain depend on the
+    /// knots of this spline only, not on the two that `F` has more.
+    fn integral_between(&self, span_a: usize, a: T, span_b: usize, b: T) -> V {
+        let k = self.degree;
+        let at_a: [T; MAX_ORDER + 1] = basis_values(&self.knots, k + 1, span_a, a);
+        let at_b: [T; MAX_ORDER + 1] = basis_values(&self.knots, k + 1, span_b, b);
+        let scale = count::<T>(k + 1).recip();
+        // `F` at `a` uses control points `first_a..=span_a + 1`, and at `b`
+        // `first_b..=span_b + 1`.
+        let (first_a, first_b) = (span_a - k, span_b - k);
+        let mut control_point = V::zero();
+        let mut sum = V::zero();
+        for j in first_a..=span_b + 1 {
+            let mut weight = T::zero();
+            if j >= first_b {
+                weight = weight + at_b[j - first_b];
+            }
+            if j <= span_a + 1 {
+                weight = weight - at_a[j - first_a];
+            }
+            sum = sum.axpy(weight, control_point);
+            if j <= span_b {
+                let width = self.knots[j + k + 1] - self.knots[j];
+                control_point = control_point.axpy(width * scale, self.control_points[j]);
+            }
+        }
+        sum
+    }
+
     /// The knots of the domain, from the first interval of positive width to the
     /// end of the last one: the grid the interval search works on.
     fn grid(&self) -> &[T] {
@@ -349,7 +660,7 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
     /// The derivative of order `derivative` (0 for the value) at `x`, taking `x`
     /// to be in knot interval `span`, or on its polynomial continued.
     fn combine(&self, span: usize, x: T, derivative: usize) -> V {
-        let basis = if derivative == 0 {
+        let basis: [T; MAX_ORDER] = if derivative == 0 {
             basis_values(&self.knots, self.degree, span, x)
         } else {
             basis_derivatives(&self.knots, self.degree, span, x, derivative)
@@ -548,11 +859,19 @@ fn basis_derivatives<T: Scalar>(
 ///
 /// `span` is an interval of positive width, so every sum of distances the
 /// recurrence divides by is a difference of knots that reaches across it.
-fn basis_values<T: Scalar>(knots: &[T], degree: usize, span: usize, x: T) -> [T; MAX_ORDER] {
+///
+/// `N` is the length of the arrays, over `degree`: [`MAX_ORDER`] for the spline
+/// itself, and one more for its antiderivative.
+fn basis_values<T: Scalar, const N: usize>(
+    knots: &[T],
+    degree: usize,
+    span: usize,
+    x: T,
+) -> [T; N] {
     debug_assert!(knots[span] < knots[span + 1], "a span of positive width");
-    let mut values = [T::zero(); MAX_ORDER];
-    let mut left = [T::zero(); MAX_ORDER];
-    let mut right = [T::zero(); MAX_ORDER];
+    let mut values = [T::zero(); N];
+    let mut left = [T::zero(); N];
+    let mut right = [T::zero(); N];
     values[0] = T::one();
     for j in 1..=degree {
         left[j] = x - knots[span + 1 - j];

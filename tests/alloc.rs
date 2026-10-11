@@ -1,7 +1,8 @@
 //! Allocation counts of the evaluation APIs (docs/design.ja.md section 8.1).
 //!
-//! `eval`, `eval_or`, and `eval_batch_into` allocate nothing. `eval_batch`
-//! returns a `Vec`, so it allocates.
+//! `eval`, `eval_or`, and `eval_batch_into` allocate nothing, nor do
+//! `eval_derivative` and `integrate`. `eval_batch` returns a `Vec`, so it
+//! allocates, as do `derivative` and `antiderivative`, which build an object.
 //!
 //! The counter is global to the process. Everything is checked from the one test
 //! function below, so no other test thread allocates while a region is measured.
@@ -140,6 +141,25 @@ fn evaluation_apis_do_not_allocate() {
         });
         assert_eq!(n, 0, "PPoly {mode:?}: eval_hinted allocates");
 
+        // Derivatives of every order up to past the degree, and integrals with
+        // each query as a limit: inside, across the domain, and reversed.
+        let n = allocations(|| {
+            for x in queries {
+                for nu in 0..4 {
+                    std::hint::black_box(scalar.eval_derivative(x, nu));
+                    std::hint::black_box(array.eval_derivative(x, nu));
+                }
+                for other in [1.25, -7.0, 30.0] {
+                    std::hint::black_box(scalar.integrate(x, other));
+                    std::hint::black_box(array.integrate(other, x));
+                }
+            }
+        });
+        assert_eq!(
+            n, 0,
+            "PPoly {mode:?}: eval_derivative or integrate allocates"
+        );
+
         // BSpline: the same queries, a scalar and an array value. Degree 3 puts
         // four basis values on the stack; they must stay there.
         let knots = [0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0, 2.0];
@@ -170,6 +190,25 @@ fn evaluation_apis_do_not_allocate() {
             }
         });
         assert_eq!(n, 0, "BSpline {mode:?}: eval_hinted allocates");
+
+        // The integral keeps the basis values of the antiderivative, one more
+        // than the spline has, on the stack as well.
+        let n = allocations(|| {
+            for x in queries {
+                for nu in 0..5 {
+                    std::hint::black_box(scalar.eval_derivative(x, nu));
+                    std::hint::black_box(array.eval_derivative(x, nu));
+                }
+                for other in [1.25, -7.0, 30.0] {
+                    std::hint::black_box(scalar.integrate(x, other));
+                    std::hint::black_box(array.integrate(other, x));
+                }
+            }
+        });
+        assert_eq!(
+            n, 0,
+            "BSpline {mode:?}: eval_derivative or integrate allocates"
+        );
     }
 
     // A batch long and ordered enough for `eval_batch_into` to take its hinted
@@ -189,4 +228,11 @@ fn evaluation_apis_do_not_allocate() {
         });
         assert_eq!(n, 0, "BSpline: a long batch allocates");
     }
+
+    // The two that build an object do allocate: the counter sees these calls.
+    let n = allocations(|| {
+        std::hint::black_box(poly.derivative(1)).ok();
+        std::hint::black_box(spline.antiderivative(1)).ok();
+    });
+    assert!(n >= 2, "derivative and antiderivative build an object");
 }

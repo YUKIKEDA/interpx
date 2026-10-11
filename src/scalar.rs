@@ -30,3 +30,21 @@ pub trait Scalar: num_traits::Float + Debug + Send + Sync + sealed::Sealed {}
 
 impl Scalar for f32 {}
 impl Scalar for f64 {}
+
+/// The integer `n` as a scalar, by counting: exact while `n` is small enough for
+/// the type to hold every integer up to it, as a degree or an order is.
+pub(crate) fn count<T: Scalar>(n: usize) -> T {
+    (0..n).fold(T::zero(), |sum, _| sum + T::one())
+}
+
+/// `m (m - 1) ... (m - nu + 1)`: what differentiating `x^m` `nu` times puts in
+/// front of `x^(m - nu)`.
+pub(crate) fn falling<T: Scalar>(m: T, nu: usize) -> T {
+    let mut product = T::one();
+    let mut factor = m;
+    for _ in 0..nu {
+        product = product * factor;
+        factor = factor - T::one();
+    }
+    product
+}

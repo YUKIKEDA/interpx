@@ -223,7 +223,14 @@ fn each_mode_treats_the_outside_as_documented() {
     for mode in MODES {
         assert_eq!(at(mode, 1.5), bits(Some(2.0)), "{mode:?}");
         assert_eq!(at(mode, 0.0), bits(Some(0.0)), "{mode:?}");
-        assert_eq!(at(mode, 2.0), bits(Some(3.0)), "{mode:?}");
+        // The right end belongs to the last interval, except that a period holds
+        // its left end only: there it is the left end again (as in SciPy).
+        let at_right_end = if mode == Extrapolate::Periodic {
+            0.0
+        } else {
+            3.0
+        };
+        assert_eq!(at(mode, 2.0), bits(Some(at_right_end)), "{mode:?}");
     }
 }
 

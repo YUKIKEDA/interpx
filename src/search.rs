@@ -7,7 +7,7 @@
 //! and the last interval contains both. An interval of zero width (two equal
 //! knots) contains no point.
 
-use crate::{Extrapolate, InterpolateError, Scalar};
+use crate::{Extrapolate, InterpolateError, Scalar, Value};
 
 /// The interval the last evaluation fell into, kept by the caller to speed up
 /// the next one.
@@ -135,13 +135,34 @@ fn resolve<T: Scalar>(
     x: T,
     locate: impl FnOnce(T) -> usize,
 ) -> Option<(usize, T)> {
+    // Every query inside the grid passes through this test, so it is kept to
+    // two comparisons: a NaN fails them, and the right end is left to
+    // `resolve_at_or_past_an_end`. (With the mode tested here as well, a hinted
+    // evaluation took about a tenth longer, measured in `benches/ppoly.rs`.)
+    if grid[0] <= x && x < grid[last(grid) + 1] {
+        return Some((locate(x), x));
+    }
+    resolve_at_or_past_an_end(grid, extrapolate, x, locate)
+}
+
+/// [`resolve`] for a query that is not inside the grid: at its right end,
+/// outside, or NaN.
+fn resolve_at_or_past_an_end<T: Scalar>(
+    grid: &[T],
+    extrapolate: Extrapolate,
+    x: T,
+    locate: impl FnOnce(T) -> usize,
+) -> Option<(usize, T)> {
     if x.is_nan() {
         return None;
     }
     let last = last(grid);
     let (lo, hi) = (grid[0], grid[last + 1]);
-    if lo <= x && x <= hi {
-        return Some((locate(x), x));
+    // The right end of the grid belongs to the last interval, except that a
+    // period holds its left end and not its right one: there the right end is
+    // the left end again, as in SciPy.
+    if lo <= x && x <= hi && extrapolate != Extrapolate::Periodic {
+        return Some((last, x));
     }
     match extrapolate {
         Extrapolate::Forbid => None,
@@ -174,6 +195,103 @@ pub(crate) fn eval<T: Scalar, V>(
 ) -> Option<V> {
     let (interval, x) = resolve(grid, extrapolate, x, |x| locate(grid, x))?;
     Some(at(interval, x))
+}
+
+/// Evaluates a derivative of order one or more at `x`.
+///
+/// The same as [`eval`], except under [`Extrapolate::Clamp`] outside the grid:
+/// there the function is constant, so the derivative is `zero`.
+pub(crate) fn eval_derivative<T: Scalar, V>(
+    grid: &[T],
+    extrapolate: Extrapolate,
+    x: T,
+    zero: V,
+    at: impl FnOnce(usize, T) -> V,
+) -> Option<V> {
+    // A NaN is on neither side, and `eval` turns it away.
+    if extrapolate == Extrapolate::Clamp && (x < grid[0] || x > grid[last(grid) + 1]) {
+        return Some(zero);
+    }
+    eval(grid, extrapolate, x, at)
+}
+
+/// The integral from `a` to `b` of the function [`eval`] defines, or `None` when
+/// a limit is not finite or the function has no value somewhere between them.
+///
+/// `at(i, x)` is the value of the piece of interval `i` at `x`. `between(i, p, j,
+/// q)` is the integral from `p` to `q`, `p <= q`, where `p` is taken to be in
+/// interval `i` and `q` in interval `j`, each on its piece continued when it is
+/// outside the grid.
+pub(crate) fn integrate<T: Scalar, V: Value<T>>(
+    grid: &[T],
+    extrapolate: Extrapolate,
+    a: T,
+    b: T,
+    at: impl Fn(usize, T) -> V,
+    between: impl Fn(usize, T, usize, T) -> V,
+) -> Option<V> {
+    if !a.is_finite() || !b.is_finite() {
+        return None;
+    }
+    let reversed = a > b;
+    let (a, b) = if reversed { (b, a) } else { (a, b) };
+    let last = last(grid);
+    let (lo, hi) = (grid[0], grid[last + 1]);
+    // `locate` gives the first interval to a point below the grid and the last
+    // one to a point above it.
+    let pieces = |p: T, q: T| between(locate(grid, p), p, locate(grid, q), q);
+    let inside = lo <= a && b <= hi;
+    let total = match extrapolate {
+        // Inside the grid the mode does not matter.
+        _ if inside => pieces(a, b),
+        Extrapolate::Forbid => return None,
+        Extrapolate::Extend => pieces(a, b),
+        Extrapolate::Clamp => {
+            let mut sum = V::zero();
+            // Outside, the function is the value at the end.
+            if a < lo {
+                sum = sum.axpy(b.min(lo) - a, at(0, lo));
+            }
+            if b > hi {
+                sum = sum.axpy(b - a.max(hi), at(last, hi));
+            }
+            let (p, q) = (a.max(lo), b.min(hi));
+            if p < q {
+                sum = sum.axpy(T::one(), pieces(p, q));
+            }
+            sum
+        }
+        Extrapolate::Periodic => {
+            let period = hi - lo;
+            // Whole periods first, then what is left, from the place of `a` in
+            // the period.
+            let periods = ((b - a) / period).floor();
+            let rest = ((b - a) - periods * period).max(T::zero());
+            let mut sum = V::zero();
+            if periods > T::zero() {
+                sum = sum.axpy(periods, pieces(lo, hi));
+            }
+            let mut offset = (a - lo) % period;
+            if offset < T::zero() {
+                offset = offset + period;
+            }
+            // `lo + offset` can round up to just past `hi`.
+            let start = (lo + offset).min(hi);
+            let end = start + rest;
+            if end <= hi {
+                sum.axpy(T::one(), pieces(start, end))
+            } else {
+                // Over the right end: up to it, then on from the left end.
+                sum.axpy(T::one(), pieces(start, hi))
+                    .axpy(T::one(), pieces(lo, lo + (end - hi)))
+            }
+        }
+    };
+    Some(if reversed {
+        V::zero().axpy(-T::one(), total)
+    } else {
+        total
+    })
 }
 
 /// The same as [`eval`], looking first at the interval in `hint` and its
