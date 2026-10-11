@@ -44,6 +44,15 @@ stats_alloc = "0.1.10"
 num-traits = "0.2.19"
 thiserror = "2"
 
+# The library has no `#[bench]` functions. Without this, `cargo bench -- <args>`
+# also runs the library's test harness, which rejects criterion's arguments.
+[lib]
+bench = false
+
 [[bench]]
 name = "ppoly"
+harness = false
+
+[[bench]]
+name = "bspline"
 harness = false

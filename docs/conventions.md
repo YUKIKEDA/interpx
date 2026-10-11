@@ -10,11 +10,15 @@ src/
   scalar.rs         Scalar: the sealed bound for f32 and f64
   value.rs          Value: what is interpolated, a scalar or [T; M]
   interpolator.rs   Interpolator: eval, and the provided batch methods
-  error.rs          InterpolateError
+  error.rs          InterpolateError and ParamReason
   extrapolate.rs    Extrapolate: behavior outside the domain
   boundary.rs       BoundaryCondition and EndCondition for splines
   validate.rs       input checks shared by the 1D constructors, in the fixed order (crate-private)
-  ppoly.rs          PPoly and Hint: piecewise polynomial, interval search, Horner evaluation
+  search.rs         Hint, and the interval search PPoly and BSpline share: binary search,
+                    hinted search, the per-run decision of the batch, extrapolation (crate-private
+                    but for Hint)
+  ppoly.rs          PPoly: piecewise polynomial, Horner evaluation
+  bspline.rs        BSpline: basis functions on the stack; PPoly::from_bspline and BSpline::from_ppoly
 tests/
   common/           shared by the integration tests (included with `mod common;`)
     mod.rs          golden loader, Real, Tol, close, assert_close
@@ -23,8 +27,11 @@ tests/
   interpolator.rs   the provided methods of Interpolator; Send + Sync of the public types
   alloc.rs          allocation counts of the evaluation APIs (one test function)
   ppoly.rs          PPoly: golden values, input checks, intervals, extrapolation, properties
+  bspline.rs        BSpline and the conversions: golden values (1D, curves, SciPy's coefficients),
+                    input checks, repeated knots, extrapolation, properties
 benches/
   ppoly.rs          time to evaluate a PPoly (criterion; `just bench`)
+  bspline.rs        time to evaluate a BSpline
 compare/            Python side: pinned SciPy, data sets, generators, goldens (see the golden-data skill)
 docs/               design.ja.md, roadmap.md, conventions.md, adr/
 ```
@@ -32,7 +39,8 @@ docs/               design.ja.md, roadmap.md, conventions.md, adr/
 ## Where things go
 
 - **Public surface.** Every public item is re-exported from `lib.rs`. Modules are private (`mod`, not `pub mod`), so the path of an item is `interpx::Name`.
-- **Dependencies between modules.** `scalar` depends on nothing. `value` depends on `scalar`. `error`, `extrapolate` depend on nothing. `boundary` depends on `scalar`. `interpolator` depends on `error`. `validate` depends on `error`, `scalar`, and `value`. An interpolator module (`ppoly` and those after it) depends on these, never the other way round.
+- **Dependencies between modules.** `scalar` depends on nothing. `value` depends on `scalar`. `error`, `extrapolate` depend on nothing. `boundary` depends on `scalar`. `interpolator` depends on `error`. `validate` depends on `error`, `scalar`, and `value`. `search` depends on `error`, `extrapolate`, and `scalar`. An interpolator module depends on these, never the other way round. `bspline` depends on `ppoly` (it holds both conversions), and `ppoly` does not depend on `bspline`.
+- **Interval search.** A type that evaluates on a grid of break points or knots calls `search::eval`, `search::eval_hinted`, and `search::eval_batch_into` with a closure for the interval. It does not write its own search, extrapolation, or batch loop.
 - **Unit tests** are `#[cfg(test)] mod tests` at the end of the module they test. **Integration tests** in `tests/` use only the public API.
 - **Allocation.** A new interpolator is added to `tests/alloc.rs` in the PR that adds it. All checks stay in the one test function, because the counter is global to the process.
 - **Thread safety.** A new public type gets a `Send + Sync` assertion in the test file of its module (the core types are in `tests/interpolator.rs`).

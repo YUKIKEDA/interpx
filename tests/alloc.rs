@@ -7,7 +7,7 @@
 //! function below, so no other test thread allocates while a region is measured.
 //! A row that adds an interpolator adds it to `evaluation_apis_do_not_allocate`.
 
-use interpx::{Extrapolate, Hint, Interpolator, PPoly};
+use interpx::{BSpline, Extrapolate, Hint, Interpolator, PPoly};
 use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
 use std::alloc::System;
 
@@ -139,5 +139,54 @@ fn evaluation_apis_do_not_allocate() {
             }
         });
         assert_eq!(n, 0, "PPoly {mode:?}: eval_hinted allocates");
+
+        // BSpline: the same queries, a scalar and an array value. Degree 3 puts
+        // four basis values on the stack; they must stay there.
+        let knots = [0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0, 2.0];
+        let scalar = BSpline::new(&knots, &[1.0, -2.0, 0.5, 3.0, 1.5], 3)
+            .expect("valid")
+            .with_extrapolate(mode);
+        check(
+            &format!("BSpline<f64> {mode:?}"),
+            &scalar,
+            &queries,
+            f64::NAN,
+        );
+
+        let array = BSpline::new(&[0.0, 0.0, 1.0, 2.0, 2.0], &[[0.0_f64, 1.0]; 3], 1)
+            .expect("valid")
+            .with_extrapolate(mode);
+        check(
+            &format!("BSpline<f64, [f64; 2]> {mode:?}"),
+            &array,
+            &queries,
+            [f64::NAN; 2],
+        );
+
+        let n = allocations(|| {
+            let mut hint = Hint::new();
+            for x in queries {
+                std::hint::black_box(scalar.eval_hinted(x, &mut hint));
+            }
+        });
+        assert_eq!(n, 0, "BSpline {mode:?}: eval_hinted allocates");
+    }
+
+    // A batch long and ordered enough for `eval_batch_into` to take its hinted
+    // path (the batches above are too short for it), and one in no order.
+    let ordered: Vec<f64> = (0..200).map(|i| f64::from(i) * 0.01).collect();
+    let unordered: Vec<f64> = (0..200).map(|i| f64::from((i * 37) % 200) * 0.01).collect();
+    let poly = PPoly::new(&[0.0, 1.0, 2.0], &[1.0, 0.0, 2.0, 1.0], 1).expect("valid");
+    let spline = BSpline::new(&[0.0, 0.0, 1.0, 2.0, 2.0], &[0.0, 1.0, 0.0], 1).expect("valid");
+    let mut out = vec![0.0; 200];
+    for points in [&ordered, &unordered] {
+        let n = allocations(|| {
+            std::hint::black_box(poly.eval_batch_into(points, &mut out, f64::NAN)).ok();
+        });
+        assert_eq!(n, 0, "PPoly: a long batch allocates");
+        let n = allocations(|| {
+            std::hint::black_box(spline.eval_batch_into(points, &mut out, f64::NAN)).ok();
+        });
+        assert_eq!(n, 0, "BSpline: a long batch allocates");
     }
 }
