@@ -26,5 +26,5 @@ alwaysApply: false
 /// Evaluates the spline at `x`.
 ///
 /// Returns `None` when `x` is outside the domain and the extrapolation mode is
-/// [`Extrapolate::None`], or when `x` is NaN.
+/// [`Extrapolate::Forbid`], or when `x` is NaN.
 ```

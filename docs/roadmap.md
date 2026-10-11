@@ -24,13 +24,13 @@ M1-2. M0-1 is finished when Issue #1 is closed.
 | ID    | Kind | Title                                                                                                  | Issue | Status |
 | ----- | ---- | ------------------------------------------------------------------------------------------------------ | ----- | ------ |
 | M1-1  | Task | Golden pipeline and data sets: pinned SciPy 1.18, layer-A goldens for every family, `tests/common`     | #2    | Done   |
-| M1-2  | Feat | `Interpolator` trait, `InterpolateError`, `Extrapolate`, `BoundaryCondition`, `tests/alloc.rs` harness, restore the CI coverage job |       | Todo   |
+| M1-2  | Feat | `Scalar`, `Value`, `Interpolator`, `InterpolateError`, `Extrapolate`, `BoundaryCondition`, `tests/alloc.rs` harness, restore the CI coverage job |       | Todo   |
 | M1-3  | Feat | `PPoly` (interval-major layout, Horner evaluation, `Hint`)                                             |       | Todo   |
 | M1-4  | Feat | `BSpline` (de Boor) and `PPoly` ⇄ `BSpline` conversion                                                 |       | Todo   |
 | M1-5  | Feat | `derivative`, `antiderivative`, `integrate`, `eval_derivative` on `PPoly` and `BSpline`                |       | Todo   |
 | M1-6  | Feat | Tridiagonal solver (Thomas, periodic via Sherman-Morrison)                                             |       | Todo   |
 | M1-7  | Feat | `Linear1D` and `Nearest1D` (nearest, previous, next)                                                   |       | Todo   |
-| M1-8  | Feat | `CubicSpline` (NotAKnot, Natural, Clamped, Periodic, Derivative)                                       |       | Todo   |
+| M1-8  | Feat | `CubicSpline` (NotAKnot, Periodic, first or second derivative at each end)                             |       | Todo   |
 | M1-9  | Feat | `PchipInterpolator`                                                                                    |       | Todo   |
 | M1-10 | Feat | `Akima1D` (including makima)                                                                           |       | Todo   |
 | M1-11 | Feat | `CubicHermiteSpline`                                                                                   |       | Todo   |
@@ -85,7 +85,7 @@ Named so that no deferral is anonymous. Each becomes a roadmap row with an Issue
 | A-1 | Feat | `roots` / `solve` for `PPoly` and `BSpline`                                                 |       | Todo   |
 | A-2 | Feat | `NdPPoly`                                                                                   |       | Todo   |
 | A-3 | Feat | Derivatives for grid and scattered interpolators                                            |       | Todo   |
-| A-4 | Feat | Runtime-dimension wrappers for grid and scattered                                           |       | Todo   |
+| A-4 | Feat | Runtime dimension and runtime output width for grid and scattered                           |       | Todo   |
 | A-5 | Feat | RBF pseudo-inverse fallback                                                                 |       | Todo   |
 | A-6 | Feat | `BarycentricInterpolator` and `KroghInterpolator`                                           |       | Todo   |
 | A-7 | Feat | FITPACK family: `UnivariateSpline`, `splrep`, `splprep`, `RectBivariateSpline`, and related |       | Todo   |

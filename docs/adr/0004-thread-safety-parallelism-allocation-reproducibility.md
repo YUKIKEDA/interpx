@@ -1,6 +1,6 @@
 # 0004: Thread safety, parallelism, allocation, and reproducibility
 
-- Status: Accepted
+- Status: Accepted. 0009 removes `eval_into`; the allocation-free APIs are `eval`, `eval_or`, and `eval_batch_into`.
 - Date: 2026-10-11
 - Issue: N/A (grill, pre-Issue)
 

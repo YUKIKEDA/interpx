@@ -58,30 +58,49 @@ Rust の科学計算エコシステムにおける最大の課題は「断片化
 
 ## 3. 型システムとインターフェース (Type System & APIs)
 
-### 3.1 スカラー型と次元数
-* **1D / curve / grid**: `T: num_traits::Float` によるジェネリクス（`f32` / `f64`）。
+### 3.1 スカラー型・値の型・次元数
+* **スカラー `Scalar`**: 封印したトレイトで、`f32` と `f64` にだけ実装する。`num_traits::Float + Debug + Send + Sync` を含む。補間器の型引数 `T` の境界はこれ 1 つにする。
+* **1D / curve / grid**: `T: Scalar` によるジェネリクス（`f32` / `f64`）。
 * **scattered**: **`f64` 固定**（`convx` が f64 専用のため）。f32 入力は呼び出し側が変換する。暗黙キャストは行わない。
+* **値の型 `Value`**: 補間する値（SciPy の `values` の 1 行）の型。封印したトレイトで、スカラー `T` と固定長配列 `[T; M]` に実装する。必要な演算はゼロ、加算つきスカラー倍、有限性の判定だけである。
+
+  ```rust
+  pub trait Value<T: Scalar>: Copy + Debug + Send + Sync {
+      fn zero() -> Self;
+      /// self + k * x
+      fn axpy(self, k: T, x: Self) -> Self;
+      fn all_finite(&self) -> bool;
+  }
+  ```
+
+  * 多出力（SciPy の `values` が `(N, m)`）は、値の型を `[T; M]` にして表す。例: `LinearNDInterpolator<const D: usize, V = f64>`、`RegularGridInterpolator<T, const D: usize, V = T>`、`BSplineCurve<T, D>`（値の型は `[T; D]`）。
+  * `[T; M]` は連続領域なので、`PPoly` の係数レイアウト `[区間][次数][出力列]`（§6.1）と一致する。
+  * 出力列数 `m` を実行時に決める形は v0.1.0 の対象外（ロードマップ A-4。動的次元と同じ扱い）。
 * 次元は **`const D: usize` のみ**（grid・scattered とも）。動的次元ラッパーは v0.1.0 の対象外（ロードマップ）。`kiddo` は低次元（目安 10 未満）向けであり、doc に推奨次元を明記する。
 
 ### 3.2 共通トレイト `Interpolator`
 ```rust
 pub trait Interpolator {
-    /// クエリ点の型（1D: T, ND: [T; D] または [T]）
-    type Point: ?Sized;
-    /// 1 出力の型（1D: T, BSplineCurve<T, D>: [T; D]）
+    /// クエリ点の型。1D は T、N-D は [T; D]。
+    type Point;
+    /// 出力の型。T、または [T; M]。
     type Output;
 
-    /// 出力列数（スカラー出力は 1）。SciPy の values (N, m) の m に対応。
-    fn n_outputs(&self) -> usize { 1 }
-
-    /// 領域外（Extrapolate::None・凸包外）または NaN クエリで None。
+    /// 1 点を評価する。領域外（`Extrapolate::Forbid`・凸包外）と NaN クエリは None。
     fn eval(&self, point: &Self::Point) -> Option<Self::Output>;
 
-    fn eval_or(&self, point: &Self::Point, fill: Self::Output) -> Self::Output;
+    /// 領域外と NaN クエリで `fill` を返す。
+    fn eval_or(&self, point: &Self::Point, fill: Self::Output) -> Self::Output {
+        self.eval(point).unwrap_or(fill)
+    }
 
-    fn eval_batch(&self, points: &[&Self::Point]) -> Vec<Option<Self::Output>>;
+    /// 結果を新しい Vec に入れて返す（確保する）。
+    fn eval_batch(&self, points: &[Self::Point]) -> Vec<Option<Self::Output>> {
+        points.iter().map(|p| self.eval(p)).collect()
+    }
 
-    /// 領域外は `fill` で埋める。長さ不一致は Err(LengthMismatch)。panic しない。
+    /// 結果を `out` に書く（確保しない）。領域外と NaN クエリは `fill` で埋める。
+    /// `points.len() != out.len()` は Err(LengthMismatch) で、`out` には触れない。
     fn eval_batch_into(
         &self,
         points: &[Self::Point],
@@ -89,40 +108,56 @@ pub trait Interpolator {
         fill: Self::Output,
     ) -> Result<(), InterpolateError>
     where
-        Self::Point: Sized;
-
-    /// 多出力（動的 m）用。`out.len() != n_outputs()` なら Err。
-    /// 領域外は Ok(false) を返し `out` には触れない。
-    fn eval_into(&self, point: &Self::Point, out: &mut [Self::Scalar]) -> Result<bool, InterpolateError>;
+        Self::Output: Clone;
 }
 ```
-* 上記は仕様の骨子であり、`Scalar` 関連型・`eval_batch` の引数形などの詳細は M1 の実装時に確定する（意味論は変えない）。
+* 必須メソッドは `eval` だけで、残りは既定実装を持つ。各補間器は、速くできる場合に `eval_batch_into` を上書きする（区間探索の `Hint` をバッチ内で使い回す、など）。
+* `Point` は `Sized`（v0.1.0 は `const D` のみ）。トレイトは封印しない（利用者が自分の補間器に実装できる）。
 * SciPy のコンストラクタ引数 `fill_value` は持たない。呼び出し時の `fill` に統一する（NaN で埋めたい場合は `T::nan()` を渡す）。
-* const 次元の高速パスは各構造体の固有メソッドで提供する。
+* `eval`・`eval_or`・`eval_batch_into` は確保しない（§8.1 のゼロアロケーション検査）。`eval_batch` は `Vec` を返すので確保する。
 
 **並列版**（`rayon` feature）: `eval_batch_par` / `eval_batch_into_par` を別メソッドとして提供する。
 
 ### 3.3 外挿・境界モード
 ```rust
-pub enum Extrapolate { None, Clamp, Extend, Periodic }   // 1D / curve / grid
-pub enum BoundaryCondition {                              // CubicSpline / BSpline1D
-    NotAKnot,   // 既定（SciPy に合わせる）
-    Natural, Clamped, Periodic,
-    Derivative { /* 端点・階数・値 */ },
+#[non_exhaustive]
+pub enum Extrapolate { Forbid, Clamp, Extend, Periodic }   // 1D / curve / grid
+
+pub enum BoundaryCondition<T> {                            // CubicSpline / BSpline1D
+    NotAKnot,                                 // 既定（SciPy に合わせる）
+    Periodic,
+    Ends(EndCondition<T>, EndCondition<T>),   // 左端、右端
 }
+pub enum EndCondition<T> { NotAKnot, FirstDerivative(T), SecondDerivative(T) }
 ```
-* `Extend` は端の多項式をそのまま延長する（SciPy の `extrapolate=True` 相当）。
+* **`Extrapolate`**: `Forbid` は領域外で `None`。`Clamp` は端の値を返す（`numpy.interp` の挙動）。`Extend` は端の多項式をそのまま延長する（SciPy の `extrapolate=True`）。`Periodic` は領域に折り返す。
+* **既定値は型ごとに SciPy 1.18 に合わせる。**
+
+  | 型                                                                      | 既定        |
+  | :---------------------------------------------------------------------- | :---------- |
+  | `Linear1D`                                                              | `Clamp`     |
+  | `CubicSpline`、`PchipInterpolator`、`CubicHermiteSpline`、`BSpline1D`、`BSplineCurve` | `Extend`    |
+  | `CubicSpline`・`BSpline1D` で境界条件が `Periodic` のとき               | `Periodic`  |
+  | `Akima1D`、`Nearest1D`、`RegularGridInterpolator`                       | `Forbid`    |
+
+* **`BoundaryCondition`**: 端ごとに条件を持ち、左右で別の条件を指定できる（SciPy の `bc_type=((1, a), (2, b))`）。`Natural` は両端 `SecondDerivative(0)`、`Clamped` は両端 `FirstDerivative(0)` で、`BoundaryCondition::natural()` / `clamped()` で作る。周期は両端まとめての指定で、片側だけ周期という状態は型で表せない。
 * 散乱系は外挿モードを持たず、領域外（凸包外）は `None`（`fill` で置換）のみ。
 
 ### 3.4 所有権・スレッド安全性
 * すべての補間器は **owned** で、ライフタイム引数を持たない。`T: 'static` の制約は課さない。
 * コンストラクタは `::new(&[...])`（借用から構築）と `::from_owned(...)`（ゼロコピー移動）を提供する。
-* **全補間器が `Send + Sync`** であることを公開契約とする。`Cell` / `RefCell` / `Mutex` 等の共有可変状態は持たず、`&self` での評価は純粋とする。
+* **全補間器が `Send + Sync`** であることを公開契約とする（`Scalar` と `Value` の境界が保証する）。`Cell` / `RefCell` / `Mutex` 等の共有可変状態は持たず、`&self` での評価は純粋とする。
 * Hinted search（直前区間を覚える最適化）の状態は、呼び出し側が持つ `Hint` 値かバッチ内ローカルに置く。
 
 ### 3.5 入力検証
 * 入力データ（座標・値）に NaN / Inf があれば構築時に `Err(NonFinite)`。
 * クエリ点が NaN の場合は panic せず `eval` は `None`、`eval_or` は `fill` を返す。
+* **1D の座標は狭義単調増加のみ**受け付ける（SciPy の `CubicSpline` と同じ）。降順の軸を受け付けるのはグリッドだけである。
+* **検証の順序は固定する。** 複数の誤りがある入力は、次の順で最初に当たったエラーを返す。
+  1. `LengthMismatch`（座標と値の長さ）
+  2. `InsufficientPoints`
+  3. `NonFinite`（座標を先に、次に値。最初の index）
+  4. `DuplicatePoints`（隣り合う座標が等しい）と `NotSorted`（減少）のうち、先に現れたほう
 
 ---
 
@@ -135,36 +170,35 @@ pub enum InterpolateError {
     #[error("insufficient points: required {required}, got {actual}")]
     InsufficientPoints { required: usize, actual: usize },
 
-    #[error("dimension mismatch: expected {expected}, got {actual}")]
-    DimensionMismatch { expected: usize, actual: usize },   // 動的次元の場面のみ
-
-    #[error("length mismatch: {left} vs {right}")]
-    LengthMismatch { left: usize, right: usize },
-
-    #[error("coordinates are not strictly increasing")]
-    NotSorted,
-
-    #[error("duplicate points at indices {first} and {second}")]
-    DuplicatePoints { first: usize, second: usize },
+    #[error("length mismatch: expected {expected}, got {actual}")]
+    LengthMismatch { expected: usize, actual: usize },
 
     #[error("non-finite value at index {index}")]
     NonFinite { index: usize },
 
-    #[error("degenerate geometry: {0:?}")]
-    DegenerateGeometry(DegeneracyKind),
+    #[error("coordinates are not strictly increasing at index {index}")]
+    NotSorted { index: usize },
 
-    #[error("invalid parameter `{name}`: {reason:?}")]
-    InvalidParameter { name: &'static str, reason: ParamReason },
+    #[error("duplicate points at indices {first} and {second}")]
+    DuplicatePoints { first: usize, second: usize },
 
-    #[error("solver failed: {0:?}")]
-    SolverFailed(SolverError),
+    #[error("periodic boundary needs equal values at both ends")]
+    NotPeriodic,
 }
-
-#[non_exhaustive] pub enum DegeneracyKind { LowerDimensional { affine_dim: usize }, NumericalLimit }
-#[non_exhaustive] pub enum SolverError { Singular, /* ... */ }
-#[non_exhaustive] pub enum ParamReason { /* 範囲外・必須欠落・最小次数未満 等 */ }
 ```
-* **`convx::ConvexHullError` は公開しない**（`convx` の版と SemVer を結合させないため）。内部で次のように変換する（`From` は `pub(crate)`）:
+* `#[non_exhaustive]` なので、variant は最初に必要になる行で追加する（使う前に定義しない）。上は M1（1D・curve）が使うものである。
+* 後の行で追加する variant:
+
+  | variant                                                    | 追加する行         | 用途                                                   |
+  | :--------------------------------------------------------- | :----------------- | :----------------------------------------------------- |
+  | `InvalidParameter { name: &'static str, reason: ParamReason }` | 最初に必要な行 | 範囲外・必須欠落・最小次数未満など                     |
+  | `SolverFailed(SolverError)`                                | M3（RBF）          | 特異な連立方程式（`SolverError::Singular`）            |
+  | `DegenerateGeometry(DegeneracyKind)`                       | M4（`LinearND`）   | `LowerDimensional { affine_dim }`、`NumericalLimit`    |
+
+* 文字列のペイロードは持たない（パターンマッチできる型付きの値だけ）。`ParamReason`・`SolverError`・`DegeneracyKind` も `#[non_exhaustive]`。
+* 次元の不一致を表す variant は持たない（`const D` のみなので、型で表現できない）。
+* `NotSorted { index }` の `index` は、直前の座標より小さい最初の要素。`LengthMismatch` の `expected` は座標（またはクエリ）の長さ、`actual` は値（または出力バッファ）の長さ。
+* **`convx::ConvexHullError` は公開しない**（`convx` の版と SemVer を結合させないため）。M4 で、内部で次のように変換する（`From` は `pub(crate)`）:
   * `InsufficientPoints` → `InsufficientPoints`
   * `NonFiniteCoordinate{index}` → `NonFinite{index}`
   * `LengthMismatch` → `LengthMismatch`
@@ -314,7 +348,7 @@ serde   = ["dep:serde"]
 
 ### 8.1 テスト
 * **golden データ**: `compare/` の Python スクリプト（`compare/generate_*.py`、`uv` で SciPy 1.18 を `pyproject.toml` / `uv.lock` に固定）で生成し、`compare/goldens/*.json` にコミットする。`cargo test` は読むだけで Python を呼ばず、CI でも SciPy を実行しない。再生成は `just gen-goldens`（M1-1 で追加）。`compare/goldens/` は公開パッケージに含める（`Cargo.toml` の `include`）。
-* **ゼロアロケーション検査**: `tests/alloc.rs` がカウンティングアロケーターで、`eval` / `eval_or` / `eval_into` / `eval_batch_into` の確保回数が 0 であることを検査する（`just test` に含む）。並列版 `eval_batch_par` は逐次版とビット同一であることをテストする。
+* **ゼロアロケーション検査**: `tests/alloc.rs` がカウンティングアロケーターで、`eval` / `eval_or` / `eval_batch_into` の確保回数が 0 であることを検査する（`just test` に含む）。並列版 `eval_batch_par` は逐次版とビット同一であることをテストする。
 * **`proptest` 性質テスト**: データ点での一致、PCHIP の単調性、`LinearND` による線形関数の厳密再現、CubicSpline の導関数連続性、など。
 
 ### 8.2 数値精度基準

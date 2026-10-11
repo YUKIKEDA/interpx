@@ -1,6 +1,6 @@
 # 0003: `Interpolator` shape, extrapolation and boundary modes, and errors
 
-- Status: Accepted
+- Status: Accepted. Superseded in part by 0009: the multi-output form (`n_outputs`, `eval_into`), the `?Sized` point, the names of the `Extrapolate` and `BoundaryCondition` variants, and the list of error variants.
 - Date: 2026-10-11
 - Issue: N/A (grill, pre-Issue)
 
