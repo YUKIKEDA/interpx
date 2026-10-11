@@ -125,7 +125,7 @@ fn scipy_cubic_splines_are_rebuilt_from_their_data() {
         // as it is, the cubic coefficient of an interval 1e-3 wide would differ
         // from SciPy's by 1e-9, relatively: it is a difference of slopes over
         // `h^2`, and both solvers round the slopes.
-        for (i, piece) in poly.coefficients().chunks_exact(4).enumerate() {
+        for (i, piece) in poly.coefficients().as_chunks::<4>().0.iter().enumerate() {
             let width = x[i + 1] - x[i];
             for (power, got) in piece.iter().enumerate() {
                 let reach = width.powi(3 - i32::try_from(power).expect("0 to 3"));
@@ -476,7 +476,7 @@ fn three_points_with_not_a_knot_give_the_parabola_through_them() {
     let f = |x: f64| x * x - 2.0 * x + 3.0;
     let x = [0.0, 1.0, 4.0];
     let spline = CubicSpline::new(&x, &x.map(f), Bc::NotAKnot).expect("valid");
-    for piece in spline.as_ppoly().coefficients().chunks_exact(4) {
+    for piece in spline.as_ppoly().coefficients().as_chunks::<4>().0 {
         assert_close(piece[0], 0.0, DIRECT_F64, "no cubic term");
         assert_close(piece[1], 1.0, DIRECT_F64, "the square term");
     }
