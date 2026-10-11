@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 
 /// The files `just gen-goldens` writes. A generator that stops writing its file,
 /// or a file nobody generates, fails `every_expected_file_exists_and_no_other`.
-const FILES: [&str; 7] = [
+const FILES: [&str; 8] = [
     "curve",
     "datasets",
     "functions",
@@ -23,6 +23,7 @@ const FILES: [&str; 7] = [
     "oned",
     "rbf",
     "scattered",
+    "tridiagonal",
 ];
 
 /// docs/design.ja.md section 8.4 and `compare/common/golden.py`.
