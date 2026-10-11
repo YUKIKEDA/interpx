@@ -4,11 +4,16 @@
 //! `eval_derivative` and `integrate`. `eval_batch` returns a `Vec`, so it
 //! allocates, as do `derivative` and `antiderivative`, which build an object.
 //!
-//! The counter is global to the process. Everything is checked from the one test
-//! function below, so no other test thread allocates while a region is measured.
-//! A row that adds an interpolator adds it to `evaluation_apis_do_not_allocate`.
+//! The counter is global to the process, so nothing else may allocate while a
+//! region is measured. This file is therefore built without the test harness
+//! (`harness = false` in `Cargo.toml`): the harness runs a test on a thread of
+//! its own and keeps its records on the main thread, and an allocation there is
+//! counted too. Here `main` is the only thread. `cargo test` runs it like any
+//! test; a failed assertion ends it with a non-zero status.
+//!
+//! A row that adds an interpolator adds it to `main`.
 
-use interpx::{BSpline, Extrapolate, Hint, Interpolator, PPoly};
+use interpx::{BSpline, Extrapolate, Hint, InterpolateError, Interpolator, PPoly};
 use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
 use std::alloc::System;
 
@@ -96,8 +101,7 @@ impl Interpolator for Triple {
     }
 }
 
-#[test]
-fn evaluation_apis_do_not_allocate() {
+fn main() -> Result<(), InterpolateError> {
     // Inside, outside, and NaN: each takes a different path through `eval`.
     check("Double", &Double, &[0.25, 0.5, 2.0, f64::NAN], f64::NAN);
     check(
@@ -117,14 +121,11 @@ fn evaluation_apis_do_not_allocate() {
         Extrapolate::Extend,
         Extrapolate::Periodic,
     ] {
-        let scalar = PPoly::new(&[0.0, 1.0, 2.0], &[1.0, 0.0, 2.0, 1.0], 1)
-            .expect("valid")
-            .with_extrapolate(mode);
+        let scalar = PPoly::new(&[0.0, 1.0, 2.0], &[1.0, 0.0, 2.0, 1.0], 1)?.with_extrapolate(mode);
         check(&format!("PPoly<f64> {mode:?}"), &scalar, &queries, f64::NAN);
 
-        let array = PPoly::new(&[0.0, 1.0, 2.0], &[[1.0_f64, 2.0], [3.0, 4.0]], 0)
-            .expect("valid")
-            .with_extrapolate(mode);
+        let array =
+            PPoly::new(&[0.0, 1.0, 2.0], &[[1.0_f64, 2.0], [3.0, 4.0]], 0)?.with_extrapolate(mode);
         check(
             &format!("PPoly<f64, [f64; 2]> {mode:?}"),
             &array,
@@ -163,9 +164,7 @@ fn evaluation_apis_do_not_allocate() {
         // BSpline: the same queries, a scalar and an array value. Degree 3 puts
         // four basis values on the stack; they must stay there.
         let knots = [0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0, 2.0];
-        let scalar = BSpline::new(&knots, &[1.0, -2.0, 0.5, 3.0, 1.5], 3)
-            .expect("valid")
-            .with_extrapolate(mode);
+        let scalar = BSpline::new(&knots, &[1.0, -2.0, 0.5, 3.0, 1.5], 3)?.with_extrapolate(mode);
         check(
             &format!("BSpline<f64> {mode:?}"),
             &scalar,
@@ -173,8 +172,7 @@ fn evaluation_apis_do_not_allocate() {
             f64::NAN,
         );
 
-        let array = BSpline::new(&[0.0, 0.0, 1.0, 2.0, 2.0], &[[0.0_f64, 1.0]; 3], 1)
-            .expect("valid")
+        let array = BSpline::new(&[0.0, 0.0, 1.0, 2.0, 2.0], &[[0.0_f64, 1.0]; 3], 1)?
             .with_extrapolate(mode);
         check(
             &format!("BSpline<f64, [f64; 2]> {mode:?}"),
@@ -215,8 +213,8 @@ fn evaluation_apis_do_not_allocate() {
     // path (the batches above are too short for it), and one in no order.
     let ordered: Vec<f64> = (0..200).map(|i| f64::from(i) * 0.01).collect();
     let unordered: Vec<f64> = (0..200).map(|i| f64::from((i * 37) % 200) * 0.01).collect();
-    let poly = PPoly::new(&[0.0, 1.0, 2.0], &[1.0, 0.0, 2.0, 1.0], 1).expect("valid");
-    let spline = BSpline::new(&[0.0, 0.0, 1.0, 2.0, 2.0], &[0.0, 1.0, 0.0], 1).expect("valid");
+    let poly = PPoly::new(&[0.0, 1.0, 2.0], &[1.0, 0.0, 2.0, 1.0], 1)?;
+    let spline = BSpline::new(&[0.0, 0.0, 1.0, 2.0, 2.0], &[0.0, 1.0, 0.0], 1)?;
     let mut out = vec![0.0; 200];
     for points in [&ordered, &unordered] {
         let n = allocations(|| {
@@ -235,4 +233,7 @@ fn evaluation_apis_do_not_allocate() {
         std::hint::black_box(spline.antiderivative(1)).ok();
     });
     assert!(n >= 2, "derivative and antiderivative build an object");
+
+    println!("tests/alloc.rs: the evaluation APIs do not allocate");
+    Ok(())
 }

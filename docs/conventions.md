@@ -27,7 +27,7 @@ tests/
     functions.rs    Franke, Genz, Rosenbrock: the analytic test functions
   goldens.rs        the golden files themselves: shape, size, baseline, interpolation property
   interpolator.rs   the provided methods of Interpolator; Send + Sync of the public types
-  alloc.rs          allocation counts of the evaluation APIs (one test function)
+  alloc.rs          allocation counts of the evaluation APIs (no harness: a `main` function)
   ppoly.rs          PPoly: golden values, input checks, intervals, extrapolation, properties
   bspline.rs        BSpline and the conversions: golden values (1D, curves, SciPy's coefficients),
                     input checks, repeated knots, extrapolation, properties
@@ -46,7 +46,7 @@ docs/               design.ja.md, roadmap.md, conventions.md, adr/
 - **Dependencies between modules.** `scalar` depends on nothing. `value` depends on `scalar`. `error`, `extrapolate` depend on nothing. `boundary` depends on `scalar`. `interpolator` depends on `error`. `validate` depends on `error`, `scalar`, and `value`. `search` depends on `error`, `extrapolate`, `scalar`, and `value`. An interpolator module depends on these, never the other way round. `bspline` depends on `ppoly` (it holds both conversions), and `ppoly` does not depend on `bspline`.
 - **Interval search.** A type that evaluates on a grid of break points or knots calls `search::eval`, `search::eval_hinted`, and `search::eval_batch_into` with a closure for the interval. It does not write its own search, extrapolation, or batch loop. Its `eval_derivative` and `integrate` call `search::eval_derivative` and `search::integrate` in the same way, so that both follow the extrapolation mode as `eval` does. A property of the two types that both must have is tested on both in `tests/calculus.rs`.
 - **Unit tests** are `#[cfg(test)] mod tests` at the end of the module they test. **Integration tests** in `tests/` use only the public API.
-- **Allocation.** A new interpolator is added to `tests/alloc.rs` in the PR that adds it. All checks stay in the one test function, because the counter is global to the process.
+- **Allocation.** A new interpolator is added to `tests/alloc.rs` in the PR that adds it. The counter is global to the process, so the file is built with `harness = false` and all checks are in its `main`: the test harness has threads of its own, and an allocation on one of them during a measured region is counted (it failed a CI job once). The lints treat this file as library code, so it uses `?`, not `expect`.
 - **Thread safety.** A new public type gets a `Send + Sync` assertion in the test file of its module (the core types are in `tests/interpolator.rs`).
 - **Input checks.** A 1D constructor calls `validate::coordinates_and_values`; it does not write its own order of checks. Its test file has one input that breaks two adjacent steps and expects the earlier error.
 - **Properties.** Property tests (`proptest`) are in the test file of the type. A method with a faster path (a hint, a batch) is compared bit for bit with the plain one.

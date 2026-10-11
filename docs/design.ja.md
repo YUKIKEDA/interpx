@@ -425,7 +425,7 @@ serde   = ["dep:serde"]
 
 ### 8.1 テスト
 * **golden データ**: `compare/` の Python スクリプト（`compare/generate_*.py`、`uv` で SciPy 1.18 を `pyproject.toml` / `uv.lock` に固定）で生成し、`compare/goldens/*.json` にコミットする。`cargo test` は読むだけで Python を呼ばず、CI でも SciPy を実行しない。再生成は `just gen-goldens`（M1-1 で追加）。`compare/goldens/` は公開パッケージに含める（`Cargo.toml` の `include`）。
-* **ゼロアロケーション検査**: `tests/alloc.rs` がカウンティングアロケーターで、`eval` / `eval_or` / `eval_batch_into` の確保回数が 0 であることを検査する（`just test` に含む）。並列版 `eval_batch_par` は逐次版とビット同一であることをテストする。
+* **ゼロアロケーション検査**: `tests/alloc.rs` がカウンティングアロケーターで、`eval` / `eval_or` / `eval_batch_into` の確保回数が 0 であることを検査する（`just test` に含む）。カウンターはプロセス全体で数えるので、このファイルはテストハーネスなし（`harness = false`、`main` 関数）で動かす。ハーネスは自分のスレッドを持ち、計測中にそこで起きた確保も数えられてしまうためである。並列版 `eval_batch_par` は逐次版とビット同一であることをテストする。
 * **`proptest` 性質テスト**: データ点での一致、PCHIP の単調性、`LinearND` による線形関数の厳密再現、CubicSpline の導関数連続性、など。
 
 ### 8.2 数値精度基準

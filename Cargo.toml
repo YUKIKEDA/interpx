@@ -49,6 +49,12 @@ thiserror = "2"
 [lib]
 bench = false
 
+# The allocation counter is global to the process, so this test runs without the
+# harness and its threads (see the top of the file).
+[[test]]
+name = "alloc"
+harness = false
+
 [[bench]]
 name = "ppoly"
 harness = false
