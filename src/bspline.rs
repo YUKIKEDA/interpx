@@ -4,9 +4,28 @@ use crate::{
     search, Extrapolate, Hint, InterpolateError, Interpolator, PPoly, ParamReason, Scalar, Value,
 };
 
-/// The largest degree of a [`BSpline`]: evaluation keeps `degree + 1` basis
-/// values in an array on the stack, so that it does not allocate.
-const MAX_DEGREE: usize = 15;
+/// The largest degree a [`BSpline`] can have: 15.
+///
+/// Evaluation keeps `degree + 1` basis values in an array on the stack, so that
+/// it does not allocate. SciPy's `make_interp_spline` is used with degrees up to
+/// 5. A larger degree is rejected with [`InterpolateError::InvalidParameter`].
+///
+/// # Examples
+///
+/// ```
+/// use interpx::{BSpline, BSPLINE_MAX_DEGREE};
+///
+/// assert_eq!(BSPLINE_MAX_DEGREE, 15);
+///
+/// // One piece of degree 15 on [0, 1] is accepted, degree 16 is not.
+/// let knots = |k: usize| [vec![0.0; k + 1], vec![1.0; k + 1]].concat();
+/// assert!(BSpline::new(&knots(15), &[1.0; 16], 15).is_ok());
+/// assert!(BSpline::new(&knots(16), &[1.0; 17], 16).is_err());
+/// ```
+pub const BSPLINE_MAX_DEGREE: usize = 15;
+
+/// The same limit under a short name, for this module.
+const MAX_DEGREE: usize = BSPLINE_MAX_DEGREE;
 
 /// The length of the basis arrays: one value per basis function that is not
 /// zero on an interval.
@@ -25,7 +44,7 @@ const MAX_ORDER: usize = MAX_DEGREE + 1;
 /// follows the [`Extrapolate`] mode, which is [`Extrapolate::Extend`] unless
 /// [`with_extrapolate`](BSpline::with_extrapolate) changes it.
 ///
-/// The degree is at most [`BSpline::MAX_DEGREE`].
+/// The degree is at most [`BSPLINE_MAX_DEGREE`].
 ///
 /// Cloning copies the knots and the control points.
 ///
@@ -62,12 +81,6 @@ pub struct BSpline<T: Scalar, V: Value<T> = T> {
 }
 
 impl<T: Scalar, V: Value<T>> BSpline<T, V> {
-    /// The largest degree a B-spline can have: 15.
-    ///
-    /// Evaluation keeps `degree + 1` numbers on the stack, so that it does not
-    /// allocate. SciPy's `make_interp_spline` is used with degrees up to 5.
-    pub const MAX_DEGREE: usize = MAX_DEGREE;
-
     /// Builds a B-spline of the given degree from copies of the knots and the
     /// control points.
     ///
@@ -76,7 +89,7 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
     /// The first of these that applies:
     ///
     /// - [`InterpolateError::InvalidParameter`] when `degree` is over
-    ///   [`BSpline::MAX_DEGREE`].
+    ///   [`BSPLINE_MAX_DEGREE`].
     /// - [`InterpolateError::LengthMismatch`] when there are not
     ///   `control_points.len() + degree + 1` knots.
     /// - [`InterpolateError::InsufficientPoints`] when there are fewer than
@@ -166,7 +179,7 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
     /// # Errors
     ///
     /// Returns [`InterpolateError::InvalidParameter`] when the degree of `poly` is
-    /// over [`BSpline::MAX_DEGREE`], and [`InterpolateError::NonFinite`] when a
+    /// over [`BSPLINE_MAX_DEGREE`], and [`InterpolateError::NonFinite`] when a
     /// control point overflows.
     ///
     /// # Examples

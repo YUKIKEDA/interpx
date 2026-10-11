@@ -7,6 +7,7 @@ mod common;
 use common::{assert_close, load, reals, Real, Tol, DIRECT_F64};
 use interpx::{
     BSpline, Extrapolate, Hint, InterpolateError as E, Interpolator, PPoly, ParamReason,
+    BSPLINE_MAX_DEGREE,
 };
 use proptest::prelude::*;
 use serde_json::Value as Json;
@@ -390,7 +391,7 @@ fn the_constructor_keeps_the_order_of_the_checks() {
         Some(E::NotSorted { index: 3 })
     );
     // The largest degree is accepted.
-    let k = BSpline::<f64>::MAX_DEGREE;
+    let k = BSPLINE_MAX_DEGREE;
     assert_eq!(k, 15);
     let knots: Vec<f64> = [vec![0.0; k + 1], vec![1.0; k + 1]].concat();
     assert!(BSpline::new(&knots, &vec![1.0; k + 1], k).is_ok());

@@ -59,7 +59,7 @@ mod validate;
 mod value;
 
 pub use boundary::{BoundaryCondition, EndCondition};
-pub use bspline::BSpline;
+pub use bspline::{BSpline, BSPLINE_MAX_DEGREE};
 pub use error::{InterpolateError, ParamReason};
 pub use extrapolate::Extrapolate;
 pub use interpolator::Interpolator;
