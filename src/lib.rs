@@ -1,16 +1,35 @@
 //! Pure Rust interpolation covering the main classes of `scipy.interpolate`.
 //!
-//! This crate is being built. The core types are in place: [`Scalar`], [`Value`],
-//! the [`Interpolator`] trait, [`InterpolateError`], [`Extrapolate`], and
-//! [`BoundaryCondition`]. The interpolators themselves follow.
+//! This crate is being built. So far it has the core types ([`Scalar`],
+//! [`Value`], the [`Interpolator`] trait, [`InterpolateError`], [`Extrapolate`],
+//! [`BoundaryCondition`]) and [`PPoly`], the piecewise polynomial the 1D splines
+//! evaluate through. The interpolators themselves follow.
 //!
 //! # Examples
+//!
+//! A piecewise polynomial, evaluated at one point and at a batch:
+//!
+//! ```
+//! use interpx::{InterpolateError, Interpolator, PPoly};
+//!
+//! # fn main() -> Result<(), InterpolateError> {
+//! // x on [0, 1], then 1 + 2(x - 1) on [1, 2]. Coefficients are per interval,
+//! // the highest power first.
+//! let p = PPoly::new(&[0.0, 1.0, 2.0], &[1.0, 0.0, 2.0, 1.0], 1)?;
+//! assert_eq!(p.eval(&1.5), Some(2.0));
+//!
+//! let mut out = [0.0; 3];
+//! p.eval_batch_into(&[0.5, 1.0, f64::NAN], &mut out, -1.0)?;
+//! assert_eq!(out, [0.5, 1.0, -1.0]);
+//! # Ok(())
+//! # }
+//! ```
 //!
 //! Any type can be an interpolator by implementing [`Interpolator::eval`]. The
 //! batch methods come with it.
 //!
 //! ```
-//! use interpx::{InterpolateError, Interpolator};
+//! use interpx::Interpolator;
 //!
 //! /// Linear interpolation between (0, 0) and (1, 10).
 //! struct Ramp;
@@ -24,24 +43,22 @@
 //!     }
 //! }
 //!
-//! # fn main() -> Result<(), InterpolateError> {
-//! let mut out = [0.0; 3];
-//! Ramp.eval_batch_into(&[0.5, 2.0, f64::NAN], &mut out, -1.0)?;
-//! assert_eq!(out, [5.0, -1.0, -1.0]);
-//! # Ok(())
-//! # }
+//! assert_eq!(Ramp.eval_batch(&[0.5, 2.0]), [Some(5.0), None]);
 //! ```
 
 mod boundary;
 mod error;
 mod extrapolate;
 mod interpolator;
+mod ppoly;
 mod scalar;
+mod validate;
 mod value;
 
 pub use boundary::{BoundaryCondition, EndCondition};
 pub use error::InterpolateError;
 pub use extrapolate::Extrapolate;
 pub use interpolator::Interpolator;
+pub use ppoly::{Hint, PPoly};
 pub use scalar::Scalar;
 pub use value::Value;
