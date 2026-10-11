@@ -130,16 +130,19 @@ fn substitute<T: Scalar, V: Value<T>>(lower: &[T], pivots: &[T], upper: &[T], rh
     }
 }
 
+// The golden loader of the integration tests. An integration test cannot call
+// this crate-private module, so its tests are below and read the file the same
+// way (docs/conventions.md, "Golden data"). The module is declared here and not
+// inside `mod tests`: there the path would start from `src/tridiagonal/tests/`,
+// a directory that does not exist, and only Windows resolves `..` through one.
+#[cfg(test)]
+#[path = "../tests/common/mod.rs"]
+mod common;
+
 #[cfg(test)]
 mod tests {
-    // The golden loader of the integration tests. An integration test cannot call
-    // this crate-private module, so its tests are here and read the file the
-    // same way (docs/conventions.md, "Golden data").
-    #[path = "../../../tests/common/mod.rs"]
-    mod common;
-
+    use super::common::{assert_close, load, reals, Real, Tol, DIRECT_F64};
     use super::{solve, solve_cyclic, Breakdown};
-    use common::{assert_close, load, reals, Real, Tol, DIRECT_F64};
     use proptest::prelude::*;
     use serde_json::Value as Json;
 
