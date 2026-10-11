@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M1-7.
+M1-8.
 
 ## Dependencies
 
@@ -29,7 +29,7 @@ M1-7.
 | M1-4  | Feat | `BSpline` (de Boor) and `PPoly` ⇄ `BSpline` conversion                                                                                           | #18   | Done   |
 | M1-5  | Feat | `derivative`, `antiderivative`, `integrate`, `eval_derivative` on `PPoly` and `BSpline`                                                          | #23   | Done   |
 | M1-6  | Feat | Tridiagonal solver (Thomas, periodic via Sherman-Morrison)                                                                                       | #28   | Done   |
-| M1-7  | Feat | `Linear1D` and `Nearest1D` (nearest, nearest-up, previous, next)                                                                                 |       | Todo   |
+| M1-7  | Feat | `Linear1D` and `Nearest1D` (nearest, nearest-up, previous, next)                                                                                 | #35   | Done   |
 | M1-8  | Feat | `CubicSpline` (NotAKnot, Periodic, first or second derivative at each end)                                                                       |       | Todo   |
 | M1-9  | Feat | `PchipInterpolator`                                                                                                                              |       | Todo   |
 | M1-10 | Feat | `Akima1D` (including makima)                                                                                                                     |       | Todo   |

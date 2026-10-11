@@ -60,5 +60,13 @@ name = "ppoly"
 harness = false
 
 [[bench]]
+name = "linear"
+harness = false
+
+[[bench]]
+name = "nearest"
+harness = false
+
+[[bench]]
 name = "bspline"
 harness = false

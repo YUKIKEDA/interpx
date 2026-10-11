@@ -1,4 +1,4 @@
-"""Generate `goldens/oned.json`: layer-A goldens for the 1D interpolators.
+"""Generate `goldens/oned.json` and `goldens/calculus.json`: layer-A goldens for the 1D interpolators.
 
 Reference: SciPy 1.18 (`numpy.interp`, `interp1d` for the nearest kinds,
 `CubicSpline`, `PchipInterpolator`, `Akima1DInterpolator`, `CubicHermiteSpline`,
@@ -7,7 +7,7 @@ Reference: SciPy 1.18 (`numpy.interp`, `interp1d` for the nearest kinds,
 Each case stores the values at the queries and, where the reference has them, the
 first and second derivatives, the antiderivative, a few definite integrals, and
 the piecewise-polynomial or B-spline representation itself. The `calculus/*`
-cases store the derivatives and antiderivatives as objects (their coefficients, or
+cases, which go to `calculus.json` (one file has a size budget), store the derivatives and antiderivatives as objects (their coefficients, or
 knots and control points), derivatives of every order, and integrals that leave
 the domain or run over several periods.
 
@@ -196,6 +196,52 @@ def main() -> None:
                     expected=f(q),
                 )
             )
+
+    # Queries at infinity: `numpy.interp` returns the end values.
+    for name in ("fritsch_carlson", "random_20"):
+        x, y = ds[name]
+        q = np.concatenate([[-np.inf], queries_for(x), [np.inf]])
+        cases.append(
+            golden.case(f"interp/{name}/infinite", "numpy.interp", {}, x=x, y=y, queries=q, expected=np.interp(q, x, y))
+        )
+
+    # The nearest kinds outside the data, where SciPy returns the end values.
+    # (`previous` and `next` return NaN on one side each; interpx does not follow
+    # that, so they have no case here. docs/design.ja.md section 6.1.)
+    for name in ("fritsch_carlson", "random_20"):
+        x, y = ds[name]
+        q = queries_for(x)
+        for kind in ("nearest", "nearest-up"):
+            f = si.interp1d(x, y, kind=kind, bounds_error=False, fill_value="extrapolate")
+            cases.append(
+                golden.case(
+                    f"nearest/{kind}/{name}/extrapolate",
+                    "scipy.interpolate.interp1d",
+                    {"kind": kind, "bounds_error": False, "fill_value": "extrapolate"},
+                    x=x,
+                    y=y,
+                    queries=q,
+                    expected=f(q),
+                )
+            )
+
+    # Values with two columns.
+    x, y = ds["random_20"]
+    y2 = np.stack([y, np.cos(x)], axis=1)
+    q = queries_for(x)
+    for kind in ("nearest", "nearest-up", "previous", "next"):
+        f = si.interp1d(x, y2, axis=0, kind=kind, bounds_error=False, fill_value=np.nan)
+        cases.append(
+            golden.case(
+                f"nearest/{kind}/random_20/columns",
+                "scipy.interpolate.interp1d",
+                {"kind": kind, "bounds_error": False, "fill_value": "NaN"},
+                x=x,
+                y=y2,
+                queries=q,
+                expected=f(q),
+            )
+        )
 
     # CubicSpline.
     bcs = [
@@ -427,6 +473,7 @@ def main() -> None:
             )
         )
 
+    calculus = []
     # Derivatives and integrals as objects: the coefficients SciPy gives a
     # derivative and an antiderivative, derivatives of every order up to one past
     # the degree, and definite integrals that leave the domain.
@@ -434,7 +481,7 @@ def main() -> None:
         x, y = ds[name]
         q = queries_for(x)
         p = si.CubicSpline(x, y)
-        cases.append(
+        calculus.append(
             golden.case(
                 f"calculus/ppoly/cubic_spline/{name}",
                 "scipy.interpolate.PPoly",
@@ -444,7 +491,7 @@ def main() -> None:
         )
         for k in (2, 3, 5):
             b = si.make_interp_spline(x, y, k=k)
-            cases.append(
+            calculus.append(
                 golden.case(
                     f"calculus/bspline/k{k}/{name}",
                     "scipy.interpolate.BSpline",
@@ -454,7 +501,7 @@ def main() -> None:
             )
     x, y = ds["fritsch_carlson"]
     p = si.PchipInterpolator(x, y, extrapolate=True)
-    cases.append(
+    calculus.append(
         golden.case(
             "calculus/ppoly/pchip/fritsch_carlson",
             "scipy.interpolate.PPoly",
@@ -465,7 +512,7 @@ def main() -> None:
     x, y = ds["periodic_13"]
     q = queries_for(x, extend=0.6)
     p = si.CubicSpline(x, y, bc_type="periodic")
-    cases.append(
+    calculus.append(
         golden.case(
             "calculus/ppoly/cubic_spline/periodic_13",
             "scipy.interpolate.PPoly",
@@ -474,7 +521,7 @@ def main() -> None:
         )
     )
     b = si.make_interp_spline(x, y, k=3, bc_type="periodic")
-    cases.append(
+    calculus.append(
         golden.case(
             "calculus/bspline/k3/periodic_13",
             "scipy.interpolate.BSpline",
@@ -485,6 +532,8 @@ def main() -> None:
 
     path = golden.write("oned", GENERATOR, SEED, cases)
     print(f"wrote {path.name} ({len(cases)} cases)")
+    path = golden.write("calculus", GENERATOR, SEED, calculus)
+    print(f"wrote {path.name} ({len(calculus)} cases)")
 
 
 if __name__ == "__main__":
