@@ -17,14 +17,14 @@ M0-1.
 
 | ID   | Kind | Title                                              | Issue | Status      |
 | ---- | ---- | -------------------------------------------------- | ----- | ----------- |
-| M0-1 | Task | Repository rules, docs, ADRs, CI, and build config | N/A   | In progress |
+| M0-1 | Task | Repository rules, docs, ADRs, CI, and build config | #1    | In progress |
 
 ## M1: Core, 1D, and curve
 
 | ID    | Kind | Title                                                                                                  | Issue | Status |
 | ----- | ---- | ------------------------------------------------------------------------------------------------------ | ----- | ------ |
-| M1-1  | Task | Golden pipeline: `compare/` with pinned SciPy 1.18, `generate.py`, `tests/common`                      |       | Todo   |
-| M1-2  | Feat | `Interpolator` trait, `InterpolateError`, `Extrapolate`, `BoundaryCondition`, `tests/alloc.rs` harness |       | Todo   |
+| M1-1  | Task | Golden pipeline: `compare/` with pinned SciPy 1.18, `generate_*.py`, `tests/common`                      | #2    | Todo   |
+| M1-2  | Feat | `Interpolator` trait, `InterpolateError`, `Extrapolate`, `BoundaryCondition`, `tests/alloc.rs` harness, restore the CI coverage job |       | Todo   |
 | M1-3  | Feat | `PPoly` (interval-major layout, Horner evaluation, `Hint`)                                             |       | Todo   |
 | M1-4  | Feat | `BSpline` (de Boor) and `PPoly` ⇄ `BSpline` conversion                                                 |       | Todo   |
 | M1-5  | Feat | `derivative`, `antiderivative`, `integrate`, `eval_derivative` on `PPoly` and `BSpline`                |       | Todo   |
