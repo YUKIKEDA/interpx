@@ -300,7 +300,56 @@ interpx/
   * **`PPoly::from_bspline(&BSpline) -> Result<PPoly, _>`**（SciPy の `PPoly.from_spline`）: 区切り点は定義域 $[t_k, t_n]$ 内の相異なるノット。区間 $[u_j, u_{j+1}]$ の係数は、スプラインの $m$ 階導関数の $u_j$ での値を $m!$ で割ったもの（$u_j$ まわりのテイラー係数）。SciPy は全ノットを区切り点に残すので重複ノットが幅ゼロの区間になるが、`PPoly` の区切り点は狭義単調増加なので、幅ゼロの区間は作らない。
   * **`BSpline::from_ppoly(&PPoly) -> Result<BSpline, _>`**: 各区切り点に多重度 $k+1$ のノットを置き、区間ごとにべき基底の係数を Bernstein 基底の係数（Bézier の制御点）に直す。区間どうしの連続性を仮定しないので、不連続な区分多項式でも厳密に表せる。制御点は `区間数 × (k + 1)` 個になる。連続性を調べてノットの多重度を減らす処理は v0.1.0 の対象外（ロードマップ A-9）。次数が 15 を超える `PPoly` は `InvalidParameter` を返す。
   * 往復（`PPoly` → `BSpline` → `PPoly`、およびその逆）で、評価値が許容誤差内で一致することをテストする。
-* `derivative(nu)` / `antiderivative` / `integrate(a, b)` / `eval_derivative(x, nu)` を、`PPoly` と `BSpline` に提供する（M1-5）。
+* **導関数と積分（M1-5）**: `PPoly` と `BSpline` に、同じ形の 4 つの関数を置く。SciPy 1.18 は 3 か所で 2 つの型の挙動が違うが、ここでは統一する（下の「SciPy との差」）。
+  * **関数**:
+    * `derivative(nu: usize) -> Result<Self, InterpolateError>`: $\nu$ 階導関数。
+    * `antiderivative(nu: usize) -> Result<Self, InterpolateError>`: $\nu$ 階の原始関数。
+    * `integrate(a: T, b: T) -> Option<V>`: $a$ から $b$ までの定積分。
+    * `eval_derivative(x: T, nu: usize) -> Option<V>`: $x$ での $\nu$ 階導関数の値。
+  * `derivative` と `antiderivative` は新しいオブジェクトを作る（確保する）。`nu = 0` は複製を返す。係数があふれたら `NonFinite` を返す。`integrate` と `eval_derivative` は評価であり、確保しない（§3.2。`tests/alloc.rs` の対象）。
+  * **`derivative`**:
+    * `PPoly`: 区切り点はそのまま、次数は $k - \nu$。$(x - x_i)^m$ の係数に $m(m-1)\cdots(m-\nu+1)$ を掛け、低次の $\nu$ 個を落とす。
+    * `BSpline`: 1 階ごとに、ノットの両端を 1 個ずつ落とし、制御点を $c'_i = k\,\dfrac{c_{i+1} - c_i}{t_{i+k+1} - t_{i+1}}$（$n - 1$ 個）に置き換える。定義域 $[t_k, t_n]$ は変わらない。分母が 0 になるのは $t_{i+1} = \dots = t_{i+k+1}$ のときで、その基底関数は台が空なので、制御点は 0 とする。これで、`from_ppoly` が作る多重度 $k+1$ のノットを持つスプラインも微分できる。
+    * $\nu > k$ のときは、どちらの型も恒等的に 0 を返す。`PPoly` は区切り点をそのまま持つ 0 次、`BSpline` はノットが定義域の両端だけの 0 次である。
+  * **`antiderivative`**:
+    * `PPoly`: 次数は $k + \nu$。1 階ごとに、$(x - x_i)^m$ の係数を $m + 1$ で割って次数を上げ、定数項は、原始関数が区切り点で連続になるように左から足し上げる。
+    * `BSpline`: 1 階ごとに、ノットの両端に端のノットを 1 個ずつ足し、制御点を $C_0 = 0$、$C_{j+1} = C_j + c_j\,\dfrac{t_{j+k+1} - t_j}{k+1}$（$n + 1$ 個）とする。結果の次数が 15 を超えるときは `InvalidParameter { name: "nu", reason: TooLarge { max } }` を返す（`max` は $15 - k$）。
+    * **積分定数**: どちらの型も、定義域の左端で 0 にする。`BSpline` は上の制御点から、定義域の左端での値を引く（基底関数の和が 1 なので、全制御点から同じ値を引けばよい）。端のノットが $k+1$ 重なら引く値は厳密に 0 で、SciPy と一致する。
+  * **引き継ぐ外挿モード**:
+
+    | 元のモード | `derivative` | `antiderivative` |
+    | :--------- | :----------- | :--------------- |
+    | `Extend`   | `Extend`     | `Extend`         |
+    | `Forbid`   | `Forbid`     | `Forbid`         |
+    | `Periodic` | `Periodic`   | `Forbid`         |
+    | `Clamp`    | `Forbid`     | `Forbid`         |
+
+    周期関数の原始関数は一般に周期的でない（SciPy も「外挿なし」に変える）。`Clamp` は領域外を定数で延ばすので、導関数は外側で 0、原始関数は外側で 1 次式になり、どちらも 4 つのモードでは表せない。表せない領域は値を返さない `Forbid` にする。`Clamp` の外側の値が要るときは、元のオブジェクトの `eval_derivative` と `integrate` が返す。
+  * **`eval_derivative`**: `eval` が定める関数の $\nu$ 階導関数を返す。
+    * 区間の決め方は `eval` と同じ。導関数が跳ぶ区切り点では右側の区間の値、定義域の右端だけは左側の区間の値になる（SciPy と同じ）。
+    * 領域外は、`Extend` が端の多項式の導関数、`Periodic` が折り返した点での値、`Forbid` が `None`。`Clamp` は $\nu \ge 1$ なら 0（そこでは定数）。NaN は `None`。
+    * $\nu = 0$ は `eval` とビット同一。$\nu > k$ は、値を持つ点で 0。
+    * 評価の式は、`PPoly` が係数に階乗の比を掛けながらのホーナー法、`BSpline` が導関数用の漸化式（上の「漸化式の形」）。
+    * **バッチ版とヒント版は置かない**。多数の点では `derivative(nu)` で作ったオブジェクトに `eval_batch_into` を使う。`BSpline` はこの経路のほうが 1 点あたりも速い（値の漸化式のほうが速いため）。`derivative(nu)` は `Clamp` を引き継がないので、`Clamp` の外側の点は `eval_derivative` で求める。
+  * **`integrate`**: `eval` が定める関数の定積分を返す。
+    * $a > b$ は符号を反転した値、$a = b$ は 0。$a$ か $b$ が有限でなければ `None`。
+    * `Forbid`: $a$ か $b$ が定義域の外なら `None`。
+    * `Extend`: 端の多項式を延ばして積分する。
+    * `Clamp`: 外側の部分は、端の値 × 長さ。
+    * `Periodic`: 周期を $P$ として、$b - a$ を $P$ の整数倍と残りに分け、整数倍の分は 1 周期の積分の倍数、残りは折り返した区間（定義域の右端をまたぐときは 2 つに分ける）で求める（SciPy と同じ手順）。
+    * `PPoly`: またぐ区間ごとに、多項式の原始関数の両端での差を足す。計算量はまたぐ区間の数に比例する。
+    * `BSpline`: 原始関数 $F$ の制御点を配列に作らず、$F(b) - F(a)$ を直接求める。$a$ の区間 $\ell_a$ と $b$ の区間 $\ell_b$ で、次数 $k+1$ の基底関数の値（各 $k+2$ 個）をスタックに求め、$j = \ell_a - k$ から $\ell_b + 1$ まで $C_j$ を足し上げながら、重み（$b$ での基底の値 − $a$ での基底の値）を掛けて足す。基底関数の和は 1 なので、$C_{\ell_a - k} = 0$ から始めても差は変わらない。計算量はまたぐノット区間の数に比例する。次数 $k+1$ の基底は元のノット列の上でそのまま計算できる（足した両端のノットは、定義域の区間の漸化式に現れない）。作業配列は 17 個で、次数 15 のスプラインも積分できる。
+  * **SciPy との差**（`PPoly` と `BSpline` で挙動をそろえるため）:
+
+    | 場面 | SciPy 1.18 | `interpx` |
+    | :--- | :--------- | :-------- |
+    | `BSpline` の $\nu > k$ の `derivative` | `ValueError` | 恒等的に 0（`PPoly` と同じ） |
+    | 内部に多重度 $k+1$ のノットがある `BSpline` の `derivative` | `ValueError` | 微分できる |
+    | 端のノットが $k+1$ 重でない `BSpline` の原始関数 | 定義域の左端で 0 にならない | 定義域の左端で 0（`PPoly` と同じ） |
+    | 外挿なしで定義域を出る `integrate` | `PPoly` は NaN、`BSpline` は定義域に切り詰めて積分 | どちらも `None` |
+    | NaN の積分端 | `PPoly` は例外、`BSpline` は NaN | どちらも `None` |
+
+    いずれも SciPy 1.18.1 を実行して確かめた。
 * 三重対角系は Thomas 法、周期境界は Sherman–Morrison。
 
 ### 6.2 散乱データ幾何探索（`convx` 連携）
@@ -418,7 +467,7 @@ serde   = ["dep:serde"]
 
 * **照合の記録**: F1〜F5 は 2 つの独立した実装（UQTestFuns、および Burkardt の `test_interp_2d`（MIT））で式が一致した（F4 の係数 $\tfrac{81}{16}$ = 5.0625、F5 の $\tfrac{81}{4}$ = 20.25、いずれも因子 $\tfrac13$ を持つ）。F6 は UQTestFuns が $\tfrac19$ を欠くが、半径 $\tfrac89$ の球という記述と整合するのは $\tfrac19$ を持つ式であり、Burkardt の実装もこれと一致する。F1 の第 2 項は Burkardt の抜粋で二乗が見えないため、UQTestFuns の式を採る。Franke (1979) 原典は取得できていないため、golden を作る最初の行で原典または Renka–Brown の公開コードと再照合し、結果をこの節に追記する。
 * **散乱点の配置**: Franke の 100 点・33 点と、Lawson の 25 点の節点配置を使う（25 点は Franke ではなく Lawson の配置である）。座標は Burkardt の `test_interp_2d`（MIT）から機械的に転記する。Franke の 100 点には単位正方形の外に出る点があるため、単位正方形上のクエリの一部は凸包の外になる。
-* **golden の範囲**: 層 A の golden は、補間族ごとに `compare/goldens/` の `oned` / `curve` / `grid` / `scattered` / `rbf` に置く。入力のみの `datasets`（古典データ・節点配置・敵対的入力）と、解析関数の値の `functions` も置く。1D のケースは値に加えて、1 階・2 階導関数、原始関数、定積分、区分多項式の係数（または B-spline のノットと制御点）を持つ。グリッドの `cubic` / `quintic` の基準は §6.4 のとおり直接解法の値とする。
+* **golden の範囲**: 層 A の golden は、補間族ごとに `compare/goldens/` の `oned` / `curve` / `grid` / `scattered` / `rbf` に置く。入力のみの `datasets`（古典データ・節点配置・敵対的入力）と、解析関数の値の `functions` も置く。1D のケースは値に加えて、1 階・2 階導関数、原始関数、定積分、区分多項式の係数（または B-spline のノットと制御点）を持つ。`oned` の `calculus/*` は、導関数と原始関数そのもの（`PPoly` の係数、`BSpline` のノットと制御点）、3 階以上の導関数、2 階の原始関数、領域外にまたがる定積分、周期をまたぐ定積分を持つ。SciPy と意図して変える挙動（§6.1 の「SciPy との差」）は golden に入れず、解析解と性質テストで確かめる。グリッドの `cubic` / `quintic` の基準は §6.4 のとおり直接解法の値とする。
 * **サイズの上限**: golden は 1 ファイル 1 MB、ディレクトリ合計 4 MB を上限とする（公開パッケージに含めるため）。
 
 **1D の古典データ。** 値は一次資料（原論文・原典）から転記し、出典を golden の `meta` に記録する。
