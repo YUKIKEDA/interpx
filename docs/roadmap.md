@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M1-2. M0-1 is finished when Issue #1 is closed.
+M1-3. M0-1 is finished when Issue #1 is closed.
 
 ## Dependencies
 
@@ -24,8 +24,8 @@ M1-2. M0-1 is finished when Issue #1 is closed.
 | ID    | Kind | Title                                                                                                  | Issue | Status |
 | ----- | ---- | ------------------------------------------------------------------------------------------------------ | ----- | ------ |
 | M1-1  | Task | Golden pipeline and data sets: pinned SciPy 1.18, layer-A goldens for every family, `tests/common`     | #2    | Done   |
-| M1-2  | Feat | `Scalar`, `Value`, `Interpolator`, `InterpolateError`, `Extrapolate`, `BoundaryCondition`, `tests/alloc.rs` harness, restore the CI coverage job |       | Todo   |
-| M1-3  | Feat | `PPoly` (interval-major layout, Horner evaluation, `Hint`)                                             |       | Todo   |
+| M1-2  | Feat | `Scalar`, `Value`, `Interpolator`, `InterpolateError`, `Extrapolate`, `BoundaryCondition`, `tests/alloc.rs` harness, restore the CI coverage job | #11   | Done   |
+| M1-3  | Feat | `PPoly` (interval-major layout, Horner evaluation, `Hint`) and the shared input checks in their fixed order |       | Todo   |
 | M1-4  | Feat | `BSpline` (de Boor) and `PPoly` ⇄ `BSpline` conversion                                                 |       | Todo   |
 | M1-5  | Feat | `derivative`, `antiderivative`, `integrate`, `eval_derivative` on `PPoly` and `BSpline`                |       | Todo   |
 | M1-6  | Feat | Tridiagonal solver (Thomas, periodic via Sherman-Morrison)                                             |       | Todo   |

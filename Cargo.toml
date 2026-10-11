@@ -35,3 +35,8 @@ or_fun_call = "deny"
 [dev-dependencies]
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.152", features = ["float_roundtrip"] }
+stats_alloc = "0.1.10"
+
+[dependencies]
+num-traits = "0.2.19"
+thiserror = "2"

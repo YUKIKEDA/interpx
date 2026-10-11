@@ -8,7 +8,7 @@ Pure Rust interpolation covering the main classes of `scipy.interpolate` (SciPy 
 | ------------------------------ | ------------------------------------------------------------- |
 | Design (canonical, Japanese)   | `docs/design.ja.md`                                           |
 | Order and status of work       | `docs/roadmap.md`                                             |
-| Modules and directory tree     | `docs/conventions.md` (created by the first module Issue, M1) |
+| Modules and directory tree     | `docs/conventions.md`                                         |
 | Why a decision was made        | `docs/adr/` (`0001-...`, one decision per file)               |
 | Build, test, and gate commands | `justfile`                                                    |
 
