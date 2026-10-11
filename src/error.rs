@@ -43,9 +43,15 @@ pub enum InterpolateError {
     },
 
     /// A coordinate or a value is NaN or infinite.
+    ///
+    /// Coordinates are checked before values. `index` is a position among the
+    /// coordinates when one of them is at fault, and a position among the values
+    /// only when every coordinate is finite. The variant does not say which of
+    /// the two it is: check the coordinates to tell.
     #[error("non-finite value at index {index}")]
     NonFinite {
-        /// The index of the first non-finite entry.
+        /// The index of the first non-finite entry, in the coordinates or, when
+        /// those are all finite, in the values.
         index: usize,
     },
 

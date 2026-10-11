@@ -110,7 +110,9 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
     /// - [`InterpolateError::InsufficientPoints`] when there are fewer than two
     ///   break points.
     /// - [`InterpolateError::NonFinite`] when a break point, or else a coefficient,
-    ///   is NaN or infinite.
+    ///   is NaN or infinite. Its `index` is the position in `breakpoints` when a
+    ///   break point is at fault; only when every break point is finite is it a
+    ///   position in `coefficients`.
     /// - [`InterpolateError::DuplicatePoints`] or [`InterpolateError::NotSorted`]
     ///   when the break points do not increase strictly.
     ///
@@ -258,10 +260,15 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
     /// updated to the interval used, so a run of nearby queries skips the binary
     /// search.
     ///
-    /// Use this for queries that come in order. For queries in no order the hint
-    /// misses, and a miss costs more than the binary search alone: call `eval`
-    /// instead, or [`eval_batch_into`](Interpolator::eval_batch_into), which
-    /// stops using its hint while it keeps missing.
+    /// Use this for queries that come in order. Each hinted search starts from the
+    /// interval of the query before it, so it waits for that one. For queries in
+    /// no order the wait is a whole binary search, and plain searches, which do
+    /// not wait for each other, are about twice as fast: call `eval` instead.
+    ///
+    /// [`eval_batch_into`](Interpolator::eval_batch_into) makes this choice
+    /// itself. It takes the points 64 at a time and uses a hint only on a run that
+    /// is in order (rising or falling) and crosses no more intervals than it has
+    /// points.
     ///
     /// # Examples
     ///

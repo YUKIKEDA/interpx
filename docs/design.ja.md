@@ -195,6 +195,7 @@ pub enum InterpolateError {
   | `SolverFailed(SolverError)`                                | M3（RBF）          | 特異な連立方程式（`SolverError::Singular`）            |
   | `DegenerateGeometry(DegeneracyKind)`                       | M4（`LinearND`）   | `LowerDimensional { affine_dim }`、`NumericalLimit`    |
 
+* `NonFinite { index }` の `index` は、座標に非有限値があればその座標の位置で、座標がすべて有限のときに限り値の位置である（検証は座標が先。§3.5）。variant からはどちらの配列かを区別できない。
 * 文字列のペイロードは持たない（パターンマッチできる型付きの値だけ）。`ParamReason`・`SolverError`・`DegeneracyKind` も `#[non_exhaustive]`。
 * 次元の不一致を表す variant は持たない（`const D` のみなので、型で表現できない）。
 * `NotSorted { index }` の `index` は、直前の座標より小さい最初の要素。`LengthMismatch` の `expected` は座標（またはクエリ）の長さ、`actual` は値（または出力バッファ）の長さ。
