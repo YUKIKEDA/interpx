@@ -84,6 +84,27 @@ pub fn load<C: DeserializeOwned>(name: &str) -> Result<GoldenFile<C>, String> {
         .map_err(|e| format!("cannot parse golden file {}: {e}", path.display()))
 }
 
+/// The cases of several golden files, one after the other.
+///
+/// The 1D interpolators that are piecewise polynomials have their cases in more
+/// than one file (a file has a size budget); a test over all of them reads the
+/// files together.
+///
+/// # Errors
+///
+/// The same as [`load`].
+pub fn load_cases(names: &[&str]) -> Result<Vec<serde_json::Value>, String> {
+    let mut cases = Vec::new();
+    for name in names {
+        cases.extend(load::<serde_json::Value>(name)?.cases);
+    }
+    Ok(cases)
+}
+
+/// The golden files that hold piecewise polynomials: `breakpoints` and
+/// `coefficients` beside the values.
+pub const PIECEWISE: [&str; 2] = ["oned", "cubic_spline"];
+
 /// A fixed relative and absolute tolerance, written in the test that uses it
 /// (`.cursor/rules/numeric-tests.mdc`). Never derive it from the constant the
 /// test guards.

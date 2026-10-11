@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{assert_close, load, reals, Real, DIRECT_F64};
+use common::{assert_close, reals, Real, DIRECT_F64};
 use interpx::{Extrapolate, Hint, InterpolateError as E, Interpolator, PPoly};
 use proptest::prelude::*;
 use serde_json::Value as Json;
@@ -52,9 +52,9 @@ fn mode_of(case: &Json) -> Extrapolate {
 
 #[test]
 fn scipy_piecewise_polynomials_evaluate_to_the_golden_values() {
-    let file = load::<Json>("oned").expect("golden file oned");
+    let all_cases = common::load_cases(&common::PIECEWISE).expect("golden files");
     let (mut cases, mut modes) = (0, std::collections::BTreeSet::new());
-    for case in &file.cases {
+    for case in &all_cases {
         let name = case["name"].as_str().expect("name");
         let (Some(breakpoints), Some(coefficients), Some(queries), Some(expected)) = (
             case.get("breakpoints"),
@@ -90,8 +90,8 @@ fn scipy_piecewise_polynomials_evaluate_to_the_golden_values() {
         cases += 1;
         modes.insert(format!("{mode:?}"));
     }
-    // CubicSpline 32, PCHIP 10, Akima 12, Hermite 4.
-    assert_eq!(cases, 58, "cases with a piecewise polynomial");
+    // CubicSpline 49, PCHIP 10, Akima 12, Hermite 4.
+    assert_eq!(cases, 75, "cases with a piecewise polynomial");
     assert_eq!(modes.len(), 3, "extend, forbid, and periodic: {modes:?}");
 }
 

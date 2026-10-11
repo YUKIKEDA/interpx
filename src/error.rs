@@ -115,6 +115,10 @@ pub enum ParamReason {
         /// The largest value the method supports.
         max: usize,
     },
+
+    /// The value is NaN or infinite.
+    #[error("not finite")]
+    NonFinite,
 }
 
 #[cfg(test)]
@@ -160,6 +164,13 @@ mod tests {
                     reason: super::ParamReason::TooLarge { max: 15 },
                 },
                 "invalid parameter `degree`: larger than 15",
+            ),
+            (
+                E::InvalidParameter {
+                    name: "bc",
+                    reason: super::ParamReason::NonFinite,
+                },
+                "invalid parameter `bc`: not finite",
             ),
         ];
         for (err, message) in cases {

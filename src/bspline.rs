@@ -179,6 +179,11 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
     /// jumps at a break point is represented exactly, too. The extrapolation mode
     /// is kept.
     ///
+    /// Inside the break points the two forms agree to rounding. Extended far past
+    /// an end, the B-spline form of a short end piece loses digits that the
+    /// piecewise polynomial keeps: at `r` widths of the end piece beyond it, the
+    /// rounding error grows about as `r^degree`. Evaluate `poly` there instead.
+    ///
     /// # Errors
     ///
     /// Returns [`InterpolateError::InvalidParameter`] when the degree of `poly` is

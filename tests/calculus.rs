@@ -126,9 +126,9 @@ fn check_integrals(v: &Json, what: &str, f: impl Fn(f64, f64) -> Option<f64>) ->
 
 #[test]
 fn scipy_piecewise_polynomials_differentiate_and_integrate_to_the_golden_values() {
-    let file = load::<Json>("oned").expect("golden file oned");
+    let all_cases = common::load_cases(&common::PIECEWISE).expect("golden files");
     let (mut cases, mut integrals, mut modes) = (0, 0, std::collections::BTreeSet::new());
-    for case in &file.cases {
+    for case in &all_cases {
         let name = case["name"].as_str().expect("name");
         if case.get("coefficients").is_none() || case.get("expected").is_none() {
             continue;
@@ -167,8 +167,8 @@ fn scipy_piecewise_polynomials_differentiate_and_integrate_to_the_golden_values(
         cases += 1;
         modes.insert(format!("{:?}", p.extrapolate()));
     }
-    assert_eq!(cases, 58, "the cases tests/ppoly.rs evaluates");
-    assert_eq!(integrals, 58 * 4);
+    assert_eq!(cases, 75, "the cases tests/ppoly.rs evaluates");
+    assert_eq!(integrals, 75 * 4);
     assert_eq!(modes.len(), 3, "extend, forbid, and periodic: {modes:?}");
 }
 
