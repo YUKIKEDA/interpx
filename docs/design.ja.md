@@ -223,7 +223,7 @@ interpx/
 │   ├── akima         # Akima1DInterpolator (makima 含む)
 │   ├── hermite       # CubicHermiteSpline
 │   ├── bspline       # make_interp_spline (任意次数 k)
-│   └── nearest       # Nearest1D (nearest / previous / next)
+│   └── nearest       # Nearest1D (nearest / nearest-up / previous / next)
 ├── curve/            # N次元パラメトリック曲線
 │   └── nd_curve      # BSplineCurve
 ├── grid/             # N次元直交グリッド補間
@@ -234,7 +234,10 @@ interpx/
     ├── clough_tocher # CloughTocher2DInterpolator
     └── rbf           # RBFInterpolator (faer + kiddo)
 ```
-（モジュール名は Rust の識別子制約を避け `oned` とする。公開パスの最終名は M1 で確定。）
+（モジュール名は Rust の識別子制約を避け `oned` とする。）
+
+* これはソースの置き場である。`oned` などのモジュールは**非公開**で、公開する項目はすべて `lib.rs` から再輸出する。公開パスは `interpx::Linear1D` のように crate 直下になる（M1-7 で確定）。
+* 補間器が共用する基盤（`PPoly`・`BSpline`・区間探索・入力検査・三重対角ソルバー）は、この木の外、`src/` の直下に置く。
 
 ### 5.2 網羅対応表
 
@@ -361,6 +364,40 @@ interpx/
   * **巡回三重対角（周期境界）**: 三重対角に加えて右上 $A_{0,n-1}$ と左下 $A_{n-1,0}$ に 1 要素ずつを持つ系を、Sherman–Morrison の公式で解く。右上は `lower[0]`、左下は `upper[n-1]` に置く（非周期版が読まない 2 要素を使う）。$\gamma = -A_{0,0}$ として、$A = A' + u v^{\mathsf T}$、$u = (\gamma, 0, \dots, 0, A_{n-1,0})^{\mathsf T}$、$v = (1, 0, \dots, 0, A_{0,n-1}/\gamma)^{\mathsf T}$ と分ける。$A'$ は三重対角で、$A$ の対角の両端を $A_{0,0} - \gamma$ と $A_{n-1,n-1} - A_{n-1,0}A_{0,n-1}/\gamma$ に替えたものである。$A' y = b$ と $A' z = u$ を解き、$x = y - z\,\dfrac{v^{\mathsf T} y}{1 + v^{\mathsf T} z}$ とする。消去は 1 回、代入は 2 回で、$z$ 用の長さ $n$ の作業配列は呼び出し側が渡す。
   * **大きさ**: 非周期版は $n \ge 1$。巡回版は $n \ge 3$（$n \le 2$ では巡回の形が定まらない）。点数が少ない周期スプラインは、SciPy と同じく `CubicSpline` 側で別に扱う（M1-8）。
 * **帯行列ソルバー（M1-12）**: `BSpline1D` の選点行列と、グリッドの `cubic` / `quintic`（§6.4）の軸ごとの系は、三重対角より帯が広い（次数 $k$ で、not-a-knot のノット列では下帯・上帯とも最大 $k$）。これは**部分ピボットつきの帯行列 LU** で解く（SciPy は LAPACK の `gbsv`）。M1-12 が crate 内に実装し、M2-2 がそれを使う。三重対角を帯行列 LU で兼ねないのは、`CubicSpline` の構築がもっともよく使われる経路で、専用の Thomas 法のほうが速いためである。
+* **区分多項式である補間器と `PPoly`**: `Linear1D`・`CubicSpline`・`PchipInterpolator`・`Akima1D`・`CubicHermiteSpline` は、内部に `PPoly` を持ち、`as_ppoly(&self) -> &PPoly<T, V>` で貸し出す（確保しない）。導関数と積分（`derivative`・`antiderivative`・`integrate`・`eval_derivative`）は、この `PPoly` のものを使う。補間器の型に同じ 4 つの関数を重ねて持たせない。`PPoly` の外挿モードは補間器のものと同じにする。
+* **`Linear1D<T: Scalar, V: Value<T> = T>`（M1-7、`numpy.interp`）**: 折れ線。
+  * **構築**: `Linear1D::new(&[T], &[V])`。検査は §3.5 の順で、点は 2 個以上（`InsufficientPoints { required: 2 }`）。
+  * **保持するもの**: 1 次の `PPoly`（区間 $i$ の係数は、傾き $s_i = (y_{i+1} - y_i)/(x_{i+1} - x_i)$ と左端の値 $y_i$）と、最後のデータ値 $y_{n-1}$。
+  * **評価**: 区間 $i$ で $y_i + s_i\,(x - x_i)$（`numpy.interp` と同じ式）。左端 $x = x_i$ では $y_i$ が厳密に返る。区間の右端 $x = x_{i+1}$ に当たるのは定義域の右端だけで、そこでは式を使わず $y_{n-1}$ をそのまま返す（式のままだと 1 ulp ずれることがある）。したがって、すべての節点でデータ値が厳密に返る。`as_ppoly()` の `eval` は式のままなので、定義域の右端で 1 ulp 違うことがある。
+  * **領域外**: 4 モード。既定は `Clamp`（`numpy.interp` と同じく端のデータ値を返す。右外は $y_{n-1}$ が厳密に返る）。`Extend` は端の線分を延ばす。`Periodic` は他の型と同じ、定義域への折り返しである。
+  * **`numpy.interp` の引数との対応**: 外側の埋め値 `left` / `right` は持たない。`Forbid` にして `eval_or(x, fill)` を使う（左右で別の値にするなら、呼び出し側が `None` を受けて定義域と比べる）。`period` も持たない。`numpy.interp` の `period` は節点も周期で折り返して並べ直すもので、`Periodic` とは意味が違う。
+  * **`eval_hinted` とバッチ**: `PPoly` と同じ（`search` を使う）。
+* **`Nearest1D<T: Scalar, V: Value<T> = T>`（M1-7、`interp1d` の `nearest` / `nearest-up` / `previous` / `next`）**: 最も近い（または直前・直後の）データ点の値を返す。
+  * **構築**: `Nearest1D::new(&[T], &[V], NearestKind)`。`NearestKind::{Nearest, NearestUp, Previous, Next}`（`#[non_exhaustive]`）。検査は §3.5 の順で、点は 2 個以上。
+  * **保持するもの**: 座標と値と種類だけ。`PPoly` は持たず、`as_ppoly()` もない（区分定数だが、点がどの区間に属するかが `PPoly` と違う）。
+  * **どの点の値を返すか**: 定義域内の $x$ が区間 $[x_i, x_{i+1}]$ にあるとき、次の点の値を返す。
+
+    | 種類 | 返す点 |
+    | :--- | :----- |
+    | `Nearest` | 中点 $m_i$ に対し、$x \le m_i$ なら $x_i$、そうでなければ $x_{i+1}$（中点ちょうどは左） |
+    | `NearestUp` | $x < m_i$ なら $x_i$、そうでなければ $x_{i+1}$（中点ちょうどは右） |
+    | `Previous` | $x < x_{i+1}$ なら $x_i$、$x = x_{i+1}$ なら $x_{i+1}$（$x$ 以下で最大の節点） |
+    | `Next` | $x = x_i$ なら $x_i$、そうでなければ $x_{i+1}$（$x$ 以上で最小の節点） |
+
+    中点は SciPy と同じ式 $m_i = x_i/2 + x_{i+1}/2$ で求める（和を先に取らないので、あふれない）。丸めまで SciPy と同じ点を選ぶ。
+  * **領域外**: 4 モード。既定は `Forbid`（SciPy の `interp1d` は既定で例外を出す）。`Clamp` と `Extend` はどちらも端のデータ値を返す（区分定数を延ばしても同じ値）。`Periodic` は折り返す。NaN のクエリは `None`。
+  * **`eval_hinted` とバッチ**: `search` で区間を求め、上の表で点を選ぶ。`PPoly` と同じ経路なので、ヒントとバッチの結果は `eval` とビット同一である。
+* **NumPy・SciPy との差（M1-7）**:
+
+  | 場面 | NumPy 2.5 / SciPy 1.18 | `interpx` |
+  | :--- | :--------------------- | :-------- |
+  | データ点が 1 個 | `numpy.interp` は定数、`interp1d` も構築できる | `InsufficientPoints`（区間探索は 2 点以上を前提にする） |
+  | 重複した $x$、並んでいない $x$ | `numpy.interp` は検査しない。`interp1d` は並べ替え、重複を受け付ける | `DuplicatePoints` / `NotSorted`（§3.5） |
+  | 値の無限大 | `numpy.interp` は受け付ける | `NonFinite`（§3.5） |
+  | `Nearest1D` の NaN のクエリ | 最後のデータ値 | `None` |
+  | `fill_value="extrapolate"` の `previous` の左外、`next` の右外 | NaN | `Clamp` / `Extend` は端のデータ値 |
+
+  いずれも NumPy 2.5.4 と SciPy 1.18.1 を実行して確かめた。
 
 ### 6.2 散乱データ幾何探索（`convx` 連携）
 * **Delaunay 分割**: `[[f64; D]]` をコピーなしで `&[f64]`（row-major）にフラット化して `convx` に渡す。
@@ -477,7 +514,7 @@ serde   = ["dep:serde"]
 
 * **照合の記録**: F1〜F5 は 2 つの独立した実装（UQTestFuns、および Burkardt の `test_interp_2d`（MIT））で式が一致した（F4 の係数 $\tfrac{81}{16}$ = 5.0625、F5 の $\tfrac{81}{4}$ = 20.25、いずれも因子 $\tfrac13$ を持つ）。F6 は UQTestFuns が $\tfrac19$ を欠くが、半径 $\tfrac89$ の球という記述と整合するのは $\tfrac19$ を持つ式であり、Burkardt の実装もこれと一致する。F1 の第 2 項は Burkardt の抜粋で二乗が見えないため、UQTestFuns の式を採る。Franke (1979) 原典は取得できていないため、golden を作る最初の行で原典または Renka–Brown の公開コードと再照合し、結果をこの節に追記する。
 * **散乱点の配置**: Franke の 100 点・33 点と、Lawson の 25 点の節点配置を使う（25 点は Franke ではなく Lawson の配置である）。座標は Burkardt の `test_interp_2d`（MIT）から機械的に転記する。Franke の 100 点には単位正方形の外に出る点があるため、単位正方形上のクエリの一部は凸包の外になる。
-* **golden の範囲**: 層 A の golden は、補間族ごとに `compare/goldens/` の `oned` / `curve` / `grid` / `scattered` / `rbf` に置く。入力のみの `datasets`（古典データ・節点配置・敵対的入力）と、解析関数の値の `functions` も置く。1D のケースは値に加えて、1 階・2 階導関数、原始関数、定積分、区分多項式の係数（または B-spline のノットと制御点）を持つ。`oned` の `calculus/*` は、導関数と原始関数そのもの（`PPoly` の係数、`BSpline` のノットと制御点）、3 階以上の導関数、2 階の原始関数、領域外にまたがる定積分、周期をまたぐ定積分を持つ。SciPy と意図して変える挙動（§6.1 の「SciPy との差」）は golden に入れず、解析解と性質テストで確かめる。三重対角ソルバーの golden は `tridiagonal` に置く（SciPy の `solve_banded` の解。優対角のランダム行列、古典データから作った 4 種の境界条件の行列、巡回行列、条件の悪い行列、$n = 1$〜$3$、複数列の右辺）。グリッドの `cubic` / `quintic` の基準は §6.4 のとおり直接解法の値とする。
+* **golden の範囲**: 層 A の golden は、補間族ごとに `compare/goldens/` の `oned` / `curve` / `grid` / `scattered` / `rbf` に置く。入力のみの `datasets`（古典データ・節点配置・敵対的入力）と、解析関数の値の `functions` も置く。1D のケースは値に加えて、1 階・2 階導関数、原始関数、定積分、区分多項式の係数（または B-spline のノットと制御点）を持つ。`oned` の `calculus/*` は、導関数と原始関数そのもの（`PPoly` の係数、`BSpline` のノットと制御点）、3 階以上の導関数、2 階の原始関数、領域外にまたがる定積分、周期をまたぐ定積分を持つ。SciPy と意図して変える挙動（§6.1 の「SciPy との差」）は golden に入れず、解析解と性質テストで確かめる。`oned` には M1-7 で、無限大のクエリ（`numpy.interp`）、`fill_value="extrapolate"` の `nearest` / `nearest-up`、2 列の値（`interp1d`）を加える。三重対角ソルバーの golden は `tridiagonal` に置く（SciPy の `solve_banded` の解。優対角のランダム行列、古典データから作った 4 種の境界条件の行列、巡回行列、条件の悪い行列、$n = 1$〜$3$、複数列の右辺）。グリッドの `cubic` / `quintic` の基準は §6.4 のとおり直接解法の値とする。
 * **サイズの上限**: golden は 1 ファイル 1 MB、ディレクトリ合計 4 MB を上限とする（公開パッケージに含めるため）。
 
 **1D の古典データ。** 値は一次資料（原論文・原典）から転記し、出典を golden の `meta` に記録する。
