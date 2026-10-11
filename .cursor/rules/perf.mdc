@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Performance rules
 
-The hot path is evaluation: `eval`, `eval_or`, `eval_into`, `eval_batch_into`, and the `_par` forms. Construction may allocate.
+The hot path is evaluation: `eval`, `eval_or`, `eval_batch_into`, and the `_par` forms. Construction may allocate.
 
 ## Allocation
 
