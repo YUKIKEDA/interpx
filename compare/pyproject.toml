@@ -1,0 +1,12 @@
+[project]
+name = "interpx-compare"
+version = "0.0.0"
+description = "Golden-data generators and comparison runners for interpx. Not published."
+requires-python = ">=3.12"
+dependencies = [
+    "numpy",
+    "scipy==1.18.*",
+]
+
+[tool.uv]
+package = false

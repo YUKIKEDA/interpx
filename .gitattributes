@@ -1,0 +1,2 @@
+compare/goldens/*.json text eol=lf
+compare/uv.lock text eol=lf
