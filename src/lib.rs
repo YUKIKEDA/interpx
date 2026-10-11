@@ -4,8 +4,9 @@
 //! [`Value`], the [`Interpolator`] trait, [`InterpolateError`], [`Extrapolate`],
 //! [`BoundaryCondition`]) and the two spline representations the 1D
 //! interpolators evaluate through: [`PPoly`], a piecewise polynomial, and
-//! [`BSpline`]. Both can be differentiated and integrated. The interpolators
-//! themselves follow.
+//! [`BSpline`]. Both can be differentiated and integrated. The first
+//! interpolators built from data are [`Linear1D`] and [`Nearest1D`]; the others
+//! follow.
 //!
 //! # Examples
 //!
@@ -53,6 +54,7 @@ mod bspline;
 mod error;
 mod extrapolate;
 mod interpolator;
+mod oned;
 mod ppoly;
 mod scalar;
 mod search;
@@ -72,6 +74,7 @@ pub use bspline::{BSpline, BSPLINE_MAX_DEGREE};
 pub use error::{InterpolateError, ParamReason};
 pub use extrapolate::Extrapolate;
 pub use interpolator::Interpolator;
+pub use oned::{Linear1D, Nearest1D, NearestKind};
 pub use ppoly::PPoly;
 pub use scalar::Scalar;
 pub use search::Hint;

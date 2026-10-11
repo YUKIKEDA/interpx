@@ -20,6 +20,9 @@ src/
                     but for Hint)
   tridiagonal.rs    tridiagonal and cyclic systems: Thomas, Sherman-Morrison (crate-private)
   ppoly.rs          PPoly: piecewise polynomial, Horner evaluation, derivatives and integrals
+  oned/             interpolators of data in one variable (a private module; mod.rs re-exports)
+    linear.rs       Linear1D: numpy.interp; holds a PPoly of degree 1
+    nearest.rs      Nearest1D and NearestKind: nearest, nearest-up, previous, next
   bspline.rs        BSpline: basis functions on the stack, derivatives and integrals;
                     PPoly::from_bspline and BSpline::from_ppoly
 tests/
@@ -32,11 +35,17 @@ tests/
   ppoly.rs          PPoly: golden values, input checks, intervals, extrapolation, properties
   bspline.rs        BSpline and the conversions: golden values (1D, curves, SciPy's coefficients),
                     input checks, repeated knots, extrapolation, properties
+  linear.rs         Linear1D: golden values, input checks, exact values at the data points,
+                    extrapolation, properties
+  nearest.rs        Nearest1D: golden values (bit for bit), input checks, the point each
+                    kind returns, extrapolation, properties
   calculus.rs       derivatives and integrals of both types: golden values, the cases where
                     SciPy's two types differ, extrapolation, properties
 benches/
   ppoly.rs          time to evaluate, differentiate, and integrate a PPoly (criterion; `just bench`)
   bspline.rs        the same for a BSpline
+  linear.rs         time to evaluate a Linear1D, and the same polygon through its PPoly
+  nearest.rs        time to evaluate a Nearest1D
 compare/            Python side: pinned SciPy, data sets, generators, goldens (see the golden-data skill)
 docs/               design.ja.md, roadmap.md, conventions.md, adr/
 ```
@@ -45,6 +54,7 @@ docs/               design.ja.md, roadmap.md, conventions.md, adr/
 
 - **Public surface.** Every public item is re-exported from `lib.rs`. Modules are private (`mod`, not `pub mod`), so the path of an item is `interpx::Name`.
 - **Dependencies between modules.** `scalar` depends on nothing. `value` depends on `scalar`. `error`, `extrapolate` depend on nothing. `boundary` depends on `scalar`. `interpolator` depends on `error`. `validate` depends on `error`, `scalar`, and `value`. `search` depends on `error`, `extrapolate`, `scalar`, and `value`. `tridiagonal` depends on `scalar` and `value`. An interpolator module depends on these, never the other way round. `bspline` depends on `ppoly` (it holds both conversions), and `ppoly` does not depend on `bspline`.
+- **Interpolators.** An interpolator built from data is a file under `src/oned/` (later `curve/`, `grid/`, `scattered/`, as in `docs/design.ja.md` §5.1). These modules are private; `lib.rs` re-exports the types. What several interpolators share (`ppoly`, `bspline`, `search`, `validate`, `tridiagonal`) stays directly under `src/`. An interpolator that is a piecewise polynomial holds a `PPoly` and lends it with `as_ppoly()`; it does not repeat `derivative`, `antiderivative`, `integrate`, or `eval_derivative`.
 - **Interval search.** A type that evaluates on a grid of break points or knots calls `search::eval`, `search::eval_hinted`, and `search::eval_batch_into` with a closure for the interval. It does not write its own search, extrapolation, or batch loop. Its `eval_derivative` and `integrate` call `search::eval_derivative` and `search::integrate` in the same way, so that both follow the extrapolation mode as `eval` does. A property of the two types that both must have is tested on both in `tests/calculus.rs`.
 - **Unit tests** are `#[cfg(test)] mod tests` at the end of the module they test. **Integration tests** in `tests/` use only the public API.
 - **Allocation.** A new interpolator is added to `tests/alloc.rs` in the PR that adds it. The counter is global to the process, so the file is built with `harness = false` and all checks are in its `main`: the test harness has threads of its own, and an allocation on one of them during a measured region is counted (it failed a CI job once). The lints treat this file as library code, so it uses `?`, not `expect`.

@@ -197,6 +197,52 @@ def main() -> None:
                 )
             )
 
+    # Queries at infinity: `numpy.interp` returns the end values.
+    for name in ("fritsch_carlson", "random_20"):
+        x, y = ds[name]
+        q = np.concatenate([[-np.inf], queries_for(x), [np.inf]])
+        cases.append(
+            golden.case(f"interp/{name}/infinite", "numpy.interp", {}, x=x, y=y, queries=q, expected=np.interp(q, x, y))
+        )
+
+    # The nearest kinds outside the data, where SciPy returns the end values.
+    # (`previous` and `next` return NaN on one side each; interpx does not follow
+    # that, so they have no case here. docs/design.ja.md section 6.1.)
+    for name in ("fritsch_carlson",):
+        x, y = ds[name]
+        q = queries_for(x)
+        for kind in ("nearest", "nearest-up"):
+            f = si.interp1d(x, y, kind=kind, bounds_error=False, fill_value="extrapolate")
+            cases.append(
+                golden.case(
+                    f"nearest/{kind}/{name}/extrapolate",
+                    "scipy.interpolate.interp1d",
+                    {"kind": kind, "bounds_error": False, "fill_value": "extrapolate"},
+                    x=x,
+                    y=y,
+                    queries=q,
+                    expected=f(q),
+                )
+            )
+
+    # Values with two columns.
+    x, y = ds["fritsch_carlson"]
+    y2 = np.stack([y, np.cos(x)], axis=1)
+    q = queries_for(x)
+    for kind in ("nearest", "nearest-up", "previous", "next"):
+        f = si.interp1d(x, y2, axis=0, kind=kind, bounds_error=False, fill_value=np.nan)
+        cases.append(
+            golden.case(
+                f"nearest/{kind}/fritsch_carlson/columns",
+                "scipy.interpolate.interp1d",
+                {"kind": kind, "bounds_error": False, "fill_value": "NaN"},
+                x=x,
+                y=y2,
+                queries=q,
+                expected=f(q),
+            )
+        )
+
     # CubicSpline.
     bcs = [
         "natural",

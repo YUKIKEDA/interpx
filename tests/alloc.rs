@@ -13,7 +13,10 @@
 //!
 //! A row that adds an interpolator adds it to `main`.
 
-use interpx::{BSpline, Extrapolate, Hint, InterpolateError, Interpolator, PPoly};
+use interpx::{
+    BSpline, Extrapolate, Hint, InterpolateError, Interpolator, Linear1D, Nearest1D, NearestKind,
+    PPoly,
+};
 use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
 use std::alloc::System;
 
@@ -209,12 +212,80 @@ fn main() -> Result<(), InterpolateError> {
         );
     }
 
+    // Linear1D and Nearest1D: the same queries and modes, a scalar and an array
+    // value, every kind of nearest. The last data point (2.0) is among them:
+    // Linear1D returns its value by another path than the formula.
+    let at_points = [0.5, 1.0, 1.75, 2.0, -3.0, 9.0, f64::NAN];
+    for mode in [
+        Extrapolate::Forbid,
+        Extrapolate::Clamp,
+        Extrapolate::Extend,
+        Extrapolate::Periodic,
+    ] {
+        let scalar = Linear1D::new(&[0.0, 1.0, 2.0], &[1.0, -1.0, 4.0])?.with_extrapolate(mode);
+        check(
+            &format!("Linear1D<f64> {mode:?}"),
+            &scalar,
+            &at_points,
+            f64::NAN,
+        );
+        let array = Linear1D::new(&[0.0, 1.0, 2.0], &[[1.0_f64, 2.0], [3.0, 4.0], [0.0, 0.5]])?
+            .with_extrapolate(mode);
+        check(
+            &format!("Linear1D<f64, [f64; 2]> {mode:?}"),
+            &array,
+            &at_points,
+            [f64::NAN; 2],
+        );
+        let n = allocations(|| {
+            let mut hint = Hint::new();
+            for x in at_points {
+                std::hint::black_box(scalar.eval_hinted(x, &mut hint));
+            }
+            std::hint::black_box(scalar.as_ppoly());
+        });
+        assert_eq!(n, 0, "Linear1D {mode:?}: eval_hinted or as_ppoly allocates");
+
+        for kind in [
+            NearestKind::Nearest,
+            NearestKind::NearestUp,
+            NearestKind::Previous,
+            NearestKind::Next,
+        ] {
+            let scalar =
+                Nearest1D::new(&[0.0, 1.0, 2.0], &[1.0, -1.0, 4.0], kind)?.with_extrapolate(mode);
+            check(
+                &format!("Nearest1D<f64> {kind:?} {mode:?}"),
+                &scalar,
+                &at_points,
+                f64::NAN,
+            );
+            let array = Nearest1D::new(&[0.0, 1.0], &[[1.0_f64, 2.0], [3.0, 4.0]], kind)?
+                .with_extrapolate(mode);
+            check(
+                &format!("Nearest1D<f64, [f64; 2]> {kind:?} {mode:?}"),
+                &array,
+                &at_points,
+                [f64::NAN; 2],
+            );
+            let n = allocations(|| {
+                let mut hint = Hint::new();
+                for x in at_points {
+                    std::hint::black_box(scalar.eval_hinted(x, &mut hint));
+                }
+            });
+            assert_eq!(n, 0, "Nearest1D {kind:?} {mode:?}: eval_hinted allocates");
+        }
+    }
+
     // A batch long and ordered enough for `eval_batch_into` to take its hinted
     // path (the batches above are too short for it), and one in no order.
     let ordered: Vec<f64> = (0..200).map(|i| f64::from(i) * 0.01).collect();
     let unordered: Vec<f64> = (0..200).map(|i| f64::from((i * 37) % 200) * 0.01).collect();
     let poly = PPoly::new(&[0.0, 1.0, 2.0], &[1.0, 0.0, 2.0, 1.0], 1)?;
     let spline = BSpline::new(&[0.0, 0.0, 1.0, 2.0, 2.0], &[0.0, 1.0, 0.0], 1)?;
+    let line = Linear1D::new(&[0.0, 1.0, 2.0], &[1.0, -1.0, 4.0])?;
+    let nearest = Nearest1D::new(&[0.0, 1.0, 2.0], &[1.0, -1.0, 4.0], NearestKind::Nearest)?;
     let mut out = vec![0.0; 200];
     for points in [&ordered, &unordered] {
         let n = allocations(|| {
@@ -225,6 +296,11 @@ fn main() -> Result<(), InterpolateError> {
             std::hint::black_box(spline.eval_batch_into(points, &mut out, f64::NAN)).ok();
         });
         assert_eq!(n, 0, "BSpline: a long batch allocates");
+        let n = allocations(|| {
+            std::hint::black_box(line.eval_batch_into(points, &mut out, f64::NAN)).ok();
+            std::hint::black_box(nearest.eval_batch_into(points, &mut out, f64::NAN)).ok();
+        });
+        assert_eq!(n, 0, "Linear1D or Nearest1D: a long batch allocates");
     }
 
     // The two that build an object do allocate: the counter sees these calls.
