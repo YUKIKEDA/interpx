@@ -641,24 +641,46 @@ fn an_antiderivative_too_large_to_hold_is_an_error() {
     // A piecewise polynomial has no degree limit, only the size of a slice.
     let poly = PPoly::new(&[0.0, 1.0, 2.0], &[1.0, 0.0, 2.0, 1.0], 1).expect("valid");
     assert_eq!(poly.antiderivative(20).expect("finite").degree(), 21);
+    // Two intervals of `f64`: a `Vec` holds `isize::MAX / 8` of them, so an
+    // order of half that at most, and this polynomial has order 2 already.
+    let max = isize::MAX.unsigned_abs() / 8 / 2 - 2;
+    let too_large = E::InvalidParameter {
+        name: "nu",
+        reason: ParamReason::TooLarge { max },
+    };
+    // Too many to count, too many to count in bytes, and one over the limit.
+    for nu in [
+        usize::MAX,
+        usize::MAX - 1,
+        usize::MAX / 2,
+        usize::MAX / 4,
+        usize::MAX / 8,
+        usize::MAX / 16,
+        max + 1,
+    ] {
+        assert_eq!(poly.antiderivative(nu).err(), Some(too_large), "nu = {nu}");
+    }
+    // At the limit and below it a `Vec` could hold them, but no machine has the
+    // memory: an error again, where `vec!` would abort the process.
+    for nu in [max, max / 2, max / 1024] {
+        assert_eq!(poly.antiderivative(nu).err(), Some(too_large), "nu = {nu}");
+    }
+
+    // The limit counts bytes: with three columns it is a third.
+    let wide: PPoly<f64, [f64; 3]> = PPoly::new(&[0.0, 1.0], &[[1.0; 3]], 0).expect("valid");
     assert_eq!(
-        poly.antiderivative(usize::MAX).err(),
+        wide.antiderivative(usize::MAX / 16).err(),
         Some(E::InvalidParameter {
             name: "nu",
             reason: ParamReason::TooLarge {
-                max: usize::MAX / 2 - 2
+                max: isize::MAX.unsigned_abs() / 24 - 1
             },
         })
     );
-    assert_eq!(
-        poly.antiderivative(usize::MAX / 2).err(),
-        Some(E::InvalidParameter {
-            name: "nu",
-            reason: ParamReason::TooLarge {
-                max: usize::MAX / 2 - 2
-            },
-        })
-    );
+    // A value of no columns takes no memory; only the count limits it.
+    let empty: PPoly<f64, [f64; 0]> = PPoly::new(&[0.0, 1.0], &[[]], 0).expect("valid");
+    assert_eq!(empty.antiderivative(3).expect("no columns").degree(), 3);
+    assert!(empty.antiderivative(usize::MAX).is_err());
 }
 
 #[test]
