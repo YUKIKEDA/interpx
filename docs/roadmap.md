@@ -34,7 +34,7 @@ M1-6.
 | M1-9  | Feat | `PchipInterpolator`                                                                                                                              |       | Todo   |
 | M1-10 | Feat | `Akima1D` (including makima)                                                                                                                     |       | Todo   |
 | M1-11 | Feat | `CubicHermiteSpline`                                                                                                                             |       | Todo   |
-| M1-12 | Feat | `BSpline1D` (any degree `k`)                                                                                                                     |       | Todo   |
+| M1-12 | Feat | `BSpline1D` (any degree `k`), and the banded LU with partial pivoting it solves with                                                             |       | Todo   |
 | M1-13 | Feat | `BSplineCurve<T, D>`                                                                                                                             |       | Todo   |
 
 ## M2: Regular grid
