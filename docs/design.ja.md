@@ -191,7 +191,7 @@ pub enum InterpolateError {
 
   | variant                                                    | 追加する行         | 用途                                                   |
   | :--------------------------------------------------------- | :----------------- | :----------------------------------------------------- |
-  | `InvalidParameter { name: &'static str, reason: ParamReason }` | 最初に必要な行 | 範囲外・必須欠落・最小次数未満など                     |
+  | `InvalidParameter { name: &'static str, reason: ParamReason }` | M1-4（`BSpline`） | 引数が範囲外。M1-4 は `ParamReason::TooLarge { max: usize }`（次数の上限）を入れる。必須欠落・最小次数未満などの `ParamReason` は、それを返す行で足す |
   | `SolverFailed(SolverError)`                                | M3（RBF）          | 特異な連立方程式（`SolverError::Singular`）            |
   | `DegenerateGeometry(DegeneracyKind)`                       | M4（`LinearND`）   | `LowerDimensional { affine_dim }`、`NumericalLimit`    |
 
@@ -281,8 +281,25 @@ interpx/
   * **`Hint`**: `eval_hinted(x, &mut Hint)` は、ヒントの区間とその両隣を先に調べ、外れたら二分探索に戻る。結果は `eval` とビット同一で、変わるのは時間だけである。
   * **ヒントが効く条件**: ヒントつきの探索は直前の点の区間から始めるので、各点が直前の点の結果を待つ。近い点が続けば待ちは短く、二分探索を省ける分だけ速い（昇順 10000 点で約 2 倍）。順不同の点では待ちが二分探索まるごとになり、互いを待たない単純な探索より約 2 倍遅い（`benches/ppoly.rs` の実測）。`eval_hinted` は順に並んだクエリ用で、順不同なら `eval` を使う。
   * **バッチ**: `eval_batch_into` は 64 点ずつに区切り、区切りごとにヒントを使うかを決める。使うのは、区切りが単調（昇順か降順）で、またぐ区間の数が点数以下のときだけである。16 点未満の区切りは判定せず単純に探索する（判定の固定コストのほうが大きい）。どの経路でも各点の区間は `eval` と同じで、結果はビット同一である。
-* **`BSpline`**: ノットベクトルと制御点を保持し、de Boor で評価する。
-* `PPoly` ⇄ `BSpline` の相互変換（`from_bspline` / `to_ppoly`）、`derivative(nu)` / `antiderivative` / `integrate(a, b)` / `eval_derivative(x, nu)` を提供する。
+* **`BSpline`**: ノット列と制御点を保持し、非ゼロの基底関数と制御点の線形結合で評価する。
+  * **型**: `BSpline<T: Scalar, V: Value<T> = T>`。次数 $k$ は実行時の値で持つ。制御点 $c_0, \dots, c_{n-1}$ と、ノット $t_0 \le t_1 \le \dots \le t_{n+k}$（重複を許す）を持つ。
+  * **構築**: `BSpline::new(&[T], &[V], degree)`（複製）と `from_owned(Vec<T>, Vec<V>, degree)`（移動）。検証は次の順で、最初に当たったエラーを返す。
+    1. `InvalidParameter { name: "degree", reason: TooLarge { max: 15 } }`（次数が上限を超える）
+    2. `LengthMismatch`（ノットの個数が `制御点の個数 + degree + 1` と違う）
+    3. `InsufficientPoints`（制御点が `degree + 1` 個未満）
+    4. `NonFinite`（ノットを先に、次に制御点）
+    5. `NotSorted`（ノットが減少する）
+    6. `DuplicatePoints { first: k, second: n }`（定義域の幅がゼロ、すなわち $t_k = t_n$）
+  * **定義域と区間の帰属**: 定義域は $[t_k, t_n]$。点 $x$ の区間は $t_\ell \le x < t_{\ell+1}$ を満たす幅が正のノット区間で、定義域の右端 $t_n$ は最後の幅が正の区間に含める（`PPoly` と同じ左閉右開、最後だけ閉）。重複ノットが作る幅ゼロの区間は、どの点の区間にもならない。
+  * **評価**: 区間 $\ell$ で非ゼロの基底関数 $B_{\ell-k}, \dots, B_\ell$ の値（$k+1$ 個）を de Boor–Cox の漸化式でスタック上の配列に求め、$\sum_j B_{\ell-k+j}(x)\,c_{\ell-k+j}$ を `Value::axpy` で足し合わせる（SciPy の `_deBoor_D` と同じ方式）。漸化式は、両端が等しいノットの項をゼロとして飛ばすので、重複ノットで割り算をしない。
+  * **次数の上限**: 評価は確保しない（§3.2）。作業用の配列をスタックに固定長で置くため、次数は 15 までとする。SciPy の `make_interp_spline` が実用上使うのは 5 次までである。
+  * **領域外**: `Extrapolate` の 4 モードで、既定は `Extend`（SciPy の `BSpline` と同じ）。`Extend` は最初または最後の幅が正の区間の多項式を延長する。`Periodic`・NaN・無限大のクエリの扱いは `PPoly` と同じ。
+  * **区間探索の共有**: 二分探索、`Hint` つきの探索、バッチで区切りごとにヒントを使うかの判定は、crate 内のモジュール `search` に置き、`PPoly` と `BSpline` が共用する。`Hint` 型も共通で、`BSpline` も `eval_hinted` を持つ。
+* **`PPoly` と `BSpline` の変換**: どちらも厳密な変換（丸め誤差を除く）で、外挿モードを引き継ぐ。
+  * **`PPoly::from_bspline(&BSpline) -> Result<PPoly, _>`**（SciPy の `PPoly.from_spline`）: 区切り点は定義域 $[t_k, t_n]$ 内の相異なるノット。区間 $[u_j, u_{j+1}]$ の係数は、スプラインの $m$ 階導関数の $u_j$ での値を $m!$ で割ったもの（$u_j$ まわりのテイラー係数）。SciPy は全ノットを区切り点に残すので重複ノットが幅ゼロの区間になるが、`PPoly` の区切り点は狭義単調増加なので、幅ゼロの区間は作らない。
+  * **`BSpline::from_ppoly(&PPoly) -> Result<BSpline, _>`**: 各区切り点に多重度 $k+1$ のノットを置き、区間ごとにべき基底の係数を Bernstein 基底の係数（Bézier の制御点）に直す。区間どうしの連続性を仮定しないので、不連続な区分多項式でも厳密に表せる。制御点は `区間数 × (k + 1)` 個になる。連続性を調べてノットの多重度を減らす処理は v0.1.0 の対象外（ロードマップ A-9）。次数が 15 を超える `PPoly` は `InvalidParameter` を返す。
+  * 往復（`PPoly` → `BSpline` → `PPoly`、およびその逆）で、評価値が許容誤差内で一致することをテストする。
+* `derivative(nu)` / `antiderivative` / `integrate(a, b)` / `eval_derivative(x, nu)` を、`PPoly` と `BSpline` に提供する（M1-5）。
 * 三重対角系は Thomas 法、周期境界は Sherman–Morrison。
 
 ### 6.2 散乱データ幾何探索（`convx` 連携）
