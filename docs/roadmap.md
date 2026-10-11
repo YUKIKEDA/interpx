@@ -90,6 +90,7 @@ Named so that no deferral is anonymous. Each becomes a roadmap row with an Issue
 | A-6 | Feat | `BarycentricInterpolator` and `KroghInterpolator`                                           |       | Todo   |
 | A-7 | Feat | FITPACK family: `UnivariateSpline`, `splrep`, `splprep`, `RectBivariateSpline`, and related |       | Todo   |
 | A-8 | Task | `no_std` (`alloc`) feasibility                                                              |       | Todo   |
+| A-9 | Feat | `BSpline::from_ppoly`: lower the knot multiplicity where the pieces join smoothly           |       | Todo   |
 
 ## Intentionally out of scope
 
