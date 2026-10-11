@@ -56,6 +56,14 @@ mod interpolator;
 mod ppoly;
 mod scalar;
 mod search;
+// Nothing in the library calls the solver until `CubicSpline` is added
+// (roadmap M1-8). `expect` fails the build once something does, so that this
+// attribute goes then. The module's own tests use all of it.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "first used by CubicSpline (M1-8)")
+)]
+mod tridiagonal;
 mod validate;
 mod value;
 

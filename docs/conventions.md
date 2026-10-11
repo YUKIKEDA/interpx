@@ -18,6 +18,7 @@ src/
                     hinted search, the per-run decision of the batch, extrapolation, and what
                     each mode makes of a derivative and of a definite integral (crate-private
                     but for Hint)
+  tridiagonal.rs    tridiagonal and cyclic systems: Thomas, Sherman-Morrison (crate-private)
   ppoly.rs          PPoly: piecewise polynomial, Horner evaluation, derivatives and integrals
   bspline.rs        BSpline: basis functions on the stack, derivatives and integrals;
                     PPoly::from_bspline and BSpline::from_ppoly
@@ -43,7 +44,7 @@ docs/               design.ja.md, roadmap.md, conventions.md, adr/
 ## Where things go
 
 - **Public surface.** Every public item is re-exported from `lib.rs`. Modules are private (`mod`, not `pub mod`), so the path of an item is `interpx::Name`.
-- **Dependencies between modules.** `scalar` depends on nothing. `value` depends on `scalar`. `error`, `extrapolate` depend on nothing. `boundary` depends on `scalar`. `interpolator` depends on `error`. `validate` depends on `error`, `scalar`, and `value`. `search` depends on `error`, `extrapolate`, `scalar`, and `value`. An interpolator module depends on these, never the other way round. `bspline` depends on `ppoly` (it holds both conversions), and `ppoly` does not depend on `bspline`.
+- **Dependencies between modules.** `scalar` depends on nothing. `value` depends on `scalar`. `error`, `extrapolate` depend on nothing. `boundary` depends on `scalar`. `interpolator` depends on `error`. `validate` depends on `error`, `scalar`, and `value`. `search` depends on `error`, `extrapolate`, `scalar`, and `value`. `tridiagonal` depends on `scalar` and `value`. An interpolator module depends on these, never the other way round. `bspline` depends on `ppoly` (it holds both conversions), and `ppoly` does not depend on `bspline`.
 - **Interval search.** A type that evaluates on a grid of break points or knots calls `search::eval`, `search::eval_hinted`, and `search::eval_batch_into` with a closure for the interval. It does not write its own search, extrapolation, or batch loop. Its `eval_derivative` and `integrate` call `search::eval_derivative` and `search::integrate` in the same way, so that both follow the extrapolation mode as `eval` does. A property of the two types that both must have is tested on both in `tests/calculus.rs`.
 - **Unit tests** are `#[cfg(test)] mod tests` at the end of the module they test. **Integration tests** in `tests/` use only the public API.
 - **Allocation.** A new interpolator is added to `tests/alloc.rs` in the PR that adds it. All checks stay in the one test function, because the counter is global to the process.
@@ -51,5 +52,5 @@ docs/               design.ja.md, roadmap.md, conventions.md, adr/
 - **Input checks.** A 1D constructor calls `validate::coordinates_and_values`; it does not write its own order of checks. Its test file has one input that breaks two adjacent steps and expects the earlier error.
 - **Properties.** Property tests (`proptest`) are in the test file of the type. A method with a faster path (a hint, a batch) is compared bit for bit with the plain one.
 - **Benchmarks.** A bench file ends with `criterion_group!` and `criterion_main!`, allows `missing_docs` for that macro, and uses no `unwrap`, `expect`, or `panic` (the lints apply to benches).
-- **Golden data.** A new golden file is added to `FILES` in `tests/goldens.rs` and to `just gen-goldens`.
+- **Golden data.** A new golden file is added to `FILES` in `tests/goldens.rs` and to `just gen-goldens`. The unit tests of a crate-private module read a golden file through the same loader: they include it with `#[cfg(test)] #[path = "../tests/common/mod.rs"] mod common;` at the top level of the module file, not inside `mod tests` (an integration test cannot call a crate-private function; inside `mod tests` the path would start from a directory that does not exist, which fails on Linux and macOS).
 - **Errors.** A new `InterpolateError` variant comes with the row that first returns it, together with its line in `docs/design.ja.md` §4 and its message test in `src/error.rs`.
