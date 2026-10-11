@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M0-1.
+M1-2. M0-1 is finished when Issue #1 is closed.
 
 ## Dependencies
 
@@ -23,7 +23,7 @@ M0-1.
 
 | ID    | Kind | Title                                                                                                  | Issue | Status |
 | ----- | ---- | ------------------------------------------------------------------------------------------------------ | ----- | ------ |
-| M1-1  | Task | Golden pipeline: `compare/` with pinned SciPy 1.18, `generate_*.py`, `tests/common`                      | #2    | Todo   |
+| M1-1  | Task | Golden pipeline: `compare/` with pinned SciPy 1.18, `generate_*.py`, `tests/common`                      | #2    | Done   |
 | M1-2  | Feat | `Interpolator` trait, `InterpolateError`, `Extrapolate`, `BoundaryCondition`, `tests/alloc.rs` harness, restore the CI coverage job |       | Todo   |
 | M1-3  | Feat | `PPoly` (interval-major layout, Horner evaluation, `Hint`)                                             |       | Todo   |
 | M1-4  | Feat | `BSpline` (de Boor) and `PPoly` ⇄ `BSpline` conversion                                                 |       | Todo   |

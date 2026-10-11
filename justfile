@@ -10,3 +10,8 @@ test:
 
 coverage:
     cargo llvm-cov --fail-under-lines 90
+
+# Regenerate golden data with the pinned SciPy. `cargo test` only reads the files.
+# Each family adds a line here when its generator exists.
+gen-goldens:
+    uv run --directory compare python -X utf8 generate_pipeline_check.py
