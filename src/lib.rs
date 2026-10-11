@@ -2,8 +2,9 @@
 //!
 //! This crate is being built. So far it has the core types ([`Scalar`],
 //! [`Value`], the [`Interpolator`] trait, [`InterpolateError`], [`Extrapolate`],
-//! [`BoundaryCondition`]) and [`PPoly`], the piecewise polynomial the 1D splines
-//! evaluate through. The interpolators themselves follow.
+//! [`BoundaryCondition`]) and the two spline representations the 1D
+//! interpolators evaluate through: [`PPoly`], a piecewise polynomial, and
+//! [`BSpline`]. The interpolators themselves follow.
 //!
 //! # Examples
 //!
@@ -47,18 +48,22 @@
 //! ```
 
 mod boundary;
+mod bspline;
 mod error;
 mod extrapolate;
 mod interpolator;
 mod ppoly;
 mod scalar;
+mod search;
 mod validate;
 mod value;
 
 pub use boundary::{BoundaryCondition, EndCondition};
-pub use error::InterpolateError;
+pub use bspline::BSpline;
+pub use error::{InterpolateError, ParamReason};
 pub use extrapolate::Extrapolate;
 pub use interpolator::Interpolator;
-pub use ppoly::{Hint, PPoly};
+pub use ppoly::PPoly;
 pub use scalar::Scalar;
+pub use search::Hint;
 pub use value::Value;

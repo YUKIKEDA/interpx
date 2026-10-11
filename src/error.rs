@@ -75,6 +75,46 @@ pub enum InterpolateError {
     /// values differ.
     #[error("periodic boundary needs equal values at both ends")]
     NotPeriodic,
+
+    /// An argument that is not data has a value the method cannot use.
+    #[error("invalid parameter `{name}`: {reason}")]
+    InvalidParameter {
+        /// The name of the argument.
+        name: &'static str,
+        /// What is wrong with its value.
+        reason: ParamReason,
+    },
+}
+
+/// What is wrong with the argument named by
+/// [`InterpolateError::InvalidParameter`].
+///
+/// The enum is `#[non_exhaustive]`: later versions add reasons.
+///
+/// # Examples
+///
+/// ```
+/// use interpx::{BSpline, InterpolateError, ParamReason};
+///
+/// // A B-spline of degree 16: one more than the largest degree it supports.
+/// let err = BSpline::new(&[0.0; 34], &[0.0; 17], 16).err();
+/// assert_eq!(
+///     err,
+///     Some(InterpolateError::InvalidParameter {
+///         name: "degree",
+///         reason: ParamReason::TooLarge { max: 15 },
+///     }),
+/// );
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[non_exhaustive]
+pub enum ParamReason {
+    /// The value is larger than the largest one the method supports.
+    #[error("larger than {max}")]
+    TooLarge {
+        /// The largest value the method supports.
+        max: usize,
+    },
 }
 
 #[cfg(test)]
@@ -113,6 +153,13 @@ mod tests {
             (
                 E::NotPeriodic,
                 "periodic boundary needs equal values at both ends",
+            ),
+            (
+                E::InvalidParameter {
+                    name: "degree",
+                    reason: super::ParamReason::TooLarge { max: 15 },
+                },
+                "invalid parameter `degree`: larger than 15",
             ),
         ];
         for (err, message) in cases {
