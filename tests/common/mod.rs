@@ -9,6 +9,8 @@
 // (docs/design.ja.md section 8.1: one shared helper module for all golden tests).
 #![allow(dead_code)]
 
+pub mod functions;
+
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer};
 use std::path::PathBuf;
@@ -61,6 +63,13 @@ pub fn reals(v: &[Real]) -> Vec<f64> {
     v.iter().map(|r| r.0).collect()
 }
 
+/// The directory that holds the golden files, `compare/goldens/`.
+pub fn golden_dir() -> PathBuf {
+    [env!("CARGO_MANIFEST_DIR"), "compare", "goldens"]
+        .iter()
+        .collect()
+}
+
 /// Loads `compare/goldens/<name>.json`.
 ///
 /// # Errors
@@ -68,10 +77,7 @@ pub fn reals(v: &[Real]) -> Vec<f64> {
 /// Returns a message naming the path when the file is missing or malformed.
 /// A test cannot continue without its golden data, so it calls `.expect(..)`.
 pub fn load<C: DeserializeOwned>(name: &str) -> Result<GoldenFile<C>, String> {
-    let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "compare", "goldens"]
-        .iter()
-        .collect::<PathBuf>()
-        .join(format!("{name}.json"));
+    let path = golden_dir().join(format!("{name}.json"));
     let text = std::fs::read_to_string(&path)
         .map_err(|e| format!("cannot read golden file {}: {e}", path.display()))?;
     serde_json::from_str(&text)
