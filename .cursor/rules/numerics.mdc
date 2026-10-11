@@ -10,7 +10,7 @@ alwaysApply: false
 - Input data (coordinates and values) with NaN or infinity is rejected at construction with `Err(NonFinite { index })`. A NaN query returns `None` (`eval`) or the `fill` value (`eval_or`, `eval_batch_into`). It never panics.
 - Do not use `==` on computed floats (`float_cmp`). Interval lookup compares with `<` and `<=` on the knots. Equal coordinates are rejected at construction (`DuplicatePoints`).
 - Tolerances that decide geometry (`eps = 100 * f64::EPSILON`, `eps_broad = f64::EPSILON.sqrt()` in point location) are named constants in one place, with the design section in a comment.
-- Solve tridiagonal systems with the Thomas algorithm (periodic: Sherman-Morrison). Do not use `faer` for them. Dense RBF systems use `faer` partial-pivot LU; a singular system returns `Err(SolverFailed(Singular))`.
+- Solve tridiagonal systems with the Thomas algorithm (periodic: Sherman-Morrison), and wider banded systems (`BSpline1D`, the grid's `cubic` and `quintic`) with the crate's banded LU with partial pivoting. Do not use `faer` for them. Dense RBF systems use `faer` partial-pivot LU; a singular system returns `Err(SolverFailed(Singular))`.
 - A value computed from a difference of nearly equal terms (a divided difference near coincident knots, a barycentric weight near a face) uses the stable form from the design. A test covers the case where the naive form loses digits.
 - An `f64` computation that squares input-scale values first rescales by an exact power of two, or uses a form that cannot overflow (`hypot`).
 - Do not `unwrap` a float conversion: `T::from(..)` returns `Option`; hold constants in a form that cannot fail, or propagate an error.
