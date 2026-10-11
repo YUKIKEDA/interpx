@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M1-3. M0-1 is finished when Issue #1 is closed.
+M1-4.
 
 ## Dependencies
 
@@ -17,25 +17,25 @@ M1-3. M0-1 is finished when Issue #1 is closed.
 
 | ID   | Kind | Title                                              | Issue | Status      |
 | ---- | ---- | -------------------------------------------------- | ----- | ----------- |
-| M0-1 | Task | Repository rules, docs, ADRs, CI, and build config | #1    | In progress |
+| M0-1 | Task | Repository rules, docs, ADRs, CI, and build config | #1    | Done        |
 
 ## M1: Core, 1D, and curve
 
-| ID    | Kind | Title                                                                                                  | Issue | Status |
-| ----- | ---- | ------------------------------------------------------------------------------------------------------ | ----- | ------ |
-| M1-1  | Task | Golden pipeline and data sets: pinned SciPy 1.18, layer-A goldens for every family, `tests/common`     | #2    | Done   |
+| ID    | Kind | Title                                                                                                                                            | Issue | Status |
+| ----- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----- | ------ |
+| M1-1  | Task | Golden pipeline and data sets: pinned SciPy 1.18, layer-A goldens for every family, `tests/common`                                               | #2    | Done   |
 | M1-2  | Feat | `Scalar`, `Value`, `Interpolator`, `InterpolateError`, `Extrapolate`, `BoundaryCondition`, `tests/alloc.rs` harness, restore the CI coverage job | #11   | Done   |
-| M1-3  | Feat | `PPoly` (interval-major layout, Horner evaluation, `Hint`) and the shared input checks in their fixed order |       | Todo   |
-| M1-4  | Feat | `BSpline` (de Boor) and `PPoly` ⇄ `BSpline` conversion                                                 |       | Todo   |
-| M1-5  | Feat | `derivative`, `antiderivative`, `integrate`, `eval_derivative` on `PPoly` and `BSpline`                |       | Todo   |
-| M1-6  | Feat | Tridiagonal solver (Thomas, periodic via Sherman-Morrison)                                             |       | Todo   |
-| M1-7  | Feat | `Linear1D` and `Nearest1D` (nearest, previous, next)                                                   |       | Todo   |
-| M1-8  | Feat | `CubicSpline` (NotAKnot, Periodic, first or second derivative at each end)                             |       | Todo   |
-| M1-9  | Feat | `PchipInterpolator`                                                                                    |       | Todo   |
-| M1-10 | Feat | `Akima1D` (including makima)                                                                           |       | Todo   |
-| M1-11 | Feat | `CubicHermiteSpline`                                                                                   |       | Todo   |
-| M1-12 | Feat | `BSpline1D` (any degree `k`)                                                                           |       | Todo   |
-| M1-13 | Feat | `BSplineCurve<T, D>`                                                                                   |       | Todo   |
+| M1-3  | Feat | `PPoly` (interval-major layout, Horner evaluation, `Hint`) and the shared input checks in their fixed order                                      | #14   | Done   |
+| M1-4  | Feat | `BSpline` (de Boor) and `PPoly` ⇄ `BSpline` conversion                                                                                           |       | Todo   |
+| M1-5  | Feat | `derivative`, `antiderivative`, `integrate`, `eval_derivative` on `PPoly` and `BSpline`                                                          |       | Todo   |
+| M1-6  | Feat | Tridiagonal solver (Thomas, periodic via Sherman-Morrison)                                                                                       |       | Todo   |
+| M1-7  | Feat | `Linear1D` and `Nearest1D` (nearest, previous, next)                                                                                             |       | Todo   |
+| M1-8  | Feat | `CubicSpline` (NotAKnot, Periodic, first or second derivative at each end)                                                                       |       | Todo   |
+| M1-9  | Feat | `PchipInterpolator`                                                                                                                              |       | Todo   |
+| M1-10 | Feat | `Akima1D` (including makima)                                                                                                                     |       | Todo   |
+| M1-11 | Feat | `CubicHermiteSpline`                                                                                                                             |       | Todo   |
+| M1-12 | Feat | `BSpline1D` (any degree `k`)                                                                                                                     |       | Todo   |
+| M1-13 | Feat | `BSplineCurve<T, D>`                                                                                                                             |       | Todo   |
 
 ## M2: Regular grid
 

@@ -11,6 +11,11 @@ test:
 coverage:
     cargo llvm-cov --fail-under-lines 90
 
+# Time benchmarks (criterion). Not a gate; CI does not run it. Extra arguments go
+# to criterion, for example `just bench --save-baseline m1`.
+bench *args:
+    cargo bench -- {{args}}
+
 # Regenerate golden data with the pinned SciPy. `cargo test` only reads the files.
 # Each family adds a line here when its generator exists. The last line checks the set.
 gen-goldens:

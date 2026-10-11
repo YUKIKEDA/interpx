@@ -7,7 +7,7 @@
 //! function below, so no other test thread allocates while a region is measured.
 //! A row that adds an interpolator adds it to `evaluation_apis_do_not_allocate`.
 
-use interpx::Interpolator;
+use interpx::{Extrapolate, Hint, Interpolator, PPoly};
 use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
 use std::alloc::System;
 
@@ -105,4 +105,39 @@ fn evaluation_apis_do_not_allocate() {
         &[[0.0, 1.0], [f64::NAN, 0.0], [2.0, 3.0]],
         [f64::NAN; 3],
     );
+
+    // PPoly: every extrapolation mode, since each takes its own path outside the
+    // domain. The queries are inside, at a break point, outside on both sides,
+    // and NaN. Building the polynomials allocates; that happens before `check`.
+    let queries = [0.5, 1.0, 1.75, -3.0, 9.0, f64::NAN];
+    for mode in [
+        Extrapolate::Forbid,
+        Extrapolate::Clamp,
+        Extrapolate::Extend,
+        Extrapolate::Periodic,
+    ] {
+        let scalar = PPoly::new(&[0.0, 1.0, 2.0], &[1.0, 0.0, 2.0, 1.0], 1)
+            .expect("valid")
+            .with_extrapolate(mode);
+        check(&format!("PPoly<f64> {mode:?}"), &scalar, &queries, f64::NAN);
+
+        let array = PPoly::new(&[0.0, 1.0, 2.0], &[[1.0_f64, 2.0], [3.0, 4.0]], 0)
+            .expect("valid")
+            .with_extrapolate(mode);
+        check(
+            &format!("PPoly<f64, [f64; 2]> {mode:?}"),
+            &array,
+            &queries,
+            [f64::NAN; 2],
+        );
+
+        // The hinted form, which the batch uses.
+        let n = allocations(|| {
+            let mut hint = Hint::new();
+            for x in queries {
+                std::hint::black_box(scalar.eval_hinted(x, &mut hint));
+            }
+        });
+        assert_eq!(n, 0, "PPoly {mode:?}: eval_hinted allocates");
+    }
 }
