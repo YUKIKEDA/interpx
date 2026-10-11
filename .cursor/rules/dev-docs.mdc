@@ -1,0 +1,15 @@
+---
+description: Design specs use Mermaid for figures and LaTeX for math
+globs: docs/design*.md
+alwaysApply: false
+---
+
+# Figures and math in the design spec
+
+When writing or editing `docs/design.ja.md`, use Mermaid for figures and LaTeX for math.
+
+- Figures: a fenced `mermaid` block. No ASCII art diagrams. (A directory tree or a signature in a code block is not a diagram.)
+- Math: inline `$...$`, display `$$...$$`. Do not use `\(` or `\[`. Do not put `$` inside a code block.
+- Text with LaTeX that a script writes is passed as is, from a file or a raw string. Before the commit, search the added lines for control characters (an unescaped `\t` or `\f` becomes a tab or a form feed).
+- A new formula does not reuse a symbol defined nearby with another meaning. Name a new quantity with a new letter.
+- The Japanese spec is plain prose first. Do not run the `natural-japanese` skill's rewriting on formulas or code (`.cursor/rules/reader-docs.mdc`).

@@ -1,0 +1,17 @@
+---
+description: Public contract of interpolators: ownership, thread safety, errors, dependencies, types from other crates
+alwaysApply: true
+---
+
+# API contract
+
+The shape of the trait and the types is in `docs/design.ja.md` §3 and §4. This rule is the set of promises that tests and reviews hold.
+
+- **Owned, no lifetimes.** Every interpolator owns its data and has no lifetime parameter. `T: 'static` is not required. Constructors come in pairs: `::new(&[..])` (copies from a borrow) and `::from_owned(..)` (moves).
+- **`Send + Sync`.** Every public interpolator is `Send + Sync`. No `Cell`, `RefCell`, or `Mutex` inside. A compile-time assertion test covers each type.
+- **Pure evaluation.** `&self` evaluation has no hidden state. A search hint is a caller-owned value or batch-local.
+- **No panic on input.** Invalid input is `Err` at construction, `None` or `fill` at evaluation (`.cursor/rules/numerics.mdc`). `eval_batch_into` and `eval_into` return `Result` for a length mismatch.
+- **Errors.** `InterpolateError` and the enums it carries are `#[non_exhaustive]` and carry typed data, not `String`. Types from `convx`, `kiddo`, or `faer` do not appear in the public API, in the error type, or in rustdoc signatures (`ConvexHullError` is converted inside the crate). Their versions are not part of interpx's semver.
+- **Dependencies.** Only the crates named in `docs/design.ja.md` §2. `scattered` (`convx`, `kiddo`, `faer`) is a feature; the 1D, curve, and grid modules build without it. `faer` is used as `default-features = false, features = ["std"]`.
+- **Serialization.** `serde` stores vertices, neighbors, values, and parameters, with a format version, and validates on load. It never depends on `convx` ordering.
+- **Edge-of-spec behavior stays one behavior.** The same invalid input gives the same error variant in `f32` and `f64`, in serial and parallel forms.

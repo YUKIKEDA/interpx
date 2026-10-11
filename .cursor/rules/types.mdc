@@ -1,0 +1,25 @@
+---
+description: Make invalid states unrepresentable instead of checking them at run time
+globs: "**/*.rs"
+alwaysApply: false
+---
+
+# Types
+
+Make an invalid state unrepresentable. Do not document it in rustdoc ("this field is ignored when ...") or catch it with a run-time error. A sentence like that is a sign the type is wrong.
+
+The concrete types and error variants live in `docs/design.ja.md`. Do not copy them here.
+
+Prefer:
+
+- One choice, one slot: an enum or a type parameter, not a `bool` plus an `Option` that the `bool` makes meaningless.
+- A parameter that belongs to one variant lives in that variant: `BoundaryCondition::Derivative { .. }`, `RbfKernel` with its `epsilon` where the kernel needs one.
+- A state change that consumes a value and returns a new type, not a flag such as `fitted: bool` checked later.
+- `const D: usize` for dimension, so a wrong-length point is a compile error. Run-time `DimensionMismatch` is only for the places the design says are dynamic.
+
+Not allowed:
+
+- A public method that panics because the caller used the wrong phase of the same type.
+- Mutually exclusive options set through two parameters, with "error if both are set".
+
+Input rejection that the design already names (non-finite values, unsorted or duplicate coordinates, a wrong length) stays a boundary `Result`. That is not a license to push configuration contradictions into `Result`.

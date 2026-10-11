@@ -1,0 +1,21 @@
+---
+description: Naming and public API shape
+globs: "**/*.rs"
+alwaysApply: false
+---
+
+# Rust API
+
+Follow the Rust API Guidelines for naming: `as_` (cheap borrow), `to_` (costly, allocates), `into_` (consumes). Getters have no `get_` prefix. Use `From`, `TryFrom`, and `AsRef`; do not implement `Into` or `TryInto` directly.
+
+Names describe interpolation concepts (spline, knot, grid, boundary condition, kernel). Do not name an item after an unrelated product. SciPy class names are kept where `docs/design.ja.md` §5 lists them.
+
+The public surface lives in `docs/design.ja.md`. Do not copy the type list, the function list, or the error variants into this rule.
+
+- Every public type that a public method returns or takes is exported from `lib.rs`, and a test names it in a signature.
+- Public types implement `Debug` (non-empty). `Clone` only when cheap, or documented as costly. A type that owns a large buffer is not `Copy`.
+- Future-growing public enums (`InterpolateError`, `Extrapolate`, `BoundaryCondition`, `RbfKernel`, and the like) are `#[non_exhaustive]`. A closed set (an enum whose variants are fixed by SciPy's own definition) is not.
+- Feature names are never a bare `fast` or `experimental`.
+- A function that fills an output buffer is `foo_into(..., out)`. A function that allocates is `to_*` or returns an owned value.
+- Japanese `///` text in the design is a note for the spec. Implementation rustdoc is English (`.cursor/rules/rust-docs.mdc`).
+- Public interpolators are `Send + Sync` and own their data (`.cursor/rules/api-contract.mdc`).

@@ -1,0 +1,23 @@
+---
+description: Single crate; the public surface is not copied into rules
+alwaysApply: true
+---
+
+# Layout
+
+Single crate `interpx`. Not a Cargo workspace. Do not create empty files ahead of the Issue that needs them. This includes `justfile` recipes, scripts, and skills' steps that describe a flow that does not exist yet.
+
+```
+src/            library
+tests/          integration tests, tests/alloc.rs, tests/common/
+benches/        criterion benches
+examples/       runnable examples used by the README
+compare/        pyproject.toml, uv.lock, generate_*.py, goldens/*.json,
+                perf/ (Python runners and isolated Rust runner packages)
+docs/           design.ja.md, roadmap.md, conventions.md, adr/
+```
+
+- `compare/` is not a workspace member. Its Rust runner packages use their own `[workspace]` so their dependencies do not reach `interpx`. Only `compare/goldens/` is in the published package (`include` in `Cargo.toml`).
+- Unit tests are `#[cfg(test)]` in the module. Integration tests are in `tests/`. Golden JSON lives in `compare/goldens/` only.
+- `docs/design.ja.md` holds the full public specification. `docs/roadmap.md` lists work: ID, title, Issue, status. `docs/conventions.md` is created by the first module Issue (M1) and holds the directory tree and the responsibility of each module. Until then this rule is the layout.
+- Do not add a dependency the design does not name. A new dependency is a design change first (`.cursor/rules/workflow.mdc`). Heavy dependencies (`convx`, `kiddo`, `faer`) stay behind the `scattered` feature.

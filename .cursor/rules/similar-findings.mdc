@@ -1,0 +1,10 @@
+---
+description: Fix the same kind of problem wherever it also occurs
+alwaysApply: true
+---
+
+# Similar findings
+
+When a review or a test finds a problem, check the same file, the callees under the same contract, and the paired code for the same kind of problem. Fix them in the same change, or put a roadmap row on the ones left.
+
+Examples in this crate: one interpolator validates `NonFinite` and its sibling does not; one boundary condition handles `Periodic` and the paired `Extrapolate` mode does not; `eval_into` checks `out.len()` and `eval_batch_into` does not; `f64` and `f32` instantiations diverge.

@@ -1,0 +1,23 @@
+---
+description: A closing verb before an Issue number closes it, even in a negative sentence
+alwaysApply: true
+---
+
+# Closing Issues from a PR
+
+GitHub closes an Issue when a closing verb (`close(s/d)`, `fix(es/ed)`, `resolve(s/d)`) stands directly before its number, even in a negated sentence.
+
+- A PR that finishes an Issue puts `Closes #N` alone on a line under `## Related`.
+- A PR that does not finish it never puts a closing verb before `#N`. Write `Part of #N` or `Refs #N`.
+- The line lives in the PR body only, never in a commit body: the squash message concatenates commit bodies.
+- After a PR is created or its body edited, run `gh pr view <n> --json closingIssuesReferences` and compare the list with the intent.
+
+```
+# BAD: this closes #120
+This does not close #120.
+
+# GOOD
+Part of #120. The acceptance text on #120 is still unmet.
+```
+
+Skill: `.agents/skills/github-closing/SKILL.md`.

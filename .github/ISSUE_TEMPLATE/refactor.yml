@@ -1,0 +1,42 @@
+name: Refactor
+description: A change to structure with no change in behavior
+title: "[refactor] "
+labels: ["type:refactor"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What changes in structure, and what stays the same.
+    validations:
+      required: true
+  - type: input
+    id: roadmap
+    attributes:
+      label: Roadmap ID
+      description: Example - M1-1
+      placeholder: M1-1
+    validations:
+      required: true
+  - type: input
+    id: design
+    attributes:
+      label: Design section
+      placeholder: "docs/design.ja.md §3"
+  - type: textarea
+    id: depends
+    attributes:
+      label: Depends on
+      placeholder: "M1-1 or #12"
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition of done
+      description: Checkable outcomes. The tests that pin the unchanged behavior are named.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Optional. Work left outside this Issue, and the roadmap row that names when.

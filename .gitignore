@@ -1,0 +1,6 @@
+.dev/*
+
+/target
+__pycache__/
+/compare/.venv/
+/compare/perf/out/

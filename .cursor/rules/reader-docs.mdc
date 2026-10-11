@@ -1,0 +1,34 @@
+---
+description: README and comparison docs are for a reader who has only the crate; Japanese pages are checked by someone else
+globs: README*.md, docs/comparison*.md
+alwaysApply: false
+---
+
+# Reader-facing docs
+
+README and comparison pages are read by someone who has only the crate. They never need the development process.
+
+## README order
+
+1. What the crate does, in one or two sentences, with the SciPy baseline.
+2. The `Cargo.toml` dependency block for the published version, and the features (`scattered` is default; `rayon`, `ndarray`, `serde` are opt-in).
+3. A copy-and-paste example that uses `?`, not `unwrap`.
+4. What a caller must know: owned types and `Send + Sync`; `f64` only for scattered; C-order grid `values`; `NaN` handling; RBF memory is O(N²); 0.x minor releases may break the API; out-of-scope list.
+5. One link to the comparison page.
+6. License.
+
+Before the first example, state what surprises a SciPy user: boundary default is not-a-knot, `fill` is passed at call time, and the differences listed in `docs/design.ja.md`.
+
+## Rules
+
+- Every public item appears in Usage in `README.md` and `README.ja.md` with a short `rust` example.
+- No Issue or PR numbers, milestone IDs, roadmap, `AGENTS.md`, `.cursor/rules`, Grill, or development `just` recipes.
+- The README has no comparison table or image. It does not link by relative path to anything outside the package.
+- A claim that is false for the code or for `Cargo.toml` fails, even when it repeats in the README, the crate rustdoc, and the description. A comparison number names its source (hardware, versions, data, command).
+- The `Cargo.toml` description is one sentence and makes the same claim as the first line of the README.
+- `cargo run --example` targets that the README names exist and run.
+
+## Japanese pages
+
+`README.ja.md` and `docs/design.ja.md` are checked with the `natural-japanese` skill in `score` mode (`quick`) by someone other than the author. The author does not score, check, or rewrite their own pages. The scope is prose: code blocks, formulas, and identifiers in tables are excluded. For `docs/design.ja.md` the lint output is a reference and a person decides.
+Use the established Japanese numerical-analysis terms and do not paraphrase them: 補間, 外挿, スプライン, ノット, 境界条件, カーネル, 三重対角, 分解. Keep one Japanese word per concept across the pages.

@@ -1,0 +1,18 @@
+---
+description: Deferral is an exception and must be a named roadmap row
+alwaysApply: true
+---
+
+# Deferral
+
+Deferral is an exception. Do not ship "temporary", "for now", "until M3", or "in a later Issue" unless a roadmap row with an ID names the work, or the item is under **Intentionally out of scope** or **After v0.1.0** in `docs/roadmap.md`.
+
+A row says when. A promise to file an Issue later does not.
+
+Not allowed:
+
+- "Temporary until the next milestone" when that milestone's row does not name the split.
+- Closing a milestone while a temporary gap is still in the code.
+- A TODO comment that stands in for a roadmap row.
+
+When a row becomes `Done` or moves to **Intentionally out of scope**, search `docs/design.ja.md`, the READMEs, `docs/adr/`, and `.cursor/rules/` for its title and keywords, and rewrite the stale "until X" text in the same PR.

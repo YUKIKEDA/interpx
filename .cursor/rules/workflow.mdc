@@ -1,0 +1,53 @@
+---
+description: Order of work, Issues, branches, PRs, and who merges
+alwaysApply: true
+---
+
+# Workflow
+
+```
+Grill (when the design branches) → Issue → branch → work → PR → human review → squash merge
+```
+
+1. Grill when the API, the meaning, or a milestone boundary branches. Skill: `.agents/skills/grilling/SKILL.md`. Skip it when the Issue already has acceptance text and the design settles the question.
+2. One Issue is one PR. Create the Issue from a template in `.github/ISSUE_TEMPLATE/`. Blank issues are off.
+3. A change to the meaning of the spec is a `design` Issue that updates `docs/design.ja.md` before any implementation Issue. The Japanese file is the spec.
+4. Acceptance text lives on the Issue. The roadmap keeps ID, title, Issue, and status only.
+5. Branch from `main`: `type/<issue-number>-<slug>`, for example `feat/12-pchip`. `type` is a Conventional Commits type (`.cursor/rules/conventional-commits.mdc`).
+6. Open the PR in the same turn that the branch is pushed. Use `.github/pull_request_template.md` (`.cursor/rules/pull-requests.mdc`). Write `Closes #N` on its own line under `## Related` (`.cursor/rules/github-closing.mdc`).
+7. A human reviews and squash-merges. An agent never merges.
+8. After the merge, delete the local and remote branch. A withdrawn prototype's branch is not a merged branch: post its diff on the Issue and leave the branch until the owner names it.
+
+## Gates
+
+- `just lint`: `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`.
+- `just test`: `cargo test`. It never runs Python. Golden data is read from `compare/goldens/`.
+- `just coverage`: line coverage of at least 90% (`cargo-llvm-cov`). Raising the threshold is a new Issue.
+- `just bench` is not a gate. CI does not run criterion.
+
+CI (`.github/workflows/ci.yml`) runs lint, tests on three OSes with `--no-default-features` and `--all-features`, the MSRV job, and coverage. After each merge, read `main`'s CI. A red `main` gets its own Issue and PR before the next merge.
+
+## Forbidden
+
+- Starting implementation without an Issue number and a branch.
+- Copying acceptance text onto the roadmap.
+- Starting a roadmap row that reads `Set after Grill on #n`.
+- Adding or removing roadmap rows, or touching **Intentionally out of scope**, without a Grill.
+- Merging. Closing an Issue or PR without an imperative that names it.
+- Ending a turn on a branch that has no Issue and no PR, or leaving files you created that are no longer needed (`.cursor/rules/scratch.mdc`).
+
+## Long commands and stacked PRs
+
+A command expected to take more than a minute or two is announced with its expected time before it starts, or it runs in the background.
+
+Two rows that edit the same lines (the roadmap's **Current work**, one function) are opened one after the other. A second Issue that builds on an open PR gets its own branch and PR based on the first. A stacked PR is merged only after its base has merged. When the base merges, retarget the next PR to `main` first, then delete the merged branch.
+
+## Language
+
+Identifiers, rustdoc, README, and the `Cargo.toml` description are English. Issue bodies, PR bodies, and commit subjects may be Japanese. `type`, `scope`, and the PR template headings stay English. The spec is `docs/design.ja.md`. The English `docs/design.md` is a roadmap row before v0.1.0 and is not kept in sync until then.
+
+Before calling a PR ready, and whenever the owner asks for the next step, read the reviews and inline comments of every open PR (`gh pr view <n> --json reviews,comments` and `gh api repos/{owner}/{repo}/pulls/<n>/comments`).
+
+## Lessons
+
+A correction given in conversation lands in the rule it belongs to in the same change (`.cursor/rules/record-corrections.mdc`). A decision that needs its reason kept becomes an ADR in `docs/adr/` (Status, Date, Issue, Context, Decision).

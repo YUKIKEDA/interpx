@@ -1,0 +1,21 @@
+---
+description: A question is not a decision; options need a recommendation and a human order
+alwaysApply: true
+---
+
+# Consent
+
+A question is not a decision. Do not close a design choice, an Issue, or a PR in the same turn as a question.
+
+These are questions, not orders. Do not create, edit, close, or retitle Issues or PRs, and do not rewrite `docs/roadmap.md` or `docs/design.ja.md` to settle them:
+
+- "Is it required?" "Should it be X?"
+- Any yes/no about scope, a milestone, or whether a roadmap row exists.
+
+For such a question, list the options, give a recommendation, and state each option's advantage and disadvantage. Then stop and wait.
+
+The reason for a recommendation is the library concept, its goal, and its functional and non-functional requirements. Implementation effort, volume, or ease is not a reason (`.cursor/rules/scope.mdc`).
+
+"Go ahead" and "next" mean the current roadmap row only. They are not consent to add rows, file extra Issues, or widen an open design.
+
+Adding or removing an **Intentionally out of scope** entry, or a roadmap row, goes through a Grill and an Issue. Closing an Issue or PR needs an order that names the operation and the target.

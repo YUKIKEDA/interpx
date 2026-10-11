@@ -1,0 +1,17 @@
+---
+description: SciPy 1.18 is the reference; differences are written down; golden data is regenerated only by the pinned script
+alwaysApply: true
+---
+
+# SciPy parity
+
+The reference is SciPy **1.18** (`docs/design.ja.md` §5). "Covers `scipy.interpolate`" means the classes listed in the coverage matrix (§5.2) and nothing outside the out-of-scope list (§5.3).
+
+- Behavior follows SciPy 1.18: defaults (`bc_type` is not-a-knot, `RBFInterpolator` is `thin_plate_spline`), boundary handling, method names, and numeric results within the tolerances of `docs/design.ja.md` §8.2.
+- A deliberate difference (for example RBF `degree` below the kernel minimum is `Err` where SciPy warns, `DuplicatePoints` for RBF) is written in `docs/design.ja.md` and in the item's rustdoc. A difference found in a test is a finding: either fix the code or write the difference down.
+- A SciPy-named type that cannot match SciPy 1.18 is not shipped under that name (`.cursor/rules/scope.mdc`).
+- Golden data comes from the pinned SciPy only: `compare/generate_*.py` run through `uv` with the version fixed in `compare/pyproject.toml` and `uv.lock`. Never edit a golden JSON by hand. The generator records the SciPy version, the seed, and the input in the file.
+- Regenerating goldens is its own change: it states why, and lists the cases whose values moved. `cargo test` only reads the files.
+- Moving the reference to a newer SciPy is a `design` Issue (update §5 and the goldens together).
+
+Skill: `.agents/skills/golden-data/SKILL.md`.

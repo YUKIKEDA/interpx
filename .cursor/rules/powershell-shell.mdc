@@ -1,0 +1,14 @@
+---
+description: Shell syntax on this Windows setup
+alwaysApply: true
+---
+
+# Shell
+
+The default shell is PowerShell (a Git Bash tool also exists, with POSIX syntax). Use the syntax of the tool you call.
+
+- In PowerShell: no `export`, no bash heredoc `<<EOF`, no `&&` assumptions in Windows PowerShell 5 (PowerShell 7 has them), and quote refs such as `@{u}`.
+- Pass multi-line text to a native command with a single-quoted here-string whose closing `'@` is at column 0.
+- Use absolute paths for targets of `rm` and `mv`.
+- For long `gh` bodies use a UTF-8 file and `--body-file`.
+- `just` recipes run in PowerShell on Windows (`set windows-shell` in `justfile`) and in `sh` elsewhere. Keep recipes to simple commands that work in both.

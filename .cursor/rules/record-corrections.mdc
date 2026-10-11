@@ -1,0 +1,17 @@
+---
+description: A correction given in conversation is written into the rule in the same change
+alwaysApply: true
+---
+
+# Recording corrections
+
+A correction that the owner gives in conversation lands in the same change as the work, in the file where it belongs:
+
+- A working rule: one `.cursor/rules/*.mdc`, one concern per file, with a BAD and a GOOD example.
+- The meaning of the library: `docs/design.ja.md` (through a `design` Issue when it changes the spec).
+- A decision and its reason: an ADR in `docs/adr/`.
+- A step-by-step procedure: the matching skill under `.agents/skills/`.
+
+A rule only says to follow the spec. It does not copy the spec's type list, function list, or error variants.
+
+Figures and formulas in the design belong to `.cursor/rules/dev-docs.mdc`. This file stays `alwaysApply: true`.

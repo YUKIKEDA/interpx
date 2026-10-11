@@ -1,0 +1,13 @@
+---
+description: Remove everything that only served a removed path
+alwaysApply: true
+---
+
+# No dead code
+
+When a path is removed, remove in the same change everything that only served it: functions, parameters threaded through callers, fields, flags, constants, tests, rustdoc, and the sentences in the design, README, and rules that describe it.
+
+- Do not keep a public API that has no effect "for compatibility" while the crate is unpublished (`version = "0.0.0"`, `publish = false`). After v0.1.0, removals follow the `0.x` policy in the README.
+- Names and comments that carry the words of a removed mechanism change with it.
+- Before a test goes with a removed path, name the claims it was the only test of. A claim the design still states keeps a test.
+- A `#[cfg(test)]` function stays only while a test calls it.

@@ -297,7 +297,8 @@ serde   = ["dep:serde"]
 ## 8. 品質保証 (Testing, Precision, Benchmarks)
 
 ### 8.1 テスト
-* **golden データ**: SciPy 1.18 を版固定した Python スクリプト（`uv`）で生成し、`tests/golden/` にコミットする。CI では SciPy を実行しない。
+* **golden データ**: `compare/` の Python スクリプト（`compare/generate_*.py`、`uv` で SciPy 1.18 を `pyproject.toml` / `uv.lock` に固定）で生成し、`compare/goldens/*.json` にコミットする。`cargo test` は読むだけで Python を呼ばず、CI でも SciPy を実行しない。再生成は `just gen-goldens`（M1-1 で追加）。`compare/goldens/` は公開パッケージに含める（`Cargo.toml` の `include`）。
+* **ゼロアロケーション検査**: `tests/alloc.rs` がカウンティングアロケーターで、`eval` / `eval_or` / `eval_into` / `eval_batch_into` の確保回数が 0 であることを検査する（`just test` に含む）。並列版 `eval_batch_par` は逐次版とビット同一であることをテストする。
 * **`proptest` 性質テスト**: データ点での一致、PCHIP の単調性、`LinearND` による線形関数の厳密再現、CubicSpline の導関数連続性、など。
 
 ### 8.2 数値精度基準
@@ -308,7 +309,8 @@ serde   = ["dep:serde"]
 | f32                              | `1e-5`            |
 
 ### 8.3 ベンチマーク
-* workspace の別 crate `benches/compare`（`publish = false`）に置き、`interpx` 本体の依存に比較対象を混ぜない。
+* ルート crate は単一 crate（workspace なし）。比較用の資材はルート直下の `compare/`（`pyproject.toml`、`uv.lock`、`generate_*.py`、`goldens/`、`perf/`）に置く。`compare/perf/` の Rust ランナーは、他クレートに依存する独立した Cargo パッケージ（自前の `[workspace]`）とし、`interpx` 本体の依存に比較対象を混ぜない。
+* 比較実行は手動で、CI のゲートではない（結果は `compare/perf/out/`、gitignore 対象）。`criterion` ベンチは `benches/` に置く。
 * **速度**: `criterion` で、SciPy 1.18（Python 計測スクリプト）と既存の Pure Rust クレートを同一データ・同一クエリで比較する。
 * **メモリ**: カウンティングアロケーターでピーク確保量を測定（構築時と評価時を分離。RBF の O(N²) も実測）。
 * 比較対象クレートは実装着手時に、メンテされている Pure Rust のクレートを調査して選定する。比較不能なカテゴリは「該当なし」と表に明記する。

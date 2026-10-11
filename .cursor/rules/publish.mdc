@@ -1,0 +1,39 @@
+---
+description: What "ready to publish" means and the order of release steps
+alwaysApply: true
+---
+
+# Publishing
+
+"Ready" means nothing is left except a human running `cargo publish`. An agent never runs `cargo publish`. `cargo publish --dry-run` is allowed.
+
+## Preconditions for v0.1.0
+
+- Roadmap milestones M1 to M5 are all `Done` (`docs/roadmap.md`). There is no earlier release.
+- `convx` is published on crates.io with a license, and `Cargo.toml` depends on its version (not only a path).
+- `Cargo.toml` has the release version, no `publish = false`, and `license = "MIT OR Apache-2.0"`.
+
+## Order
+
+1. One PR states that the release is ready.
+2. A human merges it. That commit on `main` is what gets published.
+3. On that commit run the checks below.
+4. After they pass, create the annotated tag `v{version}`.
+5. Create a GitHub Release on the same tag.
+6. A human runs `cargo publish`.
+
+Do not tag or create a Release before the merge and the checks.
+
+## Checks before `cargo publish`
+
+- `.agents/skills/publish-review/SKILL.md` has been run, and no failure against `.cursor/rules/reader-docs.mdc` or `.cursor/rules/rust-docs.mdc` is left.
+- `cargo doc --no-deps` has no broken link.
+- `cargo package` passes, and `cargo package --list` equals the allow list in `Cargo.toml` (`src/`, `tests/`, `benches/`, `examples/`, `compare/goldens/`, README files, license files). `compare/perf`, other Python, `.cursor/`, `.github/`, and `docs/` are not packaged. Links from the README to development docs are absolute GitHub URLs.
+- `just lint`, `just test`, and `just coverage` pass. Cloud CI is not the completion condition; record the local run.
+- `cargo publish --dry-run` exits 0.
+
+## Contract
+
+0.x minor releases may break the public API, and the README says so. The contract is every item an outside crate can name with the default features. Anything behind `bench-internals` or similar is outside it and the rustdoc says so. `docs.rs` builds with the default features.
+
+A `CHANGELOG` is added by the change that publishes the next version after 0.1.0.

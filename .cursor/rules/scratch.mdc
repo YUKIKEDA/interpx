@@ -1,0 +1,13 @@
+---
+description: Do not leave scratch files, worktrees, or drafts behind
+alwaysApply: true
+---
+
+# Scratch files
+
+Remove, in the turn that made them: extra worktrees and checkouts, throwaway crates, profiler output, scripts, logs, and drafts of Issue or PR bodies. A gitignore entry is not a place to keep them.
+
+- The checkout that is already open is where edits go.
+- The only paths allowed to stay: Cargo output, files that a `compare/perf` runner writes under `compare/perf/out/`, and `.dev/` for the owner's local notes (ignored, not tracked).
+- A script that writes scratch stops at its first failed command (`set -e` in bash, `$ErrorActionPreference = 'Stop'` in PowerShell) and names its targets by absolute path.
+- Long text for `gh` goes through a temporary UTF-8 file that is deleted after the call.

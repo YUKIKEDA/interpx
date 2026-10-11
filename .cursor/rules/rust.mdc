@@ -1,0 +1,31 @@
+---
+description: Safety, Clippy, floats, and no unsafe in interpx's own code
+globs: "**/*.rs"
+alwaysApply: false
+---
+
+# Rust code
+
+Sources: Clippy restriction lints; Rust API Guidelines C-VALIDATE and C-GOOD-ERR. Behavior and error variants live in `docs/design.ja.md`.
+
+- Library paths: no `unwrap`, `expect`, `panic`, or `dbg`. Return the error the design names. Tests may use them (`clippy.toml`).
+- Do not deny `clippy::pedantic` as a group. A single `#[allow]` carries a comment that quotes the requirement it serves.
+- No `unsafe` in interpx's own code (`unsafe_code = "forbid"`). Dependencies may use it. Lifting the ban is a design change that records the invariant first. After that, each block has a `# Safety` section and an invariant comment on the next line.
+- No logging. Failures use the error types in the design.
+- `debug_assert!` is for an internal invariant that means an interpx bug, not for caller input. Validate caller input at the public boundary and return `Err`.
+- A lookup that an invariant guarantees does not end in a silent fallback (`position(..).unwrap_or(0)`). Assert the invariant.
+- A `loop` that ends only because an invariant holds gets a `debug_assert!` on a bound the invariant gives. A point-location walk has its step limit by design (`docs/design.ja.md` §6.2).
+- Do not `zip` two slices whose lengths can differ without `debug_assert_eq!` on the lengths: `zip` stops at the shorter one silently.
+- Do not use `==` on computed `f32` or `f64` (`float_cmp`). The exceptions are the exact-identity cases the design names (for example coordinate identity for duplicate detection).
+- MSRV is 1.89 and the edition is 2021 (`Cargo.toml`, `docs/design.ja.md` §9.1). Do not set edition 2024.
+- Do not add a dependency the design does not name.
+
+```rust
+// BAD: unwrap on a library path, float == to find a knot
+let s = CubicSpline::new(&x, &y, bc).unwrap();
+let hit = x[i] == query;
+
+// GOOD: Result at the boundary, interval search by the design's rule
+let s = CubicSpline::new(&x, &y, bc)?;
+let i = s.interval(query);
+```

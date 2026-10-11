@@ -1,0 +1,20 @@
+---
+description: Conventional Commits for commit subjects and PR titles
+alwaysApply: true
+---
+
+# Conventional Commits
+
+`type(scope): subject`
+
+- `type`: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `build`, `ci`. `perf` is not used: a speed-up takes the kind of its roadmap row (`feat` for a Feat row).
+- `scope` is optional, English, kebab-case or a short noun: `oned`, `grid`, `scattered`, `rbf`, `deps`.
+- `subject` is imperative and short, with no trailing period. It may be Japanese; `type` and `scope` stay English.
+- A breaking change uses `!` or a `BREAKING CHANGE:` footer.
+- A spike commit is `chore` or `test`.
+
+```
+feat(oned): add PchipInterpolator
+fix(grid): keep C order for non-square shapes
+docs(adr): record the SciPy 1.18 baseline
+```

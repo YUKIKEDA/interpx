@@ -1,0 +1,42 @@
+---
+description: Hot-path rules for evaluation: allocation, layout, dispatch, parallelism, reproducibility
+alwaysApply: true
+---
+
+# Performance rules
+
+The hot path is evaluation: `eval`, `eval_or`, `eval_into`, `eval_batch_into`, and the `_par` forms. Construction may allocate.
+
+## Allocation
+
+- The evaluation APIs do not allocate. No `Vec::new`, `vec![]`, `clone`, `to_owned`, `collect`, `Box`, or `String` inside them or their callees. A buffer is passed in by the caller or sized at construction.
+- `eval_batch` returns a `Vec` and so allocates by definition. `_par` forms add no allocation of their own (`rayon` internals are out of count).
+- `tests/alloc.rs` asserts zero allocations for these APIs on every interpolator. Adding an exception needs an Issue and a design entry.
+- A function that allocates is named `to_*` or returns an owned value.
+
+## Memory layout
+
+- Data read together is stored together. Do not split into structure-of-arrays what one evaluation reads as a unit.
+- `PPoly` coefficients: a flat array, interval-major, then power, then output column (`[interval][power][column]`, column innermost).
+- Grid values: C order, last axis fastest, as a flat `Vec<T>` with `shape: [usize; D]`.
+- Scattered points: row-major `&[f64]` (point `i` is `i*D..(i+1)*D`). Converting `[[f64; D]]` to `&[f64]` copies nothing. Do not store points column-major, transpose, or keep a second copy.
+- Walk in memory order: the innermost loop runs over the contiguous axis.
+- Size the data by the cache: a per-point cache goes in a row the reader already loads.
+
+## Dispatch and bounds
+
+- No `dyn` dispatch on the hot path. Interpolator behavior is static: generics, enums matched once per call (not per element), or const generics (`D`) that unroll.
+- `unsafe` is forbidden, so remove bounds checks with `chunks_exact`, `zip`, iterators, and slices split once outside the loop. `get_unchecked` is not available.
+- Interval search is a binary search or a caller-held `Hint`. A `Hint` is a value the caller owns or a batch-local; `&self` evaluation is pure (`.cursor/rules/api-contract.mdc`).
+- Do not branch per element on data that is constant per call; hoist it.
+- `#[inline]` and `#[inline(always)]` only where a measurement shows an effect.
+
+## SIMD and parallelism
+
+- Explicit SIMD is not in v0.1.0 unless a measurement shows a bottleneck. If added, it uses a safe crate (`wide` or similar), and its result is bit for bit the scalar path's result. FMA is used only when the error bound includes it.
+- `rayon` appears only in the outermost `eval_batch_*_par`. No nested `par_iter` inside a parallel region. Use a minimum chunk size so small batches stay serial.
+- `eval_batch_par` and `eval_batch_into_par` return results bit for bit equal to the serial forms: each point is independent and the reduction order is fixed. A test compares them.
+
+## Claims
+
+A speed or memory improvement is claimed with numbers against a named baseline (`.cursor/rules/bench.mdc`). Not with a hunch, an instruction count, or a micro-benchmark of a different path.

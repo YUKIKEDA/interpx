@@ -1,0 +1,16 @@
+---
+description: Destructive git operations and commits need an explicit order
+alwaysApply: true
+---
+
+# Git
+
+A question is not permission. `reset`, `rebase`, `push --force`, `push --force-with-lease`, and `branch -D` run only on an order that names the operation and the target SHA or ref.
+
+When asked about such an operation, answer with the current `HEAD` SHA, the target SHA, what would disappear, and the exact command. Then wait.
+
+- Commit only when the message asks for a commit. Push only when it asks for a push. An open PR is not consent.
+- If history was rewritten, put the SHA from before the rewrite on the first line of the reply.
+- A merge resolved by a script is committed only after the script succeeded and no conflict marker is left (`git diff --check`). Chain steps with `&&`.
+- Never skip hooks (`--no-verify`) or signing unless the owner orders it.
+- A withdrawn prototype's branch stays until the owner names it (`.cursor/rules/workflow.mdc`).

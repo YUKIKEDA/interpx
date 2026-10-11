@@ -1,0 +1,33 @@
+[package]
+name = "interpx"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.89"
+description = "Pure Rust interpolation library covering the main classes of scipy.interpolate"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/YUKIKEDA/interpx"
+# Set to publishable at the v0.1.0 release (docs/roadmap.md).
+publish = false
+include = [
+    "src/",
+    "tests/",
+    "benches/",
+    "examples/",
+    "compare/goldens/",
+    "/README.md",
+    "/README.ja.md",
+    "/LICENSE-MIT",
+    "/LICENSE-APACHE",
+]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+dbg_macro = "deny"
+float_cmp = "deny"
+or_fun_call = "deny"

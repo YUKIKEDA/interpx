@@ -1,0 +1,26 @@
+---
+description: Checks and tests implement the design's full statement
+alwaysApply: true
+---
+
+# Checking the design's statements
+
+A check or a test that stands for a statement in `docs/design.ja.md` implements the whole statement, not a necessary condition of it.
+
+- A test's ranges and families match the Definition of done list (dimensions, sizes, methods, boundary conditions, dtypes). Check them against the list before the PR.
+- When the design fixes an order (input checks, error priority), test it with one input that fails two adjacent steps and assert the first error.
+- Every documented rule has a code path and a test. A sentence with no code behind it is a defect.
+- A golden record lists every observable the design section states (values, derivatives, domain, error cases), or names the ones left out and why.
+- When a design statement changes, search `docs/design.ja.md`, the READMEs, `docs/adr/`, `.cursor/rules/`, and rustdoc for every restatement and update them in the same PR.
+- When an implementation is replaced, rewrite every sentence that explains how the old one behaved.
+- Before a PR says "every X does Y" (every interpolator rejects NaN, every batch API checks lengths), search the whole crate for X. The PR's Verification names the search and the exceptions.
+- When the published order of results can change, compare the order itself, not a hash of the sorted output.
+- A fixed-size buffer on a path that every dimension takes has a test above its capacity.
+- A check of "exactly k" rejects every other count, not only the next one.
+- A comment on a default or a sentinel states the guarantee that holds (`NO_NEIGHBOR`, an empty extrapolation, a default boundary condition).
+- A design argument states the step that carries it, not only its conclusion.
+
+```
+BAD:  "all knots are strictly increasing"  → test checks len > 1 only
+GOOD: tamper test: swap two knots, and make two knots equal; each returns the named error
+```

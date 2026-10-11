@@ -1,0 +1,24 @@
+---
+description: Numeric tests compare with an independent reference and fixed tolerances
+alwaysApply: true
+---
+
+# Numeric tests
+
+- Compare with a reference that does not share code with the code under test: a golden value from SciPy 1.18 (`compare/goldens/`), a closed form, or exact arithmetic on a small case. Do not compare a function with its own re-implementation.
+- Tolerances are fixed numbers written in the test (`rtol`, `atol`). Do not derive them from the constant the test guards. The default classes are in `docs/design.ja.md` §8.2: direct methods f64 `1e-12`; iterative methods (CloughTocher gradients) and RBF about `1e-6`; f32 `1e-5`. A looser tolerance names its reason in a comment.
+- Mutation check: change the guarded term (loosen a bound, drop a term, shift an index, swap an axis order) and see the test fail, then restore it by copying the file aside and back (not `git checkout`, which discards uncommitted work). List the mutations tried in the PR.
+- A guard that survives removal is a finding to settle in the PR that finds it: remove it as redundant with the reason, or add the missing test.
+- Property tests (`proptest`) state an invariant: passes through the data points, PCHIP stays monotone on monotone data, `LinearND` reproduces an affine function exactly, a cubic spline's first and second derivatives are continuous at interior knots, the batch result equals the scalar loop.
+- A family test does not skip a case whose precondition is missing. It fails, and each case carries its expected value or a named reason.
+- Include inputs where each term dominates: nearly coincident knots, a large aspect ratio, values spanning many orders of magnitude, points near the hull boundary.
+- A power of two below `2^-1022` is built from its bits, not `f64::powi`. A numeric test change runs on Linux as well as Windows.
+- Tests that depend on parallel or SIMD paths compare with the serial result bit for bit (`.cursor/rules/perf.mdc`).
+
+```rust
+// BAD: tolerance derived from the guarded constant
+assert!((got - want).abs() <= EPS_USED_BY_CODE);
+
+// GOOD: fixed and independent
+assert!((got - want).abs() <= 1e-12 * want.abs().max(1.0));
+```

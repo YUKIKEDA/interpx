@@ -1,0 +1,30 @@
+---
+description: English rustdoc for public interpx items
+globs: "**/*.rs"
+alwaysApply: false
+---
+
+# rustdoc
+
+- English. `//!` for the crate and modules, `///` for items. No block comments `/** */`.
+- Do not copy Japanese `///` text from `docs/design.ja.md`. Restate the behavior in English.
+- The first line is one complete sentence in the third person ("Returns ...", "Builds ..."), then why and when.
+- Sections, in order: `# Examples` (plural), `# Errors` (every public `Result`), `# Panics` (only if it can; library paths should not), `# Safety` (only for `unsafe`).
+- Every item an outside crate can name with the default features is documented. A getter may link to another item's example.
+- A doctest uses `?`, not `unwrap`. Hide setup with `# ` lines.
+- Link types with intra-doc links. Do not restate the signature.
+- State the SciPy counterpart and any difference in behavior for each SciPy-named type (`.cursor/rules/scipy-parity.mdc`).
+- A number or a bound in rustdoc names its source (Issue, PR, or measurement) and the inputs it was measured on. Document the memory cost of RBF (O(N²)) and the recommended dimension range of `scattered`.
+- Do not write Issue or PR numbers, milestone IDs, roadmap, `AGENTS.md`, `.cursor/rules`, or Grill in public rustdoc. Use a `//` comment where the reason of a line must be kept.
+- A new item goes before the doc comment of the next item or after that item's end, never between a doc comment and its item. After an edit that inserts before an item, read the diff for a doc comment that now documents the wrong item.
+- A change to what a module covers updates every doc that states it: the module's, its parent's, and the item docs.
+- `missing_docs` is `deny`. `pub(crate)` items do not need docs.
+- `cargo doc --no-deps --document-private-items` resolves every link. A public item does not link to a private one.
+- Tests do not need a Preconditions / Steps / Expected template. The name and body show which invariant failed.
+
+```rust
+/// Evaluates the spline at `x`.
+///
+/// Returns `None` when `x` is outside the domain and the extrapolation mode is
+/// [`Extrapolate::None`], or when `x` is NaN.
+```
