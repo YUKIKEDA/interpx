@@ -25,7 +25,7 @@ Grill (when the design branches) → Issue → branch → work → PR → human 
 - `just coverage`: line coverage of at least 90% (`cargo-llvm-cov`). Raising the threshold is a new Issue.
 - `just bench` is not a gate. CI does not run criterion.
 
-CI (`.github/workflows/ci.yml`) runs lint, tests on three OSes with `--no-default-features` and `--all-features`, and the MSRV job. The coverage job is added back by M1-2, the first row with tested code (`cargo llvm-cov` fails on an empty crate). After each merge, read `main`'s CI. A red `main` gets its own Issue and PR before the next merge.
+CI (`.github/workflows/ci.yml`) runs lint, tests on three OSes with `--no-default-features` and `--all-features`, the MSRV job, and coverage. After each merge, read `main`'s CI. A red `main` gets its own Issue and PR before the next merge.
 
 ## Forbidden
 

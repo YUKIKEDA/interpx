@@ -19,5 +19,5 @@ docs/           design.ja.md, roadmap.md, conventions.md, adr/
 
 - `compare/` is not a workspace member. Its Rust runner packages use their own `[workspace]` so their dependencies do not reach `interpx`. Only `compare/goldens/` is in the published package (`include` in `Cargo.toml`).
 - Unit tests are `#[cfg(test)]` in the module. Integration tests are in `tests/`. Golden JSON lives in `compare/goldens/` only.
-- `docs/design.ja.md` holds the full public specification. `docs/roadmap.md` lists work: ID, title, Issue, status. `docs/conventions.md` is created by the first module Issue (M1) and holds the directory tree and the responsibility of each module. Until then this rule is the layout.
+- `docs/design.ja.md` holds the full public specification. `docs/roadmap.md` lists work: ID, title, Issue, status. `docs/conventions.md` holds the directory tree and the responsibility of each module; a row that adds a module adds its line there in the same PR.
 - Do not add a dependency the design does not name. A new dependency is a design change first (`.cursor/rules/workflow.mdc`). Heavy dependencies (`convx`, `kiddo`, `faer`) stay behind the `scattered` feature.
