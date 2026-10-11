@@ -465,7 +465,9 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
     /// that is NaN or infinite gives `None`. (SciPy raises for a NaN.)
     ///
     /// This does not allocate. Its cost grows with the number of intervals
-    /// between `a` and `b`.
+    /// between `a` and `b`. To integrate the same polynomial many times over
+    /// long ranges, build [`antiderivative`](PPoly::antiderivative) once and
+    /// take the difference of its values at the two limits.
     ///
     /// # Examples
     ///

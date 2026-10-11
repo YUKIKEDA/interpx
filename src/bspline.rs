@@ -551,7 +551,10 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
     /// This does not allocate: the control points of the antiderivative are
     /// summed up on the way, not stored. Its cost grows with the number of knot
     /// intervals between `a` and `b`. A spline of any degree up to
-    /// [`BSPLINE_MAX_DEGREE`] can be integrated.
+    /// [`BSPLINE_MAX_DEGREE`] can be integrated. To integrate the same spline
+    /// many times over long ranges, build
+    /// [`antiderivative`](BSpline::antiderivative) once and take the difference
+    /// of its values at the two limits.
     ///
     /// # Examples
     ///
