@@ -660,11 +660,9 @@ fn an_antiderivative_too_large_to_hold_is_an_error() {
     ] {
         assert_eq!(poly.antiderivative(nu).err(), Some(too_large), "nu = {nu}");
     }
-    // At the limit and below it a `Vec` could hold them, but no machine has the
-    // memory: an error again, where `vec!` would abort the process.
-    for nu in [max, max / 2, max / 1024] {
-        assert_eq!(poly.antiderivative(nu).err(), Some(too_large), "nu = {nu}");
-    }
+    // The limit itself is not tried: a `Vec` could hold that many, so the call
+    // would go on to ask for the memory, and running out of memory is left to
+    // the allocator (`.cursor/rules/rust.mdc`).
 
     // The limit counts bytes: with three columns it is a third.
     let wide: PPoly<f64, [f64; 3]> = PPoly::new(&[0.0, 1.0], &[[1.0; 3]], 0).expect("valid");

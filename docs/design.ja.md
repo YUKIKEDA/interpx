@@ -206,6 +206,7 @@ pub enum InterpolateError {
   * `DegenerateDimension{actual_dim,..}` → `DegenerateGeometry(LowerDimensional{affine_dim})`
   * `ExactEvaluationExhausted` → `DegenerateGeometry(NumericalLimit)`
   * `TooManyPoints` → `InvalidParameter`
+* **確保の大きさ**: 入力だけで決まる上限はエラーで返し、機械のメモリで決まる失敗は捕まえない。前者は、呼び出し側の引数で確保の大きさが決まり、それが `Vec` の持てる上限（`isize::MAX` バイト）を超える場合で、確保の前に検査して `InvalidParameter { reason: TooLarge { max } }` を返す（そのまま確保すると panic するため）。後者（上限内でのメモリ不足）は Rust の標準どおりプロセスが終了する。メモリ不足をエラーとして返す API は持たない。依存クレート（`faer`・`kiddo`・`convx`）の内部の確保は捕まえられず、一部の確保だけをエラーにすると、エラーの値（`max`）が「この値までなら通る」を意味しなくなるためである。
 * 共球点群はエラーではない（`convx` が単体分割して返す）。縮退エラーは「全点が低次元部分空間上」「統合後の相異なる点が D+1 未満」のみ。
 
 ---
@@ -312,7 +313,7 @@ interpx/
     * `BSpline`: 1 階ごとに、ノットの両端を 1 個ずつ落とし、制御点を $c'_i = k\,\dfrac{c_{i+1} - c_i}{t_{i+k+1} - t_{i+1}}$（$n - 1$ 個）に置き換える。定義域 $[t_k, t_n]$ は変わらない。分母が 0 になるのは $t_{i+1} = \dots = t_{i+k+1}$ のときで、その基底関数は台が空なので、制御点は 0 とする。これで、`from_ppoly` が作る多重度 $k+1$ のノットを持つスプラインも微分できる。
     * $\nu > k$ のときは、どちらの型も恒等的に 0 を返す。`PPoly` は区切り点をそのまま持つ 0 次、`BSpline` はノットが定義域の両端だけの 0 次である。
   * **`antiderivative`**:
-    * `PPoly`: 次数は $k + \nu$。1 階ごとに、$(x - x_i)^m$ の係数を $m + 1$ で割って次数を上げ、定数項は、原始関数が区切り点で連続になるように左から足し上げる。`PPoly` に次数の上限はないが、係数を保持できない `nu` は `InvalidParameter { name: "nu", reason: TooLarge { max } }` を返す。`Vec` が持てる上限（`isize::MAX` バイト）を超える場合と、上限内でもメモリを確保できない場合の両方で、panic も異常終了もしない。`max` は前者の上限から決まる階数である。
+    * `PPoly`: 次数は $k + \nu$。1 階ごとに、$(x - x_i)^m$ の係数を $m + 1$ で割って次数を上げ、定数項は、原始関数が区切り点で連続になるように左から足し上げる。`PPoly` に次数の上限はないが、結果の係数が `Vec` の持てる上限（`isize::MAX` バイト）を超える `nu` は `InvalidParameter { name: "nu", reason: TooLarge { max } }` を返す（`max` はその上限に収まる最大の階数。確保の扱いは §4）。
     * `BSpline`: 1 階ごとに、ノットの両端に端のノットを 1 個ずつ足し、制御点を $C_0 = 0$、$C_{j+1} = C_j + c_j\,\dfrac{t_{j+k+1} - t_j}{k+1}$（$n + 1$ 個）とする。結果の次数が 15 を超えるときは `InvalidParameter { name: "nu", reason: TooLarge { max } }` を返す（`max` は $15 - k$）。
     * **積分定数**: どちらの型も、定義域の左端で 0 にする。`BSpline` は上の制御点から、定義域の左端での値を引く（基底関数の和が 1 なので、全制御点から同じ値を引けばよい）。端のノットが $k+1$ 重なら引く値は厳密に 0 で、SciPy と一致する。
   * **引き継ぐ外挿モード**:

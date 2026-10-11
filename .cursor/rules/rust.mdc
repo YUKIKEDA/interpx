@@ -12,6 +12,7 @@ Sources: Clippy restriction lints; Rust API Guidelines C-VALIDATE and C-GOOD-ERR
 - Do not deny `clippy::pedantic` as a group. A single `#[allow]` carries a comment that quotes the requirement it serves.
 - No `unsafe` in interpx's own code (`unsafe_code = "forbid"`). Dependencies may use it. Lifting the ban is a design change that records the invariant first. After that, each block has a `# Safety` section and an invariant comment on the next line.
 - No logging. Failures use the error types in the design.
+- An allocation whose size a caller's argument decides (an order, a count) is checked against what a `Vec` can hold (`isize::MAX` bytes) before it is made, and returns the error the design names: over that limit `vec!` and `Vec::with_capacity` panic. Running out of memory under the limit is not caught (`docs/design.ja.md` §4): no `try_reserve` that turns it into an error in one place and not in the others.
 - `debug_assert!` is for an internal invariant that means an interpx bug, not for caller input. Validate caller input at the public boundary and return `Err`.
 - A lookup that an invariant guarantees does not end in a silent fallback (`position(..).unwrap_or(0)`). Assert the invariant.
 - A `loop` that ends only because an invariant holds gets a `debug_assert!` on a bound the invariant gives. A point-location walk has its step limit by design (`docs/design.ja.md` §6.2).

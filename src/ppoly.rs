@@ -329,9 +329,10 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
     ///
     /// Returns [`InterpolateError::NonFinite`] when a coefficient overflows, and
     /// [`InterpolateError::InvalidParameter`] when `nu` is so large that the
-    /// coefficients cannot be held: there would be more of them than a `Vec` can
-    /// have (its `max` is the largest order under that limit), or the memory for
-    /// them cannot be reserved.
+    /// result would have more coefficients than a `Vec` can hold (`isize::MAX`
+    /// bytes). Its `max` is the largest order under that limit. Running out of
+    /// memory under it is not an error: as for any allocation in Rust, the
+    /// process stops.
     ///
     /// # Examples
     ///
@@ -354,34 +355,25 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
         }
         let intervals = self.breakpoints.len() - 1;
         // A `Vec` holds `isize::MAX` bytes at most, and asking it for more
-        // panics. The coefficients there are now fit, so the subtraction below
-        // does not wrap.
+        // panics, so that limit is checked here. (Memory that runs out under the
+        // limit is left to the allocator, as everywhere in this crate.) The
+        // coefficients there are now fit, so the subtraction below does not wrap.
         let max_order = isize::MAX.unsigned_abs() / size_of::<V>().max(1) / intervals;
-        let too_large = InterpolateError::InvalidParameter {
-            name: "nu",
-            reason: ParamReason::TooLarge {
-                max: max_order - self.order,
-            },
-        };
         let Some(new_order) = self
             .order
             .checked_add(nu)
             .filter(|order| *order <= max_order)
         else {
-            return Err(too_large);
+            return Err(InterpolateError::InvalidParameter {
+                name: "nu",
+                reason: ParamReason::TooLarge {
+                    max: max_order - self.order,
+                },
+            });
         };
-        // Under that limit the memory can still be more than there is: that is
-        // an error as well, not an abort.
-        let mut coefficients = Vec::new();
-        if coefficients
-            .try_reserve_exact(intervals * new_order)
-            .is_err()
-        {
-            return Err(too_large);
-        }
         // Each piece keeps its coefficients at the front, and gets one more
         // behind them at every step.
-        coefficients.resize(intervals * new_order, V::zero());
+        let mut coefficients = vec![V::zero(); intervals * new_order];
         for (new, old) in coefficients
             .chunks_exact_mut(new_order)
             .zip(self.coefficients.chunks_exact(self.order))
