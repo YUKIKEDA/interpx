@@ -283,7 +283,7 @@ fn scipy_curves_differentiate_column_by_column() {
 
 #[test]
 fn derivatives_and_antiderivatives_of_piecewise_polynomials_match_scipys_coefficients() {
-    let file = load::<Json>("oned").expect("golden file oned");
+    let file = load::<Json>("calculus").expect("golden file calculus");
     let (mut cases, mut periodic) = (0, 0);
     for case in &file.cases {
         let name = case["name"].as_str().expect("name");
@@ -343,7 +343,7 @@ fn derivatives_and_antiderivatives_of_piecewise_polynomials_match_scipys_coeffic
 
 #[test]
 fn derivatives_and_antiderivatives_of_b_splines_match_scipys_knots_and_control_points() {
-    let file = load::<Json>("oned").expect("golden file oned");
+    let file = load::<Json>("calculus").expect("golden file calculus");
     let (mut cases, mut periodic) = (0, 0);
     for case in &file.cases {
         let name = case["name"].as_str().expect("name");

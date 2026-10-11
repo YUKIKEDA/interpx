@@ -117,7 +117,7 @@ fn scipy_nearest_kinds_evaluate_to_the_golden_values() {
         }
         kinds.insert(format!("{kind:?}"));
     }
-    assert_eq!((inside, outside, wide), (12, 2, 4));
+    assert_eq!((inside, outside, wide), (12, 4, 4));
     assert_eq!(kinds.len(), 4);
 }
 
