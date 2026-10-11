@@ -43,8 +43,13 @@ pub(crate) fn solve<T: Scalar, V: Value<T>>(
 ///
 /// The matrix has, besides its three diagonals, `lower[0]` in the top right
 /// corner (row `0`, column `n - 1`) and `upper[n - 1]` in the bottom left one.
-/// `n` is 3 or more: a smaller cyclic matrix has no one shape. `work` is
-/// scratch space of length `n`; `diag` and `work` are overwritten.
+/// `work` is scratch space of length `n`; `diag` and `work` are overwritten.
+///
+/// `n` is 3 or more: a smaller cyclic matrix has no one shape. The caller
+/// guarantees this; it is not checked in a release build, where 1 or 2 rows give
+/// a wrong solution without an error and no rows panic. A periodic spline has
+/// one row fewer than it has points, so one through three points has two rows:
+/// its caller handles that case apart (docs/design.ja.md section 6.1).
 ///
 /// This is the Sherman-Morrison formula. With `gamma = -diag[0]`, the matrix is
 /// `A' + u v^T` for `u = (gamma, 0, ..., 0, bottom_left)`,
