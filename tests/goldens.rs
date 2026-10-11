@@ -117,6 +117,18 @@ fn every_case_is_well_formed() {
                 assert!(!has_expected && !has_error, "{what}");
             } else if reference.starts_with("scipy.interpolate.PPoly.from_spline") {
                 assert!(case["coefficients"].is_array(), "{what}");
+            } else if case_name.starts_with("calculus/") {
+                // The results are per order: each entry has the values at the
+                // queries.
+                let derivatives = case["derivatives"].as_array().expect("derivatives");
+                assert!(!derivatives.is_empty() && !has_expected, "{what}");
+                let queries = case["queries"].as_array().expect("queries").len();
+                for entry in derivatives {
+                    assert!(entry["nu"].is_u64(), "{what}: nu");
+                    let values = entry["values"].as_array().expect("values");
+                    assert_eq!(values.len(), queries, "{what}: queries and values");
+                }
+                assert!(case["integrals"].is_array(), "{what}");
             } else {
                 assert!(has_expected != has_error, "{what}: expected xor error");
             }

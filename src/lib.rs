@@ -4,7 +4,8 @@
 //! [`Value`], the [`Interpolator`] trait, [`InterpolateError`], [`Extrapolate`],
 //! [`BoundaryCondition`]) and the two spline representations the 1D
 //! interpolators evaluate through: [`PPoly`], a piecewise polynomial, and
-//! [`BSpline`]. The interpolators themselves follow.
+//! [`BSpline`]. Both can be differentiated and integrated. The interpolators
+//! themselves follow.
 //!
 //! # Examples
 //!

@@ -6,7 +6,10 @@ Reference: SciPy 1.18 (`numpy.interp`, `interp1d` for the nearest kinds,
 
 Each case stores the values at the queries and, where the reference has them, the
 first and second derivatives, the antiderivative, a few definite integrals, and
-the piecewise-polynomial or B-spline representation itself.
+the piecewise-polynomial or B-spline representation itself. The `calculus/*`
+cases store the derivatives and antiderivatives as objects (their coefficients, or
+knots and control points), derivatives of every order, and integrals that leave
+the domain or run over several periods.
 
 Run: `just gen-goldens`
 """
@@ -85,6 +88,65 @@ def bspline_fields(b, x: np.ndarray, q: np.ndarray, periodic: bool = False) -> d
     if not periodic:
         out["antiderivative"] = b.antiderivative()(q)
         out["integrals"] = [[a, c, float(b.integrate(a, c))] for a, c in intervals(x)]
+    return out
+
+
+def outside(x: np.ndarray) -> list[tuple[float, float]]:
+    """Integration limits that leave the domain, one pair reversed, one all outside."""
+    lo, hi = float(x[0]), float(x[-1])
+    span = hi - lo
+    return [
+        (lo - 0.25 * span, hi + 0.1 * span),
+        (hi + 0.1 * span, lo + 0.5 * span),
+        (lo - 0.2 * span, lo - 0.1 * span),
+        (lo + 0.4 * span, hi + 0.3 * span),
+    ]
+
+
+def over_periods(x: np.ndarray) -> list[tuple[float, float]]:
+    """Integration limits for a periodic spline: whole periods, parts, and across the end."""
+    lo, period = float(x[0]), float(x[-1] - x[0])
+    return [
+        (lo, lo + 3.0 * period),
+        (lo + 0.3 * period, lo + 2.9 * period),
+        (lo - 1.7 * period, lo + 0.4 * period),
+        (lo + 2.2 * period, lo - 0.3 * period),
+        (lo + 0.8 * period, lo + 1.1 * period),
+        (lo + 0.2 * period, lo + 0.7 * period),
+    ]
+
+
+def ppoly_calculus(p, q: np.ndarray, limits: list[tuple[float, float]]) -> dict:
+    """A piecewise polynomial with its derivatives, antiderivatives, and integrals."""
+    k = p.c.shape[0] - 1
+    out = {"queries": q, "breakpoints": p.x, "coefficients": p.c}
+    # One order past the degree: SciPy returns the zero polynomial.
+    out["derivatives"] = [{"nu": nu, "coefficients": p.derivative(nu).c, "values": p(q, nu)} for nu in range(1, k + 2)]
+    if p.extrapolate != "periodic":
+        # The antiderivative of a periodic polynomial does not extrapolate.
+        out["antiderivatives"] = [
+            {"nu": nu, "coefficients": p.antiderivative(nu).c, "values": p.antiderivative(nu)(q)} for nu in (1, 2)
+        ]
+    out["integrals"] = [[a, b, float(p.integrate(a, b))] for a, b in limits]
+    return out
+
+
+def spline_fields(b) -> dict:
+    """Knots and control points. SciPy pads `c` to the length of `t`."""
+    return {"k": b.k, "knots": b.t, "control_points": b.c[: len(b.t) - b.k - 1]}
+
+
+def bspline_calculus(b, q: np.ndarray, limits: list[tuple[float, float]]) -> dict:
+    """A B-spline with its derivatives, antiderivatives, and integrals."""
+    out = {"queries": q, **spline_fields(b)}
+    out["derivatives"] = [{"nu": nu, "values": b(q, nu), **spline_fields(b.derivative(nu))} for nu in range(1, b.k + 1)]
+    # One order past the degree: SciPy evaluates it to zero, and has no object for it.
+    out["derivatives"].append({"nu": b.k + 1, "values": b(q, b.k + 1)})
+    if b.extrapolate != "periodic":
+        out["antiderivatives"] = [
+            {"nu": nu, "values": b.antiderivative(nu)(q), **spline_fields(b.antiderivative(nu))} for nu in (1, 2)
+        ]
+    out["integrals"] = [[a, c, float(b.integrate(a, c))] for a, c in limits]
     return out
 
 
@@ -364,6 +426,62 @@ def main() -> None:
                 coefficients=p.c,
             )
         )
+
+    # Derivatives and integrals as objects: the coefficients SciPy gives a
+    # derivative and an antiderivative, derivatives of every order up to one past
+    # the degree, and definite integrals that leave the domain.
+    for name in ("sine_12", "random_20"):
+        x, y = ds[name]
+        q = queries_for(x)
+        p = si.CubicSpline(x, y)
+        cases.append(
+            golden.case(
+                f"calculus/ppoly/cubic_spline/{name}",
+                "scipy.interpolate.PPoly",
+                {"extrapolate": True},
+                **ppoly_calculus(p, q, outside(x)),
+            )
+        )
+        for k in (2, 3, 5):
+            b = si.make_interp_spline(x, y, k=k)
+            cases.append(
+                golden.case(
+                    f"calculus/bspline/k{k}/{name}",
+                    "scipy.interpolate.BSpline",
+                    {"extrapolate": True},
+                    **bspline_calculus(b, q, outside(x)),
+                )
+            )
+    x, y = ds["fritsch_carlson"]
+    p = si.PchipInterpolator(x, y, extrapolate=True)
+    cases.append(
+        golden.case(
+            "calculus/ppoly/pchip/fritsch_carlson",
+            "scipy.interpolate.PPoly",
+            {"extrapolate": True},
+            **ppoly_calculus(p, queries_for(x), outside(x)),
+        )
+    )
+    x, y = ds["periodic_13"]
+    q = queries_for(x, extend=0.6)
+    p = si.CubicSpline(x, y, bc_type="periodic")
+    cases.append(
+        golden.case(
+            "calculus/ppoly/cubic_spline/periodic_13",
+            "scipy.interpolate.PPoly",
+            {"extrapolate": "periodic"},
+            **ppoly_calculus(p, q, over_periods(x)),
+        )
+    )
+    b = si.make_interp_spline(x, y, k=3, bc_type="periodic")
+    cases.append(
+        golden.case(
+            "calculus/bspline/k3/periodic_13",
+            "scipy.interpolate.BSpline",
+            {"extrapolate": "periodic"},
+            **bspline_calculus(b, q, over_periods(x)),
+        )
+    )
 
     path = golden.write("oned", GENERATOR, SEED, cases)
     print(f"wrote {path.name} ({len(cases)} cases)")

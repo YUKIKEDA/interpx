@@ -114,5 +114,66 @@ fn bench(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench);
+/// Derivatives and integrals.
+///
+/// The first derivative at 1000 points in increasing order, three ways: a loop
+/// over `eval_derivative`, a loop over `eval` on the derivative built ahead, and
+/// `eval_batch_into` on it. Then the cost of building the derivative and the
+/// antiderivative, and of one definite integral over the whole domain and over
+/// a hundredth of it.
+fn calculus(c: &mut Criterion) {
+    let Some(p) = polynomial() else {
+        return;
+    };
+    let Ok(slope) = p.derivative(1) else {
+        return;
+    };
+    let n = 1000;
+    let (xs, _) = points(&p, n);
+    let mut out = vec![0.0; n];
+    let mut group = c.benchmark_group("ppoly_calculus");
+
+    group.throughput(Throughput::Elements(n as u64));
+    group.bench_function("eval_derivative", |b| {
+        b.iter(|| {
+            for (x, slot) in xs.iter().zip(out.iter_mut()) {
+                *slot = p.eval_derivative(black_box(*x), 1).unwrap_or(f64::NAN);
+            }
+            black_box(&out);
+        });
+    });
+    group.bench_function("derivative_then_eval", |b| {
+        b.iter(|| {
+            for (x, slot) in xs.iter().zip(out.iter_mut()) {
+                *slot = slope.eval_or(black_box(x), f64::NAN);
+            }
+            black_box(&out);
+        });
+    });
+    group.bench_function("derivative_then_eval_batch_into", |b| {
+        b.iter(|| {
+            let done = slope.eval_batch_into(black_box(&xs), &mut out, f64::NAN);
+            black_box((&out, done.is_ok()));
+        });
+    });
+
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("derivative", |b| {
+        b.iter(|| black_box(black_box(&p).derivative(1).is_ok()));
+    });
+    group.bench_function("antiderivative", |b| {
+        b.iter(|| black_box(black_box(&p).antiderivative(1).is_ok()));
+    });
+    let (lo, hi) = (xs[0], xs[n - 1]);
+    group.bench_function("integrate/whole", |b| {
+        b.iter(|| black_box(p.integrate(black_box(lo), black_box(hi))));
+    });
+    let near = lo + (hi - lo) / 100.0;
+    group.bench_function("integrate/hundredth", |b| {
+        b.iter(|| black_box(p.integrate(black_box(lo), black_box(near))));
+    });
+    group.finish();
+}
+
+criterion_group!(benches, bench, calculus);
 criterion_main!(benches);

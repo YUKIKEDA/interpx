@@ -1,6 +1,9 @@
 //! Piecewise polynomials: the representation the 1D splines evaluate through.
 
-use crate::{search, validate, Extrapolate, Hint, InterpolateError, Interpolator, Scalar, Value};
+use crate::scalar::{count, falling};
+use crate::{
+    search, validate, Extrapolate, Hint, InterpolateError, Interpolator, ParamReason, Scalar, Value,
+};
 
 /// A piecewise polynomial in one variable.
 ///
@@ -18,7 +21,9 @@ use crate::{search, validate, Extrapolate, Hint, InterpolateError, Interpolator,
 /// An interval contains its left break point and not its right one; the last
 /// interval contains both. Outside the break points the result follows the
 /// [`Extrapolate`] mode, which is [`Extrapolate::Extend`] unless
-/// [`with_extrapolate`](PPoly::with_extrapolate) changes it.
+/// [`with_extrapolate`](PPoly::with_extrapolate) changes it. Under
+/// [`Extrapolate::Periodic`] a period holds its left end only: the last break
+/// point is the first one again, as in SciPy.
 ///
 /// Cloning copies the break points and the coefficients.
 ///
@@ -246,11 +251,314 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
         })
     }
 
+    /// Returns the derivative of order `nu` as a piecewise polynomial.
+    ///
+    /// SciPy's `PPoly.derivative`. The break points stay and the degree drops by
+    /// `nu`. An order above the degree gives the polynomial of degree 0 that is
+    /// zero everywhere, and order 0 gives a copy.
+    ///
+    /// The derivative keeps the extrapolation mode, except that
+    /// [`Extrapolate::Clamp`] becomes [`Extrapolate::Forbid`]: a clamped function
+    /// is constant outside its domain, and no mode gives the zero its derivative
+    /// is there. [`eval_derivative`](PPoly::eval_derivative) does return it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InterpolateError::NonFinite`] when a coefficient overflows.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{InterpolateError, Interpolator, PPoly};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// // x^3 on [0, 2].
+    /// let cube = PPoly::new(&[0.0, 2.0], &[1.0, 0.0, 0.0, 0.0], 3)?;
+    /// let slope = cube.derivative(1)?; // 3 x^2
+    /// assert_eq!(slope.degree(), 2);
+    /// assert_eq!(slope.coefficients(), [3.0, 0.0, 0.0]);
+    /// assert_eq!(slope.eval(&2.0), Some(12.0));
+    ///
+    /// assert_eq!(cube.derivative(3)?.coefficients(), [6.0]);
+    /// assert_eq!(cube.derivative(4)?.coefficients(), [0.0]);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn derivative(&self, nu: usize) -> Result<Self, InterpolateError> {
+        if nu == 0 {
+            return Ok(self.clone());
+        }
+        let extrapolate = self.extrapolate.of_derivative();
+        let degree = self.degree();
+        if nu > degree {
+            let zeros = vec![V::zero(); self.breakpoints.len() - 1];
+            return Ok(
+                Self::from_owned(self.breakpoints.clone(), zeros, 0)?.with_extrapolate(extrapolate)
+            );
+        }
+        let kept = self.order - nu;
+        let mut coefficients = Vec::with_capacity(self.coefficients.len() / self.order * kept);
+        for piece in self.coefficients.chunks_exact(self.order) {
+            // The power of the first coefficient, going down by one each step.
+            let mut power = count::<T>(degree);
+            for c in &piece[..kept] {
+                coefficients.push(V::zero().axpy(falling(power, nu), *c));
+                power = power - T::one();
+            }
+        }
+        Ok(
+            Self::from_owned(self.breakpoints.clone(), coefficients, degree - nu)?
+                .with_extrapolate(extrapolate),
+        )
+    }
+
+    /// Returns the antiderivative of order `nu` as a piecewise polynomial.
+    ///
+    /// SciPy's `PPoly.antiderivative`. The break points stay and the degree rises
+    /// by `nu`. The antiderivative is continuous, and it is zero at the first
+    /// break point, as are its derivatives below order `nu`. Order 0 gives a
+    /// copy.
+    ///
+    /// [`Extrapolate::Extend`] is kept. Every other mode becomes
+    /// [`Extrapolate::Forbid`]: the antiderivative of a periodic function is not
+    /// periodic in general (SciPy drops the mode as well), and that of a clamped
+    /// function is linear outside the domain. [`integrate`](PPoly::integrate)
+    /// follows the mode of this polynomial.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InterpolateError::NonFinite`] when a coefficient overflows, and
+    /// [`InterpolateError::InvalidParameter`] when `nu` is so large that the
+    /// result would have more coefficients than a `Vec` can hold (`isize::MAX`
+    /// bytes). Its `max` is the largest order under that limit. Running out of
+    /// memory under it is not an error: as for any allocation in Rust, the
+    /// process stops.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{InterpolateError, Interpolator, PPoly};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// // 2 on [0, 1], then 4 on [1, 3].
+    /// let steps = PPoly::new(&[0.0, 1.0, 3.0], &[2.0, 4.0], 0)?;
+    /// let area = steps.antiderivative(1)?;
+    /// // 2x, then 2 + 4(x - 1): continuous at 1.
+    /// assert_eq!(area.coefficients(), [2.0, 0.0, 4.0, 2.0]);
+    /// assert_eq!(area.eval(&3.0), Some(10.0));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn antiderivative(&self, nu: usize) -> Result<Self, InterpolateError> {
+        if nu == 0 {
+            return Ok(self.clone());
+        }
+        let intervals = self.breakpoints.len() - 1;
+        // A `Vec` holds `isize::MAX` bytes at most, and asking it for more
+        // panics, so that limit is checked here. (Memory that runs out under the
+        // limit is left to the allocator, as everywhere in this crate.) The
+        // coefficients there are now fit, so the subtraction below does not wrap.
+        let max_order = isize::MAX.unsigned_abs() / size_of::<V>().max(1) / intervals;
+        let Some(new_order) = self
+            .order
+            .checked_add(nu)
+            .filter(|order| *order <= max_order)
+        else {
+            return Err(InterpolateError::InvalidParameter {
+                name: "nu",
+                reason: ParamReason::TooLarge {
+                    max: max_order - self.order,
+                },
+            });
+        };
+        // Each piece keeps its coefficients at the front, and gets one more
+        // behind them at every step.
+        let mut coefficients = vec![V::zero(); intervals * new_order];
+        for (new, old) in coefficients
+            .chunks_exact_mut(new_order)
+            .zip(self.coefficients.chunks_exact(self.order))
+        {
+            new[..self.order].copy_from_slice(old);
+        }
+        // The highest power after the step.
+        let mut top = count::<T>(self.order);
+        for step in 0..nu {
+            let filled = self.order + step;
+            // The integral from the first break point to the left end of the
+            // piece: its constant, which makes the result continuous.
+            let mut constant = V::zero();
+            for (piece, ends) in coefficients
+                .chunks_exact_mut(new_order)
+                .zip(self.breakpoints.windows(2))
+            {
+                // The powers after this step: `filled` down to 1.
+                let mut power = top;
+                for c in &mut piece[..filled] {
+                    *c = V::zero().axpy(power.recip(), *c);
+                    power = power - T::one();
+                }
+                piece[filled] = constant;
+                let width = ends[1] - ends[0];
+                constant = piece[..=filled]
+                    .iter()
+                    .fold(V::zero(), |acc, c| c.axpy(width, acc));
+            }
+            top = top + T::one();
+        }
+        Ok(
+            Self::from_owned(self.breakpoints.clone(), coefficients, new_order - 1)?
+                .with_extrapolate(self.extrapolate.of_antiderivative()),
+        )
+    }
+
+    /// Returns the derivative of order `nu` at `x`.
+    ///
+    /// SciPy's `PPoly.__call__(x, nu)`. This is the derivative of the function
+    /// [`eval`](Interpolator::eval) gives, piece by piece:
+    ///
+    /// - Order 0 is `eval`, bit for bit.
+    /// - `x` belongs to the same interval as in `eval`. Where the derivative
+    ///   jumps at a break point, the result is that of the piece on the right;
+    ///   at the last break point, of the piece on the left.
+    /// - Outside the domain, [`Extrapolate::Extend`] differentiates the end piece
+    ///   continued, [`Extrapolate::Periodic`] wraps `x`, and
+    ///   [`Extrapolate::Forbid`] gives `None`. Under [`Extrapolate::Clamp`] the
+    ///   function is constant there, so an order of 1 or more gives zero.
+    /// - An order above the degree gives zero wherever there is a value.
+    ///
+    /// This does not allocate. For many points, build
+    /// [`derivative`](PPoly::derivative) once and call
+    /// [`eval_batch_into`](Interpolator::eval_batch_into) on it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{Extrapolate, InterpolateError, PPoly};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// // x on [0, 1], then 1 - (x - 1) on [1, 2]: the slope jumps at 1.
+    /// let hat = PPoly::new(&[0.0, 1.0, 2.0], &[1.0, 0.0, -1.0, 1.0], 1)?;
+    /// assert_eq!(hat.eval_derivative(0.5, 1), Some(1.0));
+    /// assert_eq!(hat.eval_derivative(1.0, 1), Some(-1.0));
+    /// assert_eq!(hat.eval_derivative(2.0, 1), Some(-1.0));
+    /// assert_eq!(hat.eval_derivative(0.5, 2), Some(0.0));
+    ///
+    /// let hat = hat.with_extrapolate(Extrapolate::Clamp);
+    /// assert_eq!(hat.eval_derivative(5.0, 1), Some(0.0));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn eval_derivative(&self, x: T, nu: usize) -> Option<V> {
+        if nu == 0 {
+            return self.eval(&x);
+        }
+        search::eval_derivative(&self.breakpoints, self.extrapolate, x, V::zero(), |i, x| {
+            self.horner_derivative(i, x, nu)
+        })
+    }
+
+    /// Returns the integral from `a` to `b`.
+    ///
+    /// SciPy's `PPoly.integrate`. This is the integral of the function
+    /// [`eval`](Interpolator::eval) gives, so outside the domain it follows the
+    /// [`Extrapolate`] mode:
+    ///
+    /// - [`Extrapolate::Extend`] integrates the end pieces continued.
+    /// - [`Extrapolate::Clamp`] integrates the end values, which are constant.
+    /// - [`Extrapolate::Periodic`] integrates the function repeated.
+    /// - [`Extrapolate::Forbid`] gives `None` when `a` or `b` is outside the
+    ///   domain. (SciPy returns NaN.)
+    ///
+    /// With `a > b` the result is minus the integral from `b` to `a`. A limit
+    /// that is NaN or infinite gives `None`. (SciPy raises for a NaN.)
+    ///
+    /// This does not allocate. Its cost grows with the number of intervals
+    /// between `a` and `b`. To integrate the same polynomial many times over
+    /// long ranges, build [`antiderivative`](PPoly::antiderivative) once and
+    /// take the difference of its values at the two limits.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{Extrapolate, InterpolateError, PPoly};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// // x on [0, 1], then 1 on [1, 2].
+    /// let p = PPoly::new(&[0.0, 1.0, 2.0], &[1.0, 0.0, 0.0, 1.0], 1)?;
+    /// assert_eq!(p.integrate(0.0, 2.0), Some(1.5));
+    /// assert_eq!(p.integrate(2.0, 0.0), Some(-1.5));
+    /// // The last piece continues past 2.
+    /// assert_eq!(p.integrate(1.0, 4.0), Some(3.0));
+    ///
+    /// let p = p.with_extrapolate(Extrapolate::Forbid);
+    /// assert_eq!(p.integrate(1.0, 4.0), None);
+    /// assert_eq!(p.integrate(f64::NAN, 1.0), None);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn integrate(&self, a: T, b: T) -> Option<V> {
+        search::integrate(
+            &self.breakpoints,
+            self.extrapolate,
+            a,
+            b,
+            |i, x| self.horner(i, x),
+            |i, a, j, b| self.integral_between(i, a, j, b),
+        )
+    }
+
+    /// The coefficients of interval `i`.
+    fn piece(&self, i: usize) -> &[V] {
+        &self.coefficients[i * self.order..(i + 1) * self.order]
+    }
+
     /// Evaluates the polynomial of interval `i` at `x` by Horner's rule.
     fn horner(&self, i: usize, x: T) -> V {
         let dx = x - self.breakpoints[i];
-        let piece = &self.coefficients[i * self.order..(i + 1) * self.order];
-        piece.iter().fold(V::zero(), |acc, c| c.axpy(dx, acc))
+        self.piece(i)
+            .iter()
+            .fold(V::zero(), |acc, c| c.axpy(dx, acc))
+    }
+
+    /// Evaluates the derivative of order `nu` of the polynomial of interval `i`
+    /// at `x`: Horner's rule on the coefficients the derivative would have.
+    fn horner_derivative(&self, i: usize, x: T, nu: usize) -> V {
+        let Some(kept) = self.order.checked_sub(nu) else {
+            return V::zero();
+        };
+        let dx = x - self.breakpoints[i];
+        let mut power = count::<T>(self.order - 1);
+        let mut acc = V::zero();
+        for c in &self.piece(i)[..kept] {
+            acc = V::zero().axpy(falling(power, nu), *c).axpy(dx, acc);
+            power = power - T::one();
+        }
+        acc
+    }
+
+    /// The integral from `a` to `b`, with `a` taken to be in interval `i` and `b`
+    /// in interval `j`, `i <= j`.
+    fn integral_between(&self, i: usize, a: T, j: usize, b: T) -> V {
+        let mut sum = self.primitive(j, b).axpy(-T::one(), self.primitive(i, a));
+        // The whole intervals from `i` up to, and not including, `j`.
+        for whole in i..j {
+            sum = sum.axpy(T::one(), self.primitive(whole, self.breakpoints[whole + 1]));
+        }
+        sum
+    }
+
+    /// The integral of the polynomial of interval `i` from its left break point
+    /// to `x`.
+    fn primitive(&self, i: usize, x: T) -> V {
+        let dx = x - self.breakpoints[i];
+        // The powers after integrating: the order down to 1.
+        let mut power = count::<T>(self.order);
+        let mut acc = V::zero();
+        for c in self.piece(i) {
+            acc = V::zero().axpy(power.recip(), *c).axpy(dx, acc);
+            power = power - T::one();
+        }
+        V::zero().axpy(dx, acc)
     }
 }
 
