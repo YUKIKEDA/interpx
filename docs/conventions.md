@@ -33,6 +33,9 @@ src/
     linear.rs       Linear1D: numpy.interp; holds a PPoly of degree 1
     nearest.rs      Nearest1D and NearestKind: nearest, nearest-up, previous, next
     pchip.rs        PchipInterpolator: shape-preserving slopes, column by column
+  curve/            parametric curves through points (a private module; mod.rs re-exports)
+    bspline_curve.rs BSplineCurve and Parametrization: the parameters from the points, then a
+                    BSpline1D with points for values
   bspline.rs        BSpline: basis functions on the stack, derivatives and integrals;
                     PPoly::from_bspline and BSpline::from_ppoly
 tests/
@@ -47,6 +50,8 @@ tests/
                     input checks, repeated knots, extrapolation, properties
   akima.rs          Akima1D: SciPy's coefficients and values for both methods, input checks, the
                     rules for the slopes, columns kept apart, properties
+  curve.rs          BSplineCurve: SciPy's control points and values, the parameters each way
+                    chooses, input checks and their order, motions and reversal, properties
   bspline1d.rs      BSpline1D: SciPy's knots, control points, and values, input checks and their
                     order, the knots of each case, agreement with CubicSpline and Linear1D,
                     properties
@@ -73,6 +78,8 @@ benches/
   cubic_hermite.rs  time to build a CubicHermiteSpline, beside PchipInterpolator, and to evaluate it
   bspline1d.rs      time to build a BSpline1D (the banded solvers), beside CubicSpline, and to
                     evaluate it
+  curve.rs          time to build a BSplineCurve (each parametrization), beside BSpline1D, and to
+                    evaluate it
 compare/            Python side: pinned SciPy, data sets, generators, goldens (see the golden-data skill)
 docs/               design.ja.md, roadmap.md, conventions.md, adr/
 ```
@@ -90,5 +97,5 @@ docs/               design.ja.md, roadmap.md, conventions.md, adr/
 - **Input checks.** A 1D constructor calls `validate::coordinates_and_values`; it does not write its own order of checks. Its test file has one input that breaks two adjacent steps and expects the earlier error.
 - **Properties.** Property tests (`proptest`) are in the test file of the type. A method with a faster path (a hint, a batch) is compared bit for bit with the plain one.
 - **Benchmarks.** A bench file ends with `criterion_group!` and `criterion_main!`, allows `missing_docs` for that macro, and uses no `unwrap`, `expect`, or `panic` (the lints apply to benches).
-- **Golden data.** A new golden file is added to `FILES` in `tests/goldens.rs` and to `just gen-goldens`. One file holds 1 MB at most, and the directory 4 MB (`tests/goldens.rs`, `compare/common/golden.py`). The directory is at 3.65 MB after M1-12. A row whose cases would take it over 3.9 MB does roadmap row M1-14 first (decide to raise the limit or to keep part of the goldens out of the package), and does not drop cases to fit. A row whose cases would take a file over 90% of that splits the file by family first, in the same PR, and does not drop cases to fit (`calculus.json`, `cubic_spline.json`, and `bspline1d.json` were split from `oned.json` this way; one generator may write several files). A test over every piecewise polynomial or every B-spline reads the files together with `common::load_cases(&common::ONE_D)`; a family that gets a file of its own is added to `ONE_D`. The unit tests of a crate-private module read a golden file through the same loader, as `crate::common`: `src/lib.rs` includes it once with `#[cfg(test)] #[path = "../tests/common/mod.rs"] mod common;` (an integration test cannot call a crate-private function; a file included from two modules is compiled twice, which clippy rejects; and inside a `mod tests` the path would start from a directory that does not exist, which fails on Linux and macOS).
+- **Golden data.** A new golden file is added to `FILES` in `tests/goldens.rs` and to `just gen-goldens`. One file holds 1 MB at most, and the directory 4 MB (`tests/goldens.rs`, `compare/common/golden.py`). The directory is at 3.72 MB after M1-13. A row whose cases would take it over 3.9 MB does roadmap row M1-14 first (decide to raise the limit or to keep part of the goldens out of the package), and does not drop cases to fit. A row whose cases would take a file over 90% of that splits the file by family first, in the same PR, and does not drop cases to fit (`calculus.json`, `cubic_spline.json`, and `bspline1d.json` were split from `oned.json` this way; one generator may write several files). A test over every piecewise polynomial or every B-spline reads the files together with `common::load_cases(&common::ONE_D)`; a family that gets a file of its own is added to `ONE_D`. The unit tests of a crate-private module read a golden file through the same loader, as `crate::common`: `src/lib.rs` includes it once with `#[cfg(test)] #[path = "../tests/common/mod.rs"] mod common;` (an integration test cannot call a crate-private function; a file included from two modules is compiled twice, which clippy rejects; and inside a `mod tests` the path would start from a directory that does not exist, which fails on Linux and macOS).
 - **Errors.** A new `InterpolateError` variant comes with the row that first returns it, together with its line in `docs/design.ja.md` §4 and its message test in `src/error.rs`.

@@ -10,6 +10,7 @@ mod nearest;
 mod pchip;
 
 pub use akima::{Akima1D, AkimaMethod};
+pub(crate) use bspline1d::fewest_points;
 pub use bspline1d::BSpline1D;
 pub use cubic_hermite::CubicHermiteSpline;
 pub use cubic_spline::CubicSpline;

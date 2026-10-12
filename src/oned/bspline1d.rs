@@ -79,6 +79,56 @@ fn end_derivative<V>(end: EndCondition<V>) -> EndDerivative<V> {
     }
 }
 
+/// The checks of the degree and of the boundary condition, which come before
+/// the data is looked at: returns the fewest points the two take.
+///
+/// The conditions must fix one polynomial of the degree at least: `degree + 1`
+/// points, less one for each end with a derivative, and two at least. A
+/// periodic spline of two points is a constant.
+///
+/// # Errors
+///
+/// Returns [`InterpolateError::InvalidParameter`]: with the name `"degree"` for
+/// a degree of 0 or over [`BSPLINE_MAX_DEGREE`], and with the name `"bc"` for a
+/// derivative at an end when the degree is not 3.
+pub(crate) fn fewest_points<V>(
+    degree: usize,
+    bc: &BoundaryCondition<V>,
+) -> Result<usize, InterpolateError> {
+    if degree == 0 {
+        return Err(InterpolateError::InvalidParameter {
+            name: "degree",
+            reason: ParamReason::TooSmall { min: 1 },
+        });
+    }
+    if degree > BSPLINE_MAX_DEGREE {
+        return Err(InterpolateError::InvalidParameter {
+            name: "degree",
+            reason: ParamReason::TooLarge {
+                max: BSPLINE_MAX_DEGREE,
+            },
+        });
+    }
+    let given = match bc {
+        BoundaryCondition::Ends(left, right) => [left, right]
+            .into_iter()
+            .filter(|end| !matches!(end, EndCondition::NotAKnot))
+            .count(),
+        BoundaryCondition::NotAKnot | BoundaryCondition::Periodic => 0,
+    };
+    if given > 0 && degree != 3 {
+        return Err(InterpolateError::InvalidParameter {
+            name: "bc",
+            reason: ParamReason::Unsupported,
+        });
+    }
+    Ok(if matches!(bc, BoundaryCondition::Periodic) {
+        2
+    } else {
+        (degree + 1 - given).max(2)
+    })
+}
+
 impl<T: Scalar, V: Value<T>> BSpline1D<T, V> {
     /// Builds the spline of the given degree through `(x[i], y[i])`.
     ///
@@ -150,38 +200,11 @@ impl<T: Scalar, V: Value<T>> BSpline1D<T, V> {
         bc: BoundaryCondition<V>,
     ) -> Result<Self, InterpolateError> {
         validate::length(y, x.len())?;
-        if degree == 0 {
-            return Err(InterpolateError::InvalidParameter {
-                name: "degree",
-                reason: ParamReason::TooSmall { min: 1 },
-            });
-        }
-        if degree > BSPLINE_MAX_DEGREE {
-            return Err(InterpolateError::InvalidParameter {
-                name: "degree",
-                reason: ParamReason::TooLarge {
-                    max: BSPLINE_MAX_DEGREE,
-                },
-            });
-        }
+        let required = fewest_points(degree, &bc)?;
         let periodic = matches!(bc, BoundaryCondition::Periodic);
         let (left, right) = match bc {
             BoundaryCondition::Ends(left, right) => (end_derivative(left), end_derivative(right)),
             BoundaryCondition::NotAKnot | BoundaryCondition::Periodic => (None, None),
-        };
-        let given = usize::from(left.is_some()) + usize::from(right.is_some());
-        if given > 0 && degree != 3 {
-            return Err(InterpolateError::InvalidParameter {
-                name: "bc",
-                reason: ParamReason::Unsupported,
-            });
-        }
-        // The conditions fix one polynomial of the degree at least. A periodic
-        // spline of two points is a constant.
-        let required = if periodic {
-            2
-        } else {
-            (degree + 1 - given).max(2)
         };
         validate::coordinates_and_values(x, y, x.len(), required)?;
         for (_, value) in [left, right].into_iter().flatten() {

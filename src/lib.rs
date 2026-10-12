@@ -7,7 +7,8 @@
 //! [`BSpline`]. Both can be differentiated and integrated. The first
 //! interpolators built from data are [`Linear1D`], [`Nearest1D`],
 //! [`CubicSpline`], [`PchipInterpolator`], [`Akima1D`],
-//! [`CubicHermiteSpline`], and [`BSpline1D`]; the others follow.
+//! [`CubicHermiteSpline`], and [`BSpline1D`] for data in one variable, and
+//! [`BSplineCurve`] for a curve through points; the others follow.
 //!
 //! # Examples
 //!
@@ -59,6 +60,7 @@ mod bspline;
 #[cfg(test)]
 #[path = "../tests/common/mod.rs"]
 mod common;
+mod curve;
 mod error;
 mod extrapolate;
 mod interpolator;
@@ -72,6 +74,7 @@ mod value;
 
 pub use boundary::{BoundaryCondition, EndCondition};
 pub use bspline::{BSpline, BSPLINE_MAX_DEGREE};
+pub use curve::{BSplineCurve, Parametrization};
 pub use error::{InterpolateError, ParamReason};
 pub use extrapolate::Extrapolate;
 pub use interpolator::Interpolator;

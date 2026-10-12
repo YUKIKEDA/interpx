@@ -172,6 +172,7 @@ fn scipy_curves_evaluate_to_the_golden_values_column_by_column() {
                 check_curve::<3>(case);
                 three += 1;
             }
+            4 => check_curve::<4>(case),
             other => panic!("a curve with {other} columns"),
         }
     }
