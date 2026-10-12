@@ -12,6 +12,7 @@ The hot path is evaluation: `eval`, `eval_or`, `eval_batch_into`, and the `_par`
 - The evaluation APIs do not allocate. No `Vec::new`, `vec![]`, `clone`, `to_owned`, `collect`, `Box`, or `String` inside them or their callees. A buffer is passed in by the caller or sized at construction.
 - `eval_batch` returns a `Vec` and so allocates by definition. `_par` forms add no allocation of their own (`rayon` internals are out of count).
 - `tests/alloc.rs` asserts zero allocations for these APIs on every interpolator. Adding an exception needs an Issue and a design entry.
+  - One exception stands (#105, `docs/design.ja.md` §3.2 and §6.3): the `neighbors` mode of `RBFInterpolator` solves a small system at every evaluation, in a working space each thread keeps. The space is allocated at the first evaluation on a thread, and widened when an interpolator with more neighbors is first evaluated there. No evaluation after that allocates, and `tests/alloc.rs` asserts that. A working space is not a way around the rule for a type that can size its buffers at construction.
 - A function that allocates is named `to_*` or returns an owned value.
 
 ## Memory layout
