@@ -12,7 +12,23 @@ Sources: Clippy restriction lints; Rust API Guidelines C-VALIDATE and C-GOOD-ERR
 - Do not deny `clippy::pedantic` as a group. A single `#[allow]` carries a comment that quotes the requirement it serves.
 - No `unsafe` in interpx's own code (`unsafe_code = "forbid"`). Dependencies may use it. Lifting the ban is a design change that records the invariant first. After that, each block has a `# Safety` section and an invariant comment on the next line.
 - No logging. Failures use the error types in the design.
-- An allocation whose size a caller's argument decides (an order, a count) is checked against what a `Vec` can hold (`isize::MAX` bytes) before it is made, and returns the error the design names: over that limit `vec!` and `Vec::with_capacity` panic. Running out of memory under the limit is not caught (`docs/design.ja.md` §4): no `try_reserve` that turns it into an error in one place and not in the others.
+- The library does not fail in a way a caller cannot handle: no panic, and no end of the process where it can be helped (`docs/design.ja.md` §4). For an allocation whose size a caller's argument decides (an order, a count):
+  - It is checked against what a `Vec` can hold (`isize::MAX` bytes) before it is made, and returns `InvalidParameter { reason: TooLarge { max } }` over that limit: there `vec!` and `Vec::with_capacity` panic.
+  - When it can be larger than the input by more than a constant factor (a matrix of the square of the points, an order times the intervals), it is made with `Vec::try_reserve_exact`, and its failure is `AllocationFailed { bytes }`. The design lists the places; a new one is added there in the PR that adds it.
+  - An allocation in proportion to the input (a copy of a slice, coefficients of the same size) is made as it is. Not `try_reserve` everywhere: it would touch every constructor and protect nothing more.
+  - What this does not reach is said in the rustdoc and the design, not hidden: allocations inside dependencies, and systems that promise more memory than they have.
+
+  The first version of this rule (#24) left every failure under the limit to the allocator, and a review of #104 found 100 000 points ending the process with a request for 80 GB. The owner changed it (#110).
+
+  ```rust
+  // BAD — fits a `Vec`, not the machine: the process ends
+  let mut matrix = vec![0.0; side * side];
+
+  // GOOD
+  let mut matrix = Vec::new();
+  matrix.try_reserve_exact(side * side).map_err(|_| AllocationFailed { bytes })?;
+  matrix.resize(side * side, 0.0);
+  ```
 - `debug_assert!` is for an internal invariant that means an interpx bug, not for caller input. Validate caller input at the public boundary and return `Err`.
 - A lookup that an invariant guarantees does not end in a silent fallback (`position(..).unwrap_or(0)`). Assert the invariant.
 - A `loop` that ends only because an invariant holds gets a `debug_assert!` on a bound the invariant gives. A point-location walk has its step limit by design (`docs/design.ja.md` §6.2).
