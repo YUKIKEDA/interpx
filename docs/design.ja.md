@@ -199,6 +199,7 @@ pub enum InterpolateError {
   | `InvalidParameter { name: &'static str, reason: ParamReason }` | M1-4（`BSpline`） | 引数が範囲外。M1-4 は `ParamReason::TooLarge { max: usize }`（次数の上限）を入れる。必須欠落・最小次数未満などの `ParamReason` は、それを返す行で足す |
   | `GridAxis { axis: usize, fault: AxisFault }` | M2-1（`RegularGridInterpolator`） | グリッドの軸 `axis` の誤り。`AxisFault` は `InsufficientPoints { required, actual }`、`NonFinite { index }`、`NotMonotonic { index }`、`DuplicatePoints { first, second }`（位置はその軸の中のもの）。1D の variant は、どの軸かを持てない |
   | `SolverFailed(SolverError)`                                | M3（RBF）          | 特異な連立方程式（`SolverError::Singular`）            |
+  | `AllocationFailed { bytes: usize }`                        | #110               | 入力よりはるかに大きい確保が、メモリ不足で失敗した（下の「確保の大きさと失敗」） |
   | `DegenerateGeometry(DegeneracyKind)`                       | M4（`LinearND`）   | `LowerDimensional { affine_dim }`、`NumericalLimit`    |
 
 * `NonFinite { index }` の `index` は、座標に非有限値があればその座標の位置で、座標がすべて有限のときに限り値の位置である（検証は座標が先。§3.5）。variant からはどちらの配列かを区別できない。
@@ -212,7 +213,22 @@ pub enum InterpolateError {
   * `DegenerateDimension{actual_dim,..}` → `DegenerateGeometry(LowerDimensional{affine_dim})`
   * `ExactEvaluationExhausted` → `DegenerateGeometry(NumericalLimit)`
   * `TooManyPoints` → `InvalidParameter`
-* **確保の大きさ**: 入力だけで決まる上限はエラーで返し、機械のメモリで決まる失敗は捕まえない。前者は、呼び出し側の引数で確保の大きさが決まり、それが `Vec` の持てる上限（`isize::MAX` バイト）を超える場合で、確保の前に検査して `InvalidParameter { reason: TooLarge { max } }` を返す（そのまま確保すると panic するため）。後者（上限内でのメモリ不足）は Rust の標準どおりプロセスが終了する。メモリ不足をエラーとして返す API は持たない。依存クレート（`faer`・`kiddo`・`convx`）の内部の確保は捕まえられず、一部の確保だけをエラーにすると、エラーの値（`max`）が「この値までなら通る」を意味しなくなるためである。
+* **確保の大きさと失敗**: ライブラリは、利用側が扱えない形（panic、プロセスの終了）で失敗しない。確保については、次の 2 段で守る。
+  1. **`Vec` の上限**: 呼び出し側の引数で確保の大きさが決まり、それが `Vec` の持てる上限（`isize::MAX` バイト）を超えるなら、確保の前に検査して `InvalidParameter { reason: TooLarge { max } }` を返す（そのまま確保すると panic する）。`max` は「この値までなら `Vec` に収まる」である。
+  2. **メモリ不足**: 上限内でも、機械のメモリに収まらない確保がある。**入力の大きさの定数倍を超えうる確保**は、失敗をエラーで返す形（`Vec::try_reserve_exact`）で行い、失敗したら `AllocationFailed { bytes }` を返す（`bytes` は確保しようとした大きさ）。小さい入力が巨大な確保を引き起こす箇所で、いま該当するのは次の 3 つである。
+
+     | 箇所 | 大きさ | 例 |
+     | :--- | :--- | :--- |
+     | `RBFInterpolator` の全域の行列（§6.3） | 点数の 2 乗 | $10^5$ 点（入力は 1.6 MB）で 80 GB |
+     | `PPoly::antiderivative`（§6.1） | 区間数 ×（次数 + $\nu$） | $\nu$ に比例して際限なく増える |
+     | `RBFInterpolator` の近傍モードの作業領域（§6.3） | 近傍の数の 2 乗 | $k = 10^5$ で 80 GB |
+
+     後の行でこの条件に当たる確保を足すときは、同じ形にして、この表に足す。
+  * **対象にしないもの**: 入力に比例するだけの確保（渡された配列の複製、同じ大きさの係数、`eval_batch` が返す `Vec`）は、これまでどおり確保する。入力がメモリに載っているなら、その定数倍もほぼ載る。全部の確保を対象にすると、構築の経路の数十か所を置き換えることになり、守れるものは増えない。
+  * **守れないもの**（rustdoc にも書く）:
+    * 依存クレート（`faer`・`kiddo`・`convx`）の内部の確保。失敗すればプロセスが終了する。上の 3 つは、どれも自前の確保である（`RBFInterpolator` の行列は自前で確保し、`faer` にはその上で分解させる）。
+    * メモリを実際より多く約束する環境（既定の Linux）。確保は成功し、書き込む段階でプロセスが止められることがある。確保の失敗が報告される環境（Windows、macOS、約束を切った Linux）で効く。
+  * **経緯**: M1-5（#24）では、メモリ不足を捕まえない、と決めていた。理由は 2 つで、(1) `TooLarge { max }` で返すと `max` が「この値までなら通る」を意味しなくなる、(2) 依存クレートの内部は捕まえられないので、一部だけエラーにしても規則にならない、だった。M3-3（#104）で、10 万点を渡すと 80 GB の確保でプロセスが終了することが分かり、利用側が扱えない失敗を残さないほうを取ることにした（#110）。(1) は専用の variant で解ける。(2) は残るので、上に「守れないもの」として書く。
 * 共球点群はエラーではない（`convx` が単体分割して返す）。縮退エラーは「全点が低次元部分空間上」「統合後の相異なる点が D+1 未満」のみ。
 
 ---
@@ -317,7 +333,7 @@ interpx/
     * `antiderivative(nu: usize) -> Result<Self, InterpolateError>`: $\nu$ 階の原始関数。
     * `integrate(a: T, b: T) -> Option<V>`: $a$ から $b$ までの定積分。
     * `eval_derivative(x: T, nu: usize) -> Option<V>`: $x$ での $\nu$ 階導関数の値。
-  * `derivative` と `antiderivative` は新しいオブジェクトを作る（確保する）。`nu = 0` は複製を返す。係数があふれたら `NonFinite` を返す。`integrate` と `eval_derivative` は評価であり、確保しない（§3.2。`tests/alloc.rs` の対象）。
+  * `derivative` と `antiderivative` は新しいオブジェクトを作る（確保する）。`nu = 0` は複製を返す。係数があふれたら `NonFinite` を返す。`integrate` と `eval_derivative` は評価であり、確保しない（§3.2。`tests/alloc.rs` の対象）。 `antiderivative` の結果が `Vec` に収まらない `nu` は `InvalidParameter { name: "nu", reason: TooLarge { max } }`、収まるがメモリに載らなければ `AllocationFailed { bytes }`（§4 の「確保の大きさと失敗」）。
   * **`derivative`**:
     * `PPoly`: 区切り点はそのまま、次数は $k - \nu$。$(x - x_i)^m$ の係数に $m(m-1)\cdots(m-\nu+1)$ を掛け、低次の $\nu$ 個を落とす。
     * `BSpline`: 1 階ごとに、ノットの両端を 1 個ずつ落とし、制御点を $c'_i = k\,\dfrac{c_{i+1} - c_i}{t_{i+k+1} - t_{i+1}}$（$n - 1$ 個）に置き換える。定義域 $[t_k, t_n]$ は変わらない。分母が 0 になるのは $t_{i+1} = \dots = t_{i+k+1}$ のときで、その基底関数は台が空なので、制御点は 0 とする。これで、`from_ppoly` が作る多重度 $k+1$ のノットを持つスプラインも微分できる。
@@ -661,7 +677,7 @@ M3-2 は、連立方程式を組み立てるところまでの部品を crate �
 * **座標の変換**（多項式の項だけ）: 単項式に入れる座標は、軸ごとに $\hat{x}_d = (x_d - s_d) / c_d$ とする。$s_d$ は最大と最小の中点、$c_d$ は範囲の半分で、範囲が 0 の軸は $c_d = 1$（SciPy と同じ）。データの座標が $[-1, 1]$ に入るので、高い次数の単項式の値が大きくなりすぎない。カーネルに入れる座標は変換しない（`epsilon` を掛けるだけ）。
   * `NearestNDInterpolator` の `rescaled` の変換（平均と範囲）とは別のものである。どちらも SciPy の式のまま持つ。
 * **系**: 点が $N$ 個、単項式が $R$ 個のとき、$(N + R) \times (N + R)$ の対称な行列を、行優先の平坦な配列で作る。左上が $A_{ij} = \phi(\varepsilon \lVert y_i - y_j \rVert) + \lambda\,\delta_{ij}$、右上が $P_{ij}$（点 $i$ での単項式 $j$ の値）、左下が $P^T$、右下が 0。右辺は、値 $N$ 個のあとに 0 が $R$ 個。
-  * 確保の大きさ $(N + R)^2$ が `Vec` の持てる上限を超えれば `InvalidParameter { name: "points", reason: TooLarge { max } }`（§3.5 の「入力だけで決まる上限」）。
+  * 確保の大きさ $(N + R)^2$ が `Vec` の持てる上限を超えれば `InvalidParameter { name: "points", reason: TooLarge { max } }`。上限内で確保できなければ `AllocationFailed { bytes }`（§4 の「確保の大きさと失敗」）。
   * カーネルの値は、点の対ごとに 1 回だけ求めて、行列の 2 か所に書く（対称）。64 点四方のタイルごとに進め、書く 2 か所がキャッシュに入るようにする。全部の要素を求める形と比べた（M3-2 の実測。2 次元、1 要素あたり。前が採った形）: 対数のある `ThinPlateSpline` は 100 点で 3.4 ns と 6.3 ns、3000 点で 5.3 ns と 7.2 ns。指数のある `Gaussian` は 3.2 ns と 6.1 ns、5.0 ns と 6.8 ns。計算の軽い `Linear`・`Cubic`・`Quintic` は 100 点で 1.0〜1.5 ns と 1.6〜2.1 ns、3000 点では 2.7〜3.1 ns と 2.2〜2.3 ns で、大きい行列では遅くなる（2 か所めに書く費用が計算より高い）。組み立ては点数の 2 乗、そのあとの求解は 3 乗で増えるので、大きい行列ほど組み立ての比重は下がる。小さい行列と既定のカーネルで速い形を採る（構築全体での比は、求解の入る M3-3 で測る）。下半分をあとから 1 回で写す形は、軽いカーネルでさらに遅かった（3000 点で 3.1〜3.5 ns）。
 * **評価の行**: 問い合わせの点 $x$ に対して、$\phi(\varepsilon \lVert x - y_i \rVert)$ が $N$ 個、そのあとに $\hat{x}$ での単項式の値が $R$ 個。これと係数の内積が補間の値である（M3-3）。呼び出し側の渡した領域に書き、確保しない。
 * **照合**: SciPy の内部関数 `_rbfinterp_pythran` の `_build_system`（行列・右辺・変換）、`_kernel_matrix`、`_polynomial_matrix`、`_build_evaluation_coefficients`（評価の行）と、`_monomial_powers`（単項式の並び）の出力を golden にする。
@@ -683,7 +699,7 @@ M3-2 は、連立方程式を組み立てるところまでの部品を crate �
   6. `InvalidParameter { name: "degree", reason }`（最小次数未満、数えきれない単項式。M3-2）
   7. `InsufficientPoints { required, actual }`（点が単項式より少ない。M3-2）
   8. `DuplicatePoints { first, second }`（同じ座標の点。`first` は先に渡した点。座標は数として比べ、`0.0` と `-0.0` は同じ）
-  9. `InvalidParameter { name: "points", reason: TooLarge { max } }`（行列が `Vec` に収まらない。M3-2）
+  9. `InvalidParameter { name: "points", reason: TooLarge { max } }`（行列が `Vec` に収まらない。M3-2）。収まるがメモリに載らなければ `AllocationFailed { bytes }`（§4）
   10. `SolverFailed(SolverError::Singular)`（下の「特異な系」）
 * **重複点**: 平滑化の有無によらずエラーにする。平滑化があれば重複があっても系は解ける（SciPy は受け付ける）が、規則を 1 つにする。見つけ方は `NearestNDInterpolator` と同じハッシュ集合で、部品を共用する。
 * **解法**: `faer` 0.24 の部分ピボットつき LU 分解で行列を分解し、前進・後退代入は自前で行う。分解は、組み立てた行列の上でそのまま行う（`faer` の低水準の `lu_in_place`。行列が対称なので、行優先の配列をそのまま列優先として渡せる）。`faer` の高水準の `partial_piv_lu()` は、行列を複製したうえで $L$ と $U$ を別の行列に分けるので、行列 3 つ分のメモリを使う。値が `[f64; M]` のとき、右辺は $M$ 列になる。`Value` は列を取り出す操作を持たないので、`faer` の $L$・$U$・置換を取り出し、値の線形結合（`axpy`）で代入する（M1-12 の帯行列 LU と同じ形）。代入は $O(N^2)$ で、分解の $O(N^3)$ に比べて小さい。
@@ -726,7 +742,8 @@ M3-2 は、連立方程式を組み立てるところまでの部品を crate �
   * 2 の次: 点の数が `u32::MAX` を超えれば `InvalidParameter { name: "points", reason: TooLarge { max } }`（木が点の番号を `u32` で持つ。`NearestNDInterpolator` と同じ検査で、数えるだけで分かるので、点を 1 つずつ見る検査より先に置く。近傍モードのときだけ）
   * 6 の次: `InvalidParameter { name: "neighbors", reason: TooSmall { min: 1 } }`（$k = 0$）
   * 7 を読み替える: 点が単項式より少ない、または $k$ が単項式より少ないとき、`InsufficientPoints { required, actual }`（`actual` は点数と $k$ の小さいほう。SciPy も、近傍の数を点数として同じ検査をする）
-  * 9（行列が大きすぎる）と 10（特異）は、近傍モードの構築では起きない（構築時に系を作らない）。
+  * 9 を読み替える: 近傍の系 $(k + R)^2$ が `Vec` に収まらない $k$ は、構築時に `InvalidParameter { name: "neighbors", reason: TooLarge { max } }`。収まるがメモリに載らない場合は、構築時には分からない（作業領域は評価するスレッドごとに確保する）ので、評価が `None` を返す（下の「作業領域」）。
+  * 10（特異）は、近傍モードの構築では起きない（構築時に系を作らない）。
   * 重複点は、全域と同じく構築時に `DuplicatePoints`。
 * **構築**: 点を k-d 木に入れる。値はそのまま持つ。系は作らない。時間は $O(N \log N)$（$10^5$ 点で 9.1 ms）、メモリは点と値の分だけである（2 次元で 1 点あたり 44 バイト: 渡した順の点、木の順の点、番号、値。M3-4 の実測）。
 * **近い $k$ 点の探索**: crate 内の小さい k-d 木（`src/scattered/kdtree.rs`）で行う。`kiddo` は使わない。`kiddo` の $k$ 近傍の探索は、結果を入れる `Vec` を毎回確保し、確保しない形を持たないためである（設計時の試作で、どの $k$ でも 1 回の問い合わせに確保が 1 回）。
@@ -764,6 +781,7 @@ M3-2 は、連立方程式を組み立てるところまでの部品を crate �
   * 葉の大きさ（16 点）は、4・8・16・32 で比べて 10% 以内の差だった（測定のばらつきと同程度）ので、16 のままにする。
 * **作業領域**（§3.2 の例外）: 行列、行、置換、`faer` の作業用、ヒープを、スレッドごとに 1 つ持つ（`thread_local`）。そのスレッドの最初の評価で確保し、$k$ が大きい補間器を初めて評価したときに広げる。そのあとは確保しない。`tests/alloc.rs` は、この型について「1 回評価したあとの評価が確保しない」ことを検査する。
   * 大きさは、$k = 20$ で 5.7 KB、$k = 50$ で 20 KB（`ThinPlateSpline`、2 次元。M3-4 の実測）。最初の評価の確保は 9 回である。
+  * 作業領域を確保できなかった評価は `None` を返す（§4 の「確保の大きさと失敗」。`eval` は `Option` を返すので、特異な近傍と同じところに収める）。作業領域は、確保できた分だけそのまま持つ。
   * 採らなかった形: スタックに置く（確保は一切ないが、$k + R$ に上限が要る。SciPy にない上限になる）。呼び出し側が作業領域を渡す（確保しない `eval_with` と、確保するトレイトの `eval` の 2 本になる）。
 * **バッチ**: `eval` の繰り返し。SciPy は、同じ近傍の組を持つ問い合わせをまとめて、系を 1 度だけ解く。結果は同じで速さだけの違いなので、まとめる形は測ってから別の行で決める。
 * **SciPy との差**（M3-3 の表に足すもの）:
