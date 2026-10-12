@@ -17,6 +17,8 @@ alwaysApply: true
 - Include inputs where each term dominates: nearly coincident knots, a large aspect ratio, values spanning many orders of magnitude, points near the hull boundary.
 - A power of two below `2^-1022` is built from its bits, not `f64::powi`. A numeric test change runs on Linux as well as Windows.
 - Tests that depend on parallel or SIMD paths compare with the serial result bit for bit (`.cursor/rules/perf.mdc`).
+- A test of a size check asks for a size no machine has (`2^59` bytes and more on 64 bits), with inputs that take no memory themselves (points without coordinates, zero-sized values). A size a large machine could hold (tens of gigabytes) is not used: the request can succeed and stop the machine. A length is never looped over or filled in such a test.
+- A mutation run has a time limit for each mutant, and stops the test process when it passes. A mutant that removes a size check can loop or take memory without end: one took over 8 GB in M3-1, and an assertion with `2^58` entries looped in #113. Such a mutant is listed as timed out, not as caught.
 
 ```rust
 // BAD: tolerance derived from the guarded constant

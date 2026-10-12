@@ -64,6 +64,10 @@ The next row's grill is presented as soon as the current row's PR is open. It do
 
 A script that will run for ten minutes is run for ten seconds first: parse it (`python -c "import ast, sys; ast.parse(open(sys.argv[1]).read())"`), or run it on one case. A script written by another script is written with the Write tool instead: nested quoting failed twice in M2-3, and one failure was only seen after a ten-minute wait. Look at the output of a background run within its first minute.
 
+## Before a push, the pull request
+
+`gh pr view N --json state` is read before a push to a branch that has a pull request. A push to the branch of a merged pull request makes the deleted branch again on the remote and reaches nothing (after #92 merged, a commit for it was pushed and had to be moved to a new Issue and branch). When a stack is waiting for the owner, read its state at the start of each turn of work.
+
 ## Before a commit, the branch
 
 `git branch --show-current` is part of the command that commits. A command chain that creates a branch can fail before it does, and the commit then lands on `main` (M2-3: the push was refused, the commit was moved).

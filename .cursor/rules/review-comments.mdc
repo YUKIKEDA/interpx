@@ -11,6 +11,10 @@ A finding that asks for a change is still open when that head does not contain t
 
 A finding that is tried and not adopted is answered with the measurement or the reason, on the pull request it was written on (`.cursor/rules/bench.mdc`).
 
+Before acting on a finding or declining it, check its claim against the code of that head: run the reproduction, or read the lines it names. A finding can be right about the reader's difficulty and wrong about the fact (#113: the checks said to be missing from the design were there, in a second list further down; the fix was to join the lists, not to add the checks).
+
+A finding that asks to change a decision the owner made is not declined by citing the rule that records the decision. Reply with what the decision was and what the finding shows, and ask the owner (`.cursor/rules/consent.mdc`). In #100 and #104 a finding that a large input ends the process was declined twice with a reference to `rust.mdc`; the owner then changed the rule (#110).
+
 In M2 four pull requests were stacked and unmerged at once, and a finding on the second (#75) was worked on in the fourth (#80). It was answered on #75 with the measurement; it could as easily have been lost.
 
 ```text

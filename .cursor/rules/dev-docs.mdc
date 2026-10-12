@@ -12,4 +12,5 @@ When writing or editing `docs/design.ja.md`, use Mermaid for figures and LaTeX f
 - Math: inline `$...$`, display `$$...$$`. Do not use `\(` or `\[`. Do not put `$` inside a code block.
 - Text with LaTeX that a script writes is passed as is, from a file or a raw string. Before the commit, search the added lines for control characters (an unescaped `\t` or `\f` becomes a tab or a form feed).
 - A new formula does not reuse a symbol defined nearby with another meaning. Name a new quantity with a new letter.
+- An ordered list (the order of checks, the steps of a construction) is in one place. When a mode adds to it elsewhere, the list ends with a line that says so and where, and the additions name the numbers they follow.
 - The Japanese spec is plain prose first. Do not run the `natural-japanese` skill's rewriting on formulas or code (`.cursor/rules/reader-docs.mdc`).
