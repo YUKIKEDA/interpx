@@ -44,7 +44,7 @@ M2-3.
 | ---- | ---- | ------------------------------------------------------------------------------------------------------ | ----- | ------ |
 | M2-1 | Feat | `RegularGridInterpolator`: shape, C-order values, `nearest`, `linear`, `Extrapolate`                   | #74   | Done   |
 | M2-2 | Feat | `RegularGridInterpolator`: `cubic`, `quintic` (tensor-product coefficients at construction)            | #79   | Done   |
-| M2-3 | Feat | `RegularGridInterpolator`: `pchip` (lazy per-axis convolution)                                         |       | Todo   |
+| M2-3 | Feat | `RegularGridInterpolator`: `pchip` (last-axis slopes kept, the other axes folded at evaluation)        |       | Todo   |
 
 ## M3: Scattered, without `convx`
 
