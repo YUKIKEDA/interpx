@@ -271,12 +271,14 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
     /// - For a spline method, [`InterpolateError::GridAxis`] with
     ///   [`AxisFault::NonFinite`] for an axis whose spline cannot be set up
     ///   (coordinates so far apart that their distance overflows), and
-    ///   [`InterpolateError::NonFinite`] with a position in the grid when a
+    ///   [`InterpolateError::NonFinite`] with a position in `values` when a
     ///   coefficient of the spline overflows.
     /// - For [`GridMethod::Pchip`], [`InterpolateError::NonFinite`] with a
-    ///   position in the grid when a slope along the last axis overflows.
+    ///   position in `values` when a slope along the last axis overflows: a
+    ///   point of the interval whose values are too far apart.
     ///
-    /// Positions in an axis are those in the axis as it was given.
+    /// Positions are those in the axes and in `values` as they were given, also
+    /// where an axis descends and is kept in the other order.
     ///
     /// # Examples
     ///
@@ -358,12 +360,13 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
             }
         }
         let rule = match method {
-            GridMethod::Nearest => Rule::Nearest,
-            GridMethod::Linear => Rule::Linear,
-            GridMethod::Cubic => Rule::Spline(tensor(&axes, &values, &strides, 3)?),
-            GridMethod::Quintic => Rule::Spline(tensor(&axes, &values, &strides, 5)?),
-            GridMethod::Pchip => Rule::Pchip(slopes_along_last(&axes, &values)?),
-        };
+            GridMethod::Nearest => Ok(Rule::Nearest),
+            GridMethod::Linear => Ok(Rule::Linear),
+            GridMethod::Cubic => tensor(&axes, &values, &strides, 3).map(Rule::Spline),
+            GridMethod::Quintic => tensor(&axes, &values, &strides, 5).map(Rule::Spline),
+            GridMethod::Pchip => slopes_along_last(&axes, &values).map(Rule::Pchip),
+        }
+        .map_err(|fault| as_given(fault, &axes, &strides, &descending))?;
         Ok(Self {
             axes,
             values,
@@ -671,6 +674,41 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
                 chosen[d] = 0;
             }
         }
+    }
+}
+
+/// An error of a method, which names a place in the grid as it is kept, with
+/// the place in the grid as it was given: along an axis that was given in
+/// descending order, point `i` of `n` was given as point `n - 1 - i`.
+fn as_given<T, const D: usize>(
+    fault: InterpolateError,
+    axes: &[Vec<T>; D],
+    strides: &[usize; D],
+    descending: &[bool; D],
+) -> InterpolateError {
+    let along = |d: usize, i: usize| {
+        if descending[d] {
+            axes[d].len() - 1 - i
+        } else {
+            i
+        }
+    };
+    match fault {
+        InterpolateError::NonFinite { index } => InterpolateError::NonFinite {
+            index: (0..D)
+                .map(|d| along(d, index / strides[d] % axes[d].len()) * strides[d])
+                .sum(),
+        },
+        InterpolateError::GridAxis {
+            axis,
+            fault: AxisFault::NonFinite { index },
+        } => InterpolateError::GridAxis {
+            axis,
+            fault: AxisFault::NonFinite {
+                index: along(axis, index),
+            },
+        },
+        other => other,
     }
 }
 

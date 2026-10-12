@@ -614,7 +614,7 @@ interpx/
   2. `GridAxis { axis, fault: InsufficientPoints { required: 2, actual } }`（軸 0 から順に）
   3. `GridAxis { axis, fault: NonFinite { index } }`（軸 0 から順に）、次に値の `NonFinite { index }`（`index` は平坦な配列での位置）
   4. 軸の向き（軸 0 から順に）: 最初の 2 点が等しければ `DuplicatePoints { first: 0, second: 1 }`。それ以降は、隣と等しければ `DuplicatePoints`、最初の 2 点が決めた向きに逆らえば `NotMonotonic { index }`（逆らった点の位置）。
-  * 位置は、渡された順（並べ替える前）のものである。
+  * 位置は、渡された順（並べ替える前）のものである。軸の中の位置も、値の平坦な配列での位置も同じで、構築の途中（スプラインの係数、`Pchip` の傾き、軸の選点行列）で見つかった桁あふれの位置も、降順の軸の分を写し戻して返す。
 * **SciPy との差**:
 
   | 項目 | SciPy 1.18 | `interpx` |

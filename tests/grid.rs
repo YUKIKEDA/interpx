@@ -694,6 +694,34 @@ fn what_cannot_be_solved_is_an_error_and_not_a_panic() {
             matches!(err, Some(E::NonFinite { .. })),
             "{method:?}: {err:?}"
         );
+        // The place of the coefficient is that in the values as given: with
+        // both axes given backward and the values to match, point (i, j) is
+        // given as (5 - i, 5 - j), which is place 35 - n for place n.
+        let Some(E::NonFinite { index }) = err else {
+            panic!("{method:?}: {err:?}");
+        };
+        let backward: Vec<f64> = x.iter().rev().copied().collect();
+        let moved: Vec<f64> = values.iter().rev().copied().collect();
+        assert_eq!(
+            Grid::new([&backward[..], &backward[..]], &moved, method).err(),
+            Some(E::NonFinite { index: 35 - index }),
+            "{method:?}"
+        );
+        // One axis backward: the row of the matrix that could not be set up
+        // is named as the point was given.
+        let Some(E::GridAxis {
+            axis: 1,
+            fault: AxisFault::NonFinite { index: row },
+        }) = Grid::new([&x[..], &wide[..]], &[0.0; 36], method).err()
+        else {
+            panic!("{method:?}");
+        };
+        let turned: Vec<f64> = wide.iter().rev().copied().collect();
+        assert_eq!(
+            Grid::new([&x[..], &turned[..]], &[0.0; 36], method).err(),
+            Some(on_axis(1, AxisFault::NonFinite { index: 5 - row })),
+            "{method:?}"
+        );
         // The methods that solve nothing take both.
         assert!(Grid::new([&x[..], &x[..]], &values, GridMethod::Linear).is_ok());
     }
@@ -974,6 +1002,18 @@ fn pchip_takes_two_points_an_axis_and_refuses_slopes_that_overflow() {
     assert_eq!(
         new(&x, &y, &[0.0, 0.0, 0.0, 0.0, 8e307, -8e307]).err(),
         Some(E::NonFinite { index: 3 })
+    );
+    // A place is named as it was given, also along an axis that descends
+    // and is kept the other way round: here the overflow is between the last
+    // two values given, and the earlier of them is the later one as kept.
+    let one = |x: &[f64], values: &[f64]| Grid::new([x], values, GridMethod::Pchip).err();
+    assert_eq!(
+        one(&[3.0, 2.0, 1.0, 0.0], &[0.0, 0.0, 1e308, -1e308]),
+        Some(E::NonFinite { index: 2 })
+    );
+    assert_eq!(
+        one(&[0.0, 1.0, 2.0, 3.0], &[-1e308, 1e308, 0.0, 0.0]),
+        Some(E::NonFinite { index: 1 })
     );
     // The same values along the first axis are not looked at when the grid is
     // built: the lines along the last axis are flat. An evaluation between
