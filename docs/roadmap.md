@@ -34,7 +34,7 @@ M1-12.
 | M1-9  | Feat | `PchipInterpolator`                                                                                                                              | #45   | Done   |
 | M1-10 | Feat | `Akima1D` (including makima)                                                                                                                     | #50   | Done   |
 | M1-11 | Feat | `CubicHermiteSpline`                                                                                                                             | #55   | Done   |
-| M1-12 | Feat | `BSpline1D` (any degree `k`), and the banded LU with partial pivoting it solves with                                                             |       | Todo   |
+| M1-12 | Feat | `BSpline1D` (degrees 1 to 15), and the banded LU with partial pivoting it solves with                                                            |       | Todo   |
 | M1-13 | Feat | `BSplineCurve<T, D>`                                                                                                                             |       | Todo   |
 
 ## M2: Regular grid
@@ -80,17 +80,18 @@ M1-12.
 
 Named so that no deferral is anonymous. Each becomes a roadmap row with an Issue when its turn comes.
 
-| ID  | Kind | Title                                                                                       | Issue | Status |
-| --- | ---- | ------------------------------------------------------------------------------------------- | ----- | ------ |
-| A-1 | Feat | `roots` / `solve` for `PPoly` and `BSpline`                                                 |       | Todo   |
-| A-2 | Feat | `NdPPoly`                                                                                   |       | Todo   |
-| A-3 | Feat | Derivatives for grid and scattered interpolators                                            |       | Todo   |
-| A-4 | Feat | Runtime dimension and runtime output width for grid and scattered                           |       | Todo   |
-| A-5 | Feat | RBF pseudo-inverse fallback                                                                 |       | Todo   |
-| A-6 | Feat | `BarycentricInterpolator` and `KroghInterpolator`                                           |       | Todo   |
-| A-7 | Feat | FITPACK family: `UnivariateSpline`, `splrep`, `splprep`, `RectBivariateSpline`, and related |       | Todo   |
-| A-8 | Task | `no_std` (`alloc`) feasibility                                                              |       | Todo   |
-| A-9 | Feat | `BSpline::from_ppoly`: lower the knot multiplicity where the pieces join smoothly           |       | Todo   |
+| ID   | Kind | Title                                                                                                   | Issue | Status |
+| ---- | ---- | ------------------------------------------------------------------------------------------------------- | ----- | ------ |
+| A-1  | Feat | `roots` / `solve` for `PPoly` and `BSpline`                                                             |       | Todo   |
+| A-2  | Feat | `NdPPoly`                                                                                               |       | Todo   |
+| A-3  | Feat | Derivatives for grid and scattered interpolators                                                        |       | Todo   |
+| A-4  | Feat | Runtime dimension and runtime output width for grid and scattered                                       |       | Todo   |
+| A-5  | Feat | RBF pseudo-inverse fallback                                                                             |       | Todo   |
+| A-6  | Feat | `BarycentricInterpolator` and `KroghInterpolator`                                                       |       | Todo   |
+| A-7  | Feat | FITPACK family: `UnivariateSpline`, `splrep`, `splprep`, `RectBivariateSpline`, and related             |       | Todo   |
+| A-8  | Task | `no_std` (`alloc`) feasibility                                                                          |       | Todo   |
+| A-9  | Feat | `BSpline::from_ppoly`: lower the knot multiplicity where the pieces join smoothly                       |       | Todo   |
+| A-10 | Feat | `BSpline1D`: several derivatives at an end (`bc_type` as lists of pairs), and knots given by the caller |       | Todo   |
 
 ## Intentionally out of scope
 
