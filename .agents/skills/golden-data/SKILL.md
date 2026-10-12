@@ -25,7 +25,7 @@ Golden data is the committed record of what SciPy 1.18 returns, so that `cargo t
   | `generate_oned.py` | `oned.json`, `cubic_spline.json`, `bspline1d.json`, `calculus.json` | `numpy.interp`, `interp1d` (nearest kinds), `CubicSpline`, `PchipInterpolator`, `Akima1DInterpolator`, `CubicHermiteSpline`, `make_interp_spline` |
   | `generate_curve.py` | `curve.json` | `make_interp_spline` with several outputs |
   | `generate_grid.py` | `grid.json`, `grid_pchip.json` | `RegularGridInterpolator`, six methods, 2D to 4D; the cases chosen for `pchip`, with `PchipInterpolator` applied axis by axis where an axis has fewer than four points |
-  | `generate_scattered.py` | `scattered.json` | `NearestNDInterpolator`, `LinearNDInterpolator`, `CloughTocher2DInterpolator` |
+  | `generate_scattered.py` | `scattered.json` | `NearestNDInterpolator` (with the cases chosen for it: rescaled, a bound on the distance, ties marked in `tied`, repeated points), `LinearNDInterpolator`, `CloughTocher2DInterpolator` |
   | `generate_rbf.py` | `rbf.json` | `RBFInterpolator`, eight kernels |
   | `generate_tridiagonal.py` | `tridiagonal.json` | `scipy.linalg.solve_banded` on tridiagonal systems, a dense solve for the cyclic ones |
   | `generate_banded.py` | `banded.json` | LAPACK `dgbsv` on banded systems, a dense solve for the cyclic ones |

@@ -5,6 +5,10 @@ Reference: SciPy 1.18 `NearestNDInterpolator`, `LinearNDInterpolator`
 (`tol = 1e-6`, `maxiter = 400`). Node sets and samplers: docs/design.ja.md
 sections 8.4.1 and 8.4.5.
 
+The cases chosen for `NearestNDInterpolator` (`nearest_chosen`) come last:
+rescaled coordinates, a bound on the distance, points at the same distance,
+points given more than once.
+
 Run: `just gen-goldens`
 """
 
@@ -76,6 +80,108 @@ def three(prefix, points, values, queries, function: str, with_clough_tocher: bo
     return out
 
 
+def tied(points, queries, scale=None) -> list[bool]:
+    """Whether a query has more than one point at its smallest distance (by a
+    scan of all points; the distance is the one the interpolator measures)."""
+    pts = np.asarray(points, dtype=np.float64)
+    q = np.asarray(queries, dtype=np.float64)
+    if scale is not None:
+        pts, q = pts / scale, q / scale
+    d = np.linalg.norm(pts[None, :, :] - q[:, None, :], axis=2)
+    least = d.min(axis=1, keepdims=True)
+    return [bool(n > 1) for n in (d <= least * (1.0 + 1e-12) + 1e-300).sum(axis=1)]
+
+
+def nearest_chosen(rng) -> list[dict]:
+    """Cases chosen for `NearestNDInterpolator` (M3-1). Drawn after everything
+    else, so that the cases above stay as they are.
+
+    `tied` marks the queries with several points at the same distance: which of
+    them SciPy returns follows from how its tree was built, and is not compared.
+    """
+    reference = "scipy.interpolate.NearestNDInterpolator"
+    out = []
+
+    def add(name, options, points, values, queries, build, call=None, **more):
+        f = build()
+        expected = f(queries, **(call or {}))
+        out.append(golden.case(name, reference, options, points=points, values=values, queries=queries, expected=expected, **more))
+
+    # Coordinates of different sizes: a position in [0, 1] and a height in
+    # [0, 1000]. As they stand, and rescaled.
+    pts = np.column_stack([rng.random(60), 1000.0 * rng.random(60)])
+    vals = rng.uniform(-1.0, 1.0, 60)
+    q = np.column_stack([-0.1 + 1.2 * rng.random(50), 1000.0 * (-0.1 + 1.2 * rng.random(50))])
+    scale = np.ptp(pts, axis=0)
+    add("nearest/units/plain", {"rescale": False}, pts, vals, q, lambda: si.NearestNDInterpolator(pts, vals), tied=tied(pts, q))
+    add("nearest/units/rescaled", {"rescale": True}, pts, vals, q, lambda: si.NearestNDInterpolator(pts, vals, rescale=True), tied=tied(pts, q, scale))
+    # An axis on which all points agree: rescaled, it keeps its scale.
+    flat = np.column_stack([10.0 * rng.random(30), np.full(30, 3.0), rng.random(30)])
+    vals3 = rng.uniform(-1.0, 1.0, 30)
+    q3 = np.column_stack([10.0 * rng.random(30), 3.0 + rng.uniform(-0.5, 0.5, 30), rng.random(30)])
+    add("nearest/flat_axis/rescaled", {"rescale": True}, flat, vals3, q3, lambda: si.NearestNDInterpolator(flat, vals3, rescale=True))
+
+    # A bound on the distance: a query has a value when its nearest point is
+    # nearer. The queries include some at the bound exactly (3-4-5 triangles
+    # from a data point, in numbers that are exact), which have none.
+    lattice = np.array([[float(i), float(j)] for i in range(0, 40, 10) for j in range(0, 40, 10)])
+    lvals = rng.uniform(-1.0, 1.0, len(lattice))
+    exact = np.array([[3.0, 4.0], [13.0, 6.0], [26.0, 23.0], [4.0, 33.0], [5.0, 0.0], [20.0, 25.0]])
+    qb = np.vstack([-5.0 + 40.0 * rng.random((40, 2)), exact, lattice[:3]])
+    for bound in (5.0, 2.5):
+        add(
+            f"nearest/bound/{bound}",
+            {"rescale": False, "distance_upper_bound": bound},
+            lattice, lvals, qb,
+            lambda: si.NearestNDInterpolator(lattice, lvals),
+            {"distance_upper_bound": bound},
+            tied=tied(lattice, qb),
+        )
+    add(
+        "nearest/units/rescaled/bound",
+        {"rescale": True, "distance_upper_bound": 0.08},
+        pts, vals, q,
+        lambda: si.NearestNDInterpolator(pts, vals, rescale=True),
+        {"distance_upper_bound": 0.08},
+        tied=tied(pts, q, scale),
+    )
+
+    # Points at the same distance: the centres of the cells of a lattice, and
+    # the middles of their edges.
+    centres = np.array([[i + 0.5, j + 0.5] for i in range(0, 30, 10) for j in range(0, 30, 10)]) + 4.5
+    edges = np.array([[5.0, 0.0], [10.0, 15.0], [25.0, 30.0]])
+    qt = np.vstack([centres, edges, -5.0 + 40.0 * rng.random((20, 2))])
+    add("nearest/lattice/ties", {"rescale": False}, lattice, lvals, qt, lambda: si.NearestNDInterpolator(lattice, lvals), tied=tied(lattice, qt))
+
+    # Points given more than once, with other values: the one given first
+    # counts. SciPy's own choice among them follows from its tree, so the
+    # reference is SciPy on the points without the repeats.
+    base = rng.random((25, 3))
+    order = rng.permutation(np.concatenate([np.arange(25), np.arange(25), np.arange(10)]))
+    dpts = base[order]
+    dvals = rng.uniform(-1.0, 1.0, len(dpts))
+    _, firsts = np.unique(dpts, axis=0, return_index=True)
+    firsts = np.sort(firsts)
+    qd = np.vstack([-0.1 + 1.2 * rng.random((40, 3)), base[:5]])
+    add(
+        "nearest/duplicates",
+        {"rescale": False, "reference_points": "the first of each set of equal points"},
+        dpts, dvals, qd,
+        lambda: si.NearestNDInterpolator(dpts[firsts], dvals[firsts]),
+        tied=tied(dpts[firsts], qd),
+    )
+
+    # One point; two values at every point. (SciPy takes no points in one
+    # dimension; the Rust tests compare that case with a scan.)
+    one = np.array([[0.25, -1.0]])
+    add("nearest/one_point", {"rescale": False}, one, np.array([4.5]), -2.0 + 4.0 * rng.random((10, 2)), lambda: si.NearestNDInterpolator(one, np.array([4.5])))
+    both = np.column_stack([vals, rng.uniform(-1.0, 1.0, 60)])
+    add("nearest/units/columns", {"rescale": False}, pts, vals, q, lambda: si.NearestNDInterpolator(pts, vals), tied=tied(pts, q))
+    out[-1]["values_columns"] = golden.encode(both)
+    out[-1]["expected_columns"] = golden.encode(si.NearestNDInterpolator(pts, both)(q))
+    return out
+
+
 def main() -> None:
     cases = []
     for i, (name, pts) in enumerate(node_sets_2d().items()):
@@ -97,6 +203,8 @@ def main() -> None:
         d = pts.shape[1]
         q = np.vstack([-0.05 + 1.1 * rng.random((40, d)), pts[:2]])
         cases += three(f"{name}/{kind}", pts, datasets.genz(kind, pts), q, f"genz_{kind}", False)
+
+    cases += nearest_chosen(rng)
 
     path = golden.write("scattered", GENERATOR, SEED, cases)
     print(f"wrote {path.name} ({len(cases)} cases)")

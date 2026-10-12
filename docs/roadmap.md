@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M3-1.
+M3-2. M2-4 is open beside it and blocks nothing.
 
 ## Dependencies
 
@@ -51,7 +51,7 @@ M3-1.
 
 | ID   | Kind | Title                                                                              | Issue | Status |
 | ---- | ---- | ---------------------------------------------------------------------------------- | ----- | ------ |
-| M3-1 | Feat | `NearestNDInterpolator<D>` (`kiddo`)                                               |       | Todo   |
+| M3-1 | Feat | `NearestNDInterpolator<D>` (`kiddo`)                                               | #95   | Done   |
 | M3-2 | Feat | `RBFInterpolator<D>`: 8 kernels, polynomial terms, shift and scale                 |       | Todo   |
 | M3-3 | Feat | `RBFInterpolator<D>`: global solve (`faer` partial-pivot LU, singular is an error) |       | Todo   |
 | M3-4 | Feat | `RBFInterpolator<D>`: local `neighbors` mode                                       |       | Todo   |
