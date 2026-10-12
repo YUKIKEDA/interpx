@@ -98,6 +98,91 @@ def system_cases() -> list[dict]:
     return out
 
 
+def chosen_cases() -> list[dict]:
+    """Cases chosen for the global solve (M3-3). Appended after the others,
+    with a generator of their own, so that those stay as they are."""
+    rng = np.random.default_rng(SEED + 2)
+    reference = "scipy.interpolate.RBFInterpolator"
+    out = []
+    f33 = np.array(classic_data.FRANKE_33)
+    vals = datasets.franke(1, f33[:, 0], f33[:, 1])
+    q = np.vstack([-0.05 + 1.1 * rng.random((24, 2)), f33[:2]])
+
+    def options(kernel, **more):
+        base = {"kernel": kernel, "epsilon": None, "smoothing": 0.0, "degree": None, "neighbors": None, "min_degree": MIN_DEGREE[kernel]}
+        base.update(more)
+        return base
+
+    # An `epsilon` for a kernel that does not depend on a scale, with
+    # smoothing: the same interpolant as the smoothing over `epsilon^p`
+    # without it, which is checked here and is what interpx is given.
+    for kernel, power in (("linear", 1), ("thin_plate_spline", 2), ("cubic", 3), ("quintic", 5)):
+        epsilon, smoothing = 2.5, 0.1
+        want = RBFInterpolator(f33, vals, kernel=kernel, epsilon=epsilon, smoothing=smoothing)(q)
+        same = RBFInterpolator(f33, vals, kernel=kernel, smoothing=smoothing / epsilon**power)(q)
+        assert np.allclose(want, same, rtol=1e-9, atol=1e-9), kernel
+        out.append(golden.case(
+            f"rbf/{kernel}/epsilon_as_smoothing/franke_33/f1", reference,
+            options(kernel, scipy_epsilon=epsilon, scipy_smoothing=smoothing, smoothing=smoothing / epsilon**power, function="franke_f1"),
+            points=f33, values=vals, queries=q, expected=want,
+        ))
+    # No polynomial terms, for a kernel that needs none and for one that does.
+    for kernel, epsilon in (("gaussian", 3.0), ("thin_plate_spline", None)):
+        kwargs = {"kernel": kernel, "degree": -1}
+        if epsilon is not None:
+            kwargs["epsilon"] = epsilon
+        out.append(golden.case(
+            f"rbf/{kernel}/no_polynomial/franke_33/f1", reference,
+            options(kernel, epsilon=epsilon, degree=-1, function="franke_f1"),
+            points=f33, values=vals, queries=q, expected=RBFInterpolator(f33, vals, **kwargs)(q),
+        ))
+    # Heavy smoothing: close to the polynomial that fits best.
+    out.append(golden.case(
+        "rbf/thin_plate_spline/heavy_smoothing/franke_33/f1", reference,
+        options("thin_plate_spline", smoothing=50.0, function="franke_f1"),
+        points=f33, values=vals, queries=q, expected=RBFInterpolator(f33, vals, smoothing=50.0)(q),
+    ))
+    # One dimension, and four.
+    line = np.sort(rng.uniform(-2.0, 2.0, 15))[:, None]
+    lv = np.sin(2.0 * line[:, 0])
+    ql = np.linspace(-2.5, 2.5, 21)[:, None]
+    out.append(golden.case(
+        "rbf/cubic/default/line_15/sine", reference, options("cubic", function="sine"),
+        points=line, values=lv, queries=ql, expected=RBFInterpolator(line, lv, kernel="cubic")(ql),
+    ))
+    h4 = datasets.halton(40, 4)
+    v4 = datasets.genz("product_peak", h4)
+    q4 = rng.random((20, 4))
+    out.append(golden.case(
+        "rbf/multiquadric/default/halton_40_d4/product_peak", reference,
+        options("multiquadric", epsilon=EPSILON, function="genz_product_peak"),
+        points=h4, values=v4, queries=q4, expected=RBFInterpolator(h4, v4, kernel="multiquadric", epsilon=EPSILON)(q4),
+    ))
+    # Two values at every point. `values` and `expected` hold the first
+    # column, as in every other case.
+    both = np.column_stack([vals, datasets.franke(4, f33[:, 0], f33[:, 1])])
+    case = golden.case(
+        "rbf/thin_plate_spline/columns/franke_33/f1_f4", reference, options("thin_plate_spline", function="franke_f1_f4"),
+        points=f33, values=vals, queries=q, expected=RBFInterpolator(f33, vals)(q),
+    )
+    case["values_columns"] = golden.encode(both)
+    case["expected_columns"] = golden.encode(RBFInterpolator(f33, both)(q))
+    out.append(case)
+    # Points along an axis: a polynomial of degree 1 in two variables is not
+    # determined by them, and SciPy says so.
+    t = np.linspace(0.0, 1.0, 8)
+    flat = np.column_stack([t, np.zeros(8)])
+    try:
+        RBFInterpolator(flat, np.sin(3.0 * t))
+        raise SystemExit("points along an axis were expected to be singular")
+    except np.linalg.LinAlgError as exc:
+        out.append(golden.case(
+            "rbf/thin_plate_spline/default/along_an_axis/sine", reference, options("thin_plate_spline", function="sine"),
+            points=flat, values=np.sin(3.0 * t), queries=flat[:2], expected_error=type(exc).__name__,
+        ))
+    return out
+
+
 def main() -> None:
     rng = np.random.default_rng(SEED)
     f33 = np.array(classic_data.FRANKE_33)
@@ -146,6 +231,7 @@ def main() -> None:
 
     path = golden.write("rbf_system", GENERATOR, SEED, system_cases())
     print(f"wrote {path.name}")
+    cases += chosen_cases()
     path = golden.write("rbf", GENERATOR, SEED, cases)
     print(f"wrote {path.name} ({len(cases)} cases)")
 

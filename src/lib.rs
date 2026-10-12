@@ -80,7 +80,7 @@ mod value;
 pub use boundary::{BoundaryCondition, EndCondition};
 pub use bspline::{BSpline, BSPLINE_MAX_DEGREE};
 pub use curve::{BSplineCurve, Parametrization};
-pub use error::{AxisFault, InterpolateError, ParamReason};
+pub use error::{AxisFault, InterpolateError, ParamReason, SolverError};
 pub use extrapolate::Extrapolate;
 pub use grid::{GridMethod, RegularGridInterpolator};
 pub use interpolator::Interpolator;
@@ -91,6 +91,6 @@ pub use oned::{
 pub use ppoly::PPoly;
 pub use scalar::Scalar;
 #[cfg(feature = "scattered")]
-pub use scattered::NearestNDInterpolator;
+pub use scattered::{NearestNDInterpolator, RBFInterpolator, RbfDegree, RbfKernel, RbfOptions};
 pub use search::Hint;
 pub use value::Value;

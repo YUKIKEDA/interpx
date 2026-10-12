@@ -1,5 +1,5 @@
-//! The parts of the radial basis function interpolant, up to its system of
-//! equations: the kernels, the polynomial terms, and the matrix they make.
+//! The radial basis function interpolant: its kernels, its polynomial terms,
+//! the system they make, the solve, and the evaluation.
 //!
 //! The interpolant through the points `y_i` is a sum of one kernel centered at
 //! every point, plus a polynomial of low degree:
@@ -9,39 +9,91 @@
 //! ```
 //!
 //! The weights `w` and the coefficients `c` solve one symmetric system
-//! ([`system`]); the value at a point is the inner product of the solution
-//! with the row of that point ([`evaluation_row`]). The formulas, the signs,
-//! and the order of every array are those of SciPy 1.18's `RBFInterpolator`.
+//! ([`system`], [`solve`]); the value at a point is the sum above, term by
+//! term. The formulas, the signs, and the order of every array are those of
+//! SciPy 1.18's `RBFInterpolator`.
 
-use crate::error::ParamReason;
-use crate::{InterpolateError, Value};
+use crate::error::{ParamReason, SolverError};
+use crate::{validate, InterpolateError, Interpolator, Value};
+use faer::dyn_stack::{MemBuffer, MemStack};
+use faer::linalg::lu::partial_pivoting::factor::{lu_in_place, lu_in_place_scratch};
+use faer::{MatMut, Par};
 
-/// A radial basis function: a function of the distance from a center, the
-/// distance multiplied by `epsilon` where the kernel has one.
+/// The kernel of an [`RBFInterpolator`]: a function of the distance `r` from a
+/// data point.
 ///
-/// The four kernels without `epsilon` do not depend on a scale: stretching the
-/// distances changes the weights and not the interpolant.
+/// The kernels and their signs are SciPy's. Four of them take a shape
+/// parameter `epsilon`, which the distance is multiplied by: a larger
+/// `epsilon` makes a narrower bump. It must be finite and above zero. The
+/// other four do not depend on a scale (stretching all distances leaves the
+/// interpolant as it is), and take none.
+///
+/// A kernel may need a polynomial beside it for its system to have one
+/// solution: the degree is given with each. [`RbfDegree::Default`] takes that
+/// degree, and a constant for the kernels that need no polynomial.
+///
+/// SciPy takes an `epsilon` for the scale-free kernels as well. Without
+/// smoothing it changes nothing. With smoothing `s` it is the same as the
+/// smoothing `s / epsilon^p` here, with `p` 1 for the linear kernel, 2 for the
+/// thin plate spline, 3 for the cubic, and 5 for the quintic.
+///
+/// The enum is `#[non_exhaustive]`: later versions add kernels.
+///
+/// # Examples
+///
+/// ```
+/// use interpx::{InterpolateError, ParamReason, RBFInterpolator, RbfKernel};
+///
+/// let points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
+/// let values = [1.0, 2.0, 3.0, 4.0];
+/// let narrow = RbfKernel::Gaussian { epsilon: 3.0 };
+/// assert!(RBFInterpolator::new(&points, &values, narrow).is_ok());
+///
+/// let err = RBFInterpolator::new(&points, &values, RbfKernel::Gaussian { epsilon: 0.0 });
+/// let not_positive = InterpolateError::InvalidParameter {
+///     name: "epsilon",
+///     reason: ParamReason::NotPositive,
+/// };
+/// assert_eq!(err.err(), Some(not_positive));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum Kernel {
-    /// `-r`
+#[non_exhaustive]
+pub enum RbfKernel {
+    /// `-r`. Needs a polynomial of degree 0.
     Linear,
-    /// `r^2 log r`, and 0 at `r = 0`
+    /// `r^2 log r`. Needs a polynomial of degree 1. SciPy's default kernel.
     ThinPlateSpline,
-    /// `r^3`
+    /// `r^3`. Needs a polynomial of degree 1.
     Cubic,
-    /// `-r^5`
+    /// `-r^5`. Needs a polynomial of degree 2.
     Quintic,
-    /// `-sqrt(r^2 + 1)`
-    Multiquadric { epsilon: f64 },
-    /// `1 / sqrt(r^2 + 1)`
-    InverseMultiquadric { epsilon: f64 },
-    /// `1 / (r^2 + 1)`
-    InverseQuadratic { epsilon: f64 },
-    /// `exp(-r^2)`
-    Gaussian { epsilon: f64 },
+    /// `-sqrt(r^2 + 1)`, with `r` the distance times `epsilon`. Needs a
+    /// polynomial of degree 0.
+    Multiquadric {
+        /// What the distance is multiplied by.
+        epsilon: f64,
+    },
+    /// `1 / sqrt(r^2 + 1)`, with `r` the distance times `epsilon`. Needs no
+    /// polynomial.
+    InverseMultiquadric {
+        /// What the distance is multiplied by.
+        epsilon: f64,
+    },
+    /// `1 / (r^2 + 1)`, with `r` the distance times `epsilon`. Needs no
+    /// polynomial.
+    InverseQuadratic {
+        /// What the distance is multiplied by.
+        epsilon: f64,
+    },
+    /// `exp(-r^2)`, with `r` the distance times `epsilon`. Needs no
+    /// polynomial.
+    Gaussian {
+        /// What the distance is multiplied by.
+        epsilon: f64,
+    },
 }
 
-impl Kernel {
+impl RbfKernel {
     /// What the distances are multiplied by: 1 for a kernel that does not
     /// depend on a scale.
     fn epsilon(self) -> f64 {
@@ -71,7 +123,7 @@ impl Kernel {
 
     /// The degree used when none is asked for: the smallest one, and a
     /// constant term for the kernels that need no polynomial (SciPy's default).
-    pub(crate) fn default_degree(self) -> usize {
+    fn default_degree(self) -> usize {
         self.min_degree().unwrap_or(0)
     }
 
@@ -122,7 +174,7 @@ fn monomial_count(variables: usize, degree: usize) -> Option<usize> {
 /// The polynomial terms of an interpolant: the monomials, and the change of
 /// coordinates they are evaluated in.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Polynomial<const D: usize> {
+struct Polynomial<const D: usize> {
     /// The power of each variable in each monomial, in SciPy's order: by
     /// degree, and among those of one degree by the variables they multiply,
     /// taken in increasing order (`1, x, y, x^2, x y, y^2`).
@@ -151,9 +203,9 @@ impl<const D: usize> Polynomial<D> {
     ///   [`ParamReason::TooLarge`] when the monomials are too many to count.
     /// - [`InterpolateError::InsufficientPoints`] when there are fewer points
     ///   than monomials: the terms could not be told apart on them.
-    pub(crate) fn new(
+    fn new(
         points: &[[f64; D]],
-        kernel: Kernel,
+        kernel: RbfKernel,
         degree: Option<usize>,
     ) -> Result<Self, InterpolateError> {
         let invalid = |reason| InterpolateError::InvalidParameter {
@@ -241,16 +293,23 @@ impl<const D: usize> Polynomial<D> {
     }
 
     /// The number of monomials.
-    pub(crate) fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.powers.len()
+    }
+
+    /// The value of every monomial at `point`, in their order.
+    fn at(&self, point: &[f64; D]) -> impl Iterator<Item = f64> + '_ {
+        let moved: [f64; D] = core::array::from_fn(|d| (point[d] - self.shift[d]) / self.scale[d]);
+        self.powers
+            .iter()
+            .map(move |power| moved.iter().zip(power).map(|(x, p)| x.powi(*p)).product())
     }
 
     /// Writes the value of every monomial at `point` to `out`, which has one
     /// entry a monomial.
     fn row(&self, point: &[f64; D], out: &mut [f64]) {
-        let moved: [f64; D] = core::array::from_fn(|d| (point[d] - self.shift[d]) / self.scale[d]);
-        for (value, power) in out.iter_mut().zip(&self.powers) {
-            *value = moved.iter().zip(power).map(|(x, p)| x.powi(*p)).product();
+        for (value, monomial) in out.iter_mut().zip(self.at(point)) {
+            *value = monomial;
         }
     }
 }
@@ -278,11 +337,11 @@ const TILE: usize = 64;
 /// Returns [`InterpolateError::InvalidParameter`] for `points` with
 /// [`ParamReason::TooLarge`] when the matrix would be larger than a `Vec`
 /// holds.
-pub(crate) fn system<const D: usize, V: Value<f64>>(
+fn system<const D: usize, V: Value<f64>>(
     points: &[[f64; D]],
     values: &[V],
     smoothing: f64,
-    kernel: Kernel,
+    kernel: RbfKernel,
     polynomial: &Polynomial<D>,
 ) -> Result<(Vec<f64>, Vec<V>), InterpolateError> {
     let (n, r) = (points.len(), polynomial.len());
@@ -344,28 +403,435 @@ pub(crate) fn system<const D: usize, V: Value<f64>>(
     Ok((matrix, rhs))
 }
 
-/// Writes the row of the point `at` to `out`: the kernel between it and every
-/// point, then every monomial. Its inner product with the solution of the
-/// [`system`] is the value of the interpolant there.
+/// Solves the [`system`] of an interpolant: the weights of the kernels, then
+/// the coefficients of the monomials.
 ///
-/// `out` has one entry a point and one a monomial.
-pub(crate) fn evaluation_row<const D: usize>(
-    at: &[f64; D],
-    points: &[[f64; D]],
-    kernel: Kernel,
-    polynomial: &Polynomial<D>,
-    out: &mut [f64],
-) {
-    let (kernels, monomials) = out.split_at_mut(points.len());
-    for (entry, point) in kernels.iter_mut().zip(points) {
-        *entry = kernel.between(at, point);
+/// The matrix is factored by `faer` (LU with partial pivoting), in place: the
+/// matrix is symmetric, so its rows are the columns `faer` works on, and no
+/// second matrix is made. The two substitutions are done here, on the values
+/// as they are: a value of several columns is solved in one pass, by linear
+/// combinations of whole values.
+///
+/// # Errors
+///
+/// Returns [`InterpolateError::SolverFailed`] when the solution is not finite:
+/// a pivot was zero (the system has no solution, or not one alone), or the
+/// numbers did not fit.
+fn solve<V: Value<f64>>(mut matrix: Vec<f64>, rhs: &[V]) -> Result<Vec<V>, InterpolateError> {
+    let side = rhs.len();
+    // Row `i` of the factored matrix is row `order[i]` of the system.
+    let (mut order, mut inverse) = (vec![0_usize; side], vec![0_usize; side]);
+    let mut scratch = MemBuffer::new(lu_in_place_scratch::<usize, f64>(
+        side,
+        side,
+        Par::Seq,
+        Default::default(),
+    ));
+    lu_in_place(
+        MatMut::from_column_major_slice_mut(&mut matrix, side, side),
+        &mut order,
+        &mut inverse,
+        Par::Seq,
+        MemStack::new(&mut scratch),
+        Default::default(),
+    );
+    // The factors are in the matrix now, column after column: `U` on the
+    // diagonal and above it, and under it `L`, whose diagonal of ones is not
+    // stored.
+    let column = |j: usize| &matrix[j * side..(j + 1) * side];
+    let mut solution: Vec<V> = order.iter().map(|row| rhs[*row]).collect();
+    // `L y = P b`: once `y[j]` is final it leaves every entry below it.
+    for j in 0..side {
+        let (lower, pivot) = (column(j), solution[j]);
+        for i in j + 1..side {
+            solution[i] = solution[i].axpy(-lower[i], pivot);
+        }
     }
-    polynomial.row(at, monomials);
+    // `U x = y`, from the last column back.
+    for j in (0..side).rev() {
+        let upper = column(j);
+        // A pivot of zero makes this entry infinite or NaN, and every entry
+        // it goes into after it: the check at the end finds them.
+        solution[j] = V::zero().axpy(upper[j].recip(), solution[j]);
+        let solved = solution[j];
+        for i in 0..j {
+            solution[i] = solution[i].axpy(-upper[i], solved);
+        }
+    }
+    if solution.iter().all(V::all_finite) {
+        Ok(solution)
+    } else {
+        Err(InterpolateError::SolverFailed(SolverError::Singular))
+    }
+}
+
+/// The degree of the polynomial an [`RBFInterpolator`] adds to its kernels.
+///
+/// # Examples
+///
+/// ```
+/// use interpx::{RbfDegree, RbfOptions};
+///
+/// let options = RbfOptions::new().with_degree(RbfDegree::Degree(2));
+/// assert_eq!(options.degree(), RbfDegree::Degree(2));
+/// assert_eq!(RbfOptions::new().degree(), RbfDegree::Default);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum RbfDegree {
+    /// The degree the kernel needs, and a constant term for the kernels that
+    /// need none: SciPy's default.
+    #[default]
+    Default,
+    /// No polynomial: the kernels alone (SciPy's `degree=-1`). With a kernel
+    /// that needs a polynomial the system may have no solution.
+    None,
+    /// Every monomial of this degree or less. A degree under the one the
+    /// kernel needs is refused.
+    Degree(usize),
+}
+
+/// The options of an [`RBFInterpolator`] beside its kernel: the smoothing and
+/// the degree of the polynomial.
+///
+/// # Examples
+///
+/// ```
+/// use interpx::{RbfDegree, RbfOptions};
+///
+/// let options = RbfOptions::new().with_smoothing(0.5).with_degree(RbfDegree::None);
+/// assert_eq!(options.smoothing(), 0.5);
+/// assert_eq!(options.degree(), RbfDegree::None);
+/// // What `RBFInterpolator::new` uses.
+/// assert_eq!(RbfOptions::new().smoothing(), 0.0);
+/// assert_eq!(RbfOptions::new(), RbfOptions::default());
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct RbfOptions {
+    smoothing: f64,
+    degree: RbfDegree,
+}
+
+impl RbfOptions {
+    /// The defaults: no smoothing, and the degree of [`RbfDegree::Default`].
+    /// See [`RbfOptions`] for an example.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns the options with another smoothing.
+    ///
+    /// With 0 the interpolant passes through the data. A larger value lets it
+    /// miss the data to be smoother; as it grows the interpolant tends to the
+    /// polynomial that fits the data best. It must be finite and not negative.
+    /// See [`RbfOptions`] for an example.
+    #[must_use]
+    pub fn with_smoothing(mut self, smoothing: f64) -> Self {
+        self.smoothing = smoothing;
+        self
+    }
+
+    /// Returns the options with another degree of the polynomial. See
+    /// [`RbfOptions`] for an example.
+    #[must_use]
+    pub fn with_degree(mut self, degree: RbfDegree) -> Self {
+        self.degree = degree;
+        self
+    }
+
+    /// Returns the smoothing. See [`RbfOptions`] for an example.
+    pub fn smoothing(&self) -> f64 {
+        self.smoothing
+    }
+
+    /// Returns the degree of the polynomial. See [`RbfOptions`] for an example.
+    pub fn degree(&self) -> RbfDegree {
+        self.degree
+    }
+}
+
+/// The interpolant of values at scattered points by radial basis functions: a
+/// sum of one kernel centered at every data point, and a polynomial of low
+/// degree.
+///
+/// SciPy's `RBFInterpolator` without `neighbors`. The points need no order and
+/// no structure, in any number of dimensions. The weights of the kernels
+/// solve one system of equations with a row for every point, at construction.
+/// Coordinates are `f64`; a value is a scalar or a fixed-length array.
+///
+/// The interpolant passes through the data, unless
+/// [smoothing](RbfOptions::with_smoothing) is asked for. It has a value
+/// everywhere: there is no domain to be outside of. Far from the data the
+/// value is what the kernel and the polynomial make of it, and is to be read
+/// with care.
+///
+/// # Cost
+///
+/// Construction solves a dense system: with `n` points, a matrix of `n * n`
+/// numbers (800 MB at 10 000 points, 80 GB at 100 000) and a time that grows
+/// with the cube of `n`. A matrix that the machine has no memory for is not
+/// an error: as for any allocation in Rust, the process stops. An evaluation
+/// takes one kernel for every point. This suits up to a few thousand points.
+///
+/// # Points
+///
+/// Two points with the same coordinates are refused, with or without
+/// smoothing. Points that all lie in a line (or, in three dimensions, in a
+/// plane) leave the polynomial undetermined: when they lie along an axis the
+/// system is found to have no solution, and otherwise the result can be
+/// without meaning, as in SciPy.
+///
+/// # Examples
+///
+/// ```
+/// use interpx::{InterpolateError, Interpolator, RBFInterpolator, RbfKernel};
+///
+/// # fn main() -> Result<(), InterpolateError> {
+/// // x + 2 y at five points.
+/// let points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.5, 0.25]];
+/// let values = [0.0, 1.0, 2.0, 3.0, 1.0];
+/// let rbf = RBFInterpolator::new(&points, &values, RbfKernel::ThinPlateSpline)?;
+/// // The thin plate spline comes with a polynomial of degree 1, which takes
+/// // up all of a plane: it is reproduced, between the points and away.
+/// let close = |got: Option<f64>, want: f64| got.is_some_and(|v| (v - want).abs() < 1e-9);
+/// assert!(close(rbf.eval(&[0.3, 0.6]), 1.5));
+/// assert!(close(rbf.eval(&[4.0, -1.0]), 2.0));
+/// assert_eq!(rbf.len(), 5);
+/// assert_eq!(rbf.degree(), Some(1));
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Debug, Clone)]
+pub struct RBFInterpolator<const D: usize, V: Value<f64> = f64> {
+    points: Vec<[f64; D]>,
+    /// The weight of the kernel at every point, then the coefficient of every
+    /// monomial.
+    coefficients: Vec<V>,
+    kernel: RbfKernel,
+    polynomial: Polynomial<D>,
+    /// As asked for.
+    smoothing: f64,
+    degree: Option<usize>,
+}
+
+impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
+    /// Builds the interpolant through the values at the points, without
+    /// smoothing and with the polynomial the kernel takes by default.
+    ///
+    /// # Errors
+    ///
+    /// Those of [`with_options`](RBFInterpolator::with_options).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{InterpolateError, Interpolator, RBFInterpolator, RbfKernel};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// // A Gaussian takes the scale of its bump; values of two columns.
+    /// let points = [[0.0], [1.0], [2.5], [4.0]];
+    /// let values = [[0.0, 1.0], [1.0, 0.0], [0.5, 0.5], [2.0, -1.0]];
+    /// let kernel = RbfKernel::Gaussian { epsilon: 0.8 };
+    /// let rbf = RBFInterpolator::new(&points, &values, kernel)?;
+    /// // Through the data.
+    /// let at = rbf.eval(&[2.5]).unwrap_or([f64::NAN; 2]);
+    /// assert!((at[0] - 0.5).abs() < 1e-9 && (at[1] - 0.5).abs() < 1e-9);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn new(
+        points: &[[f64; D]],
+        values: &[V],
+        kernel: RbfKernel,
+    ) -> Result<Self, InterpolateError> {
+        Self::with_options(points, values, kernel, &RbfOptions::new())
+    }
+
+    /// Builds the interpolant with a smoothing or a degree of its polynomial
+    /// other than the defaults.
+    ///
+    /// # Errors
+    ///
+    /// The first of these that applies:
+    ///
+    /// - [`InterpolateError::LengthMismatch`] when `points` and `values` differ
+    ///   in length.
+    /// - [`InterpolateError::InsufficientPoints`] when there is no point.
+    /// - [`InterpolateError::NonFinite`] when a coordinate, or else a value, is
+    ///   NaN or infinite. Its `index` is that of the point.
+    /// - [`InterpolateError::InvalidParameter`] for `epsilon` when the one of
+    ///   the kernel is not finite ([`ParamReason::NonFinite`]) or not above
+    ///   zero ([`ParamReason::NotPositive`]).
+    /// - [`InterpolateError::InvalidParameter`] for `smoothing` when it is not
+    ///   finite ([`ParamReason::NonFinite`]) or under zero
+    ///   ([`ParamReason::Negative`]).
+    /// - [`InterpolateError::InvalidParameter`] for `degree` when it is under
+    ///   the degree the kernel needs ([`ParamReason::TooSmall`]), or has more
+    ///   monomials than can be counted ([`ParamReason::TooLarge`]).
+    /// - [`InterpolateError::InsufficientPoints`] when there are fewer points
+    ///   than monomials in the polynomial.
+    /// - [`InterpolateError::DuplicatePoints`] when two points have the same
+    ///   coordinates.
+    /// - [`InterpolateError::InvalidParameter`] for `points` when the matrix of
+    ///   the system would be larger than a `Vec` can hold (`isize::MAX` bytes).
+    ///   Running out of memory under that limit is not an error: the process
+    ///   stops (see "Cost" on [`RBFInterpolator`]).
+    /// - [`InterpolateError::SolverFailed`] when the system has no solution, or
+    ///   not one alone: the points do not tell the monomials apart (all in a
+    ///   line along an axis, with a polynomial of degree 1), or the kernel was
+    ///   left without the polynomial it needs.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{
+    ///     InterpolateError, Interpolator, ParamReason, RBFInterpolator, RbfDegree, RbfKernel,
+    ///     RbfOptions,
+    /// };
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// let points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.4, 0.7]];
+    /// let values = [1.0, 2.0, 0.0, 5.0, 2.0];
+    /// // Smoothed: the interpolant no longer passes through the data.
+    /// let options = RbfOptions::new().with_smoothing(0.5);
+    /// let smooth = RBFInterpolator::with_options(&points, &values, RbfKernel::Linear, &options)?;
+    /// assert_eq!(smooth.smoothing(), 0.5);
+    /// assert!(smooth.eval(&[1.0, 1.0]).is_some_and(|v| (v - 5.0).abs() > 0.1));
+    ///
+    /// // The cubic kernel needs a polynomial of degree 1 at least.
+    /// let options = RbfOptions::new().with_degree(RbfDegree::Degree(0));
+    /// let err = RBFInterpolator::with_options(&points, &values, RbfKernel::Cubic, &options);
+    /// let too_small = InterpolateError::InvalidParameter {
+    ///     name: "degree",
+    ///     reason: ParamReason::TooSmall { min: 1 },
+    /// };
+    /// assert_eq!(err.err(), Some(too_small));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn with_options(
+        points: &[[f64; D]],
+        values: &[V],
+        kernel: RbfKernel,
+        options: &RbfOptions,
+    ) -> Result<Self, InterpolateError> {
+        validate::length(values, points.len())?;
+        validate::enough(points, 1)?;
+        let not_finite = |point: &[f64; D]| !point.iter().all(|c| c.is_finite());
+        if let Some(index) = points.iter().position(not_finite) {
+            return Err(InterpolateError::NonFinite { index });
+        }
+        if let Some(index) = values.iter().position(|v| !v.all_finite()) {
+            return Err(InterpolateError::NonFinite { index });
+        }
+        let invalid = |name, reason| InterpolateError::InvalidParameter { name, reason };
+        let epsilon = kernel.epsilon();
+        if !epsilon.is_finite() {
+            return Err(invalid("epsilon", ParamReason::NonFinite));
+        }
+        if epsilon <= 0.0 {
+            return Err(invalid("epsilon", ParamReason::NotPositive));
+        }
+        let smoothing = options.smoothing;
+        if !smoothing.is_finite() {
+            return Err(invalid("smoothing", ParamReason::NonFinite));
+        }
+        if smoothing < 0.0 {
+            return Err(invalid("smoothing", ParamReason::Negative));
+        }
+        let degree = match options.degree {
+            RbfDegree::Default => Some(kernel.default_degree()),
+            RbfDegree::None => None,
+            RbfDegree::Degree(degree) => Some(degree),
+        };
+        let polynomial = Polynomial::new(points, kernel, degree)?;
+        if let Some((first, second)) = super::first_repeat(points) {
+            return Err(InterpolateError::DuplicatePoints { first, second });
+        }
+        let (matrix, rhs) = system(points, values, smoothing, kernel, &polynomial)?;
+        Ok(Self {
+            points: points.to_vec(),
+            coefficients: solve(matrix, &rhs)?,
+            kernel,
+            polynomial,
+            smoothing,
+            degree,
+        })
+    }
+
+    /// Returns the number of data points. See [`RBFInterpolator`] for an
+    /// example.
+    #[expect(
+        clippy::len_without_is_empty,
+        reason = "a constructor refuses an empty set of points"
+    )]
+    pub fn len(&self) -> usize {
+        self.points.len()
+    }
+
+    /// Returns the kernel.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{InterpolateError, RBFInterpolator, RbfKernel};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// let kernel = RbfKernel::Multiquadric { epsilon: 2.0 };
+    /// let rbf = RBFInterpolator::new(&[[0.0], [1.0], [3.0]], &[1.0, 2.0, 0.0], kernel)?;
+    /// assert_eq!(rbf.kernel(), kernel);
+    /// assert_eq!(rbf.smoothing(), 0.0);
+    /// // The polynomial that was used: for this kernel, a constant.
+    /// assert_eq!(rbf.degree(), Some(0));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn kernel(&self) -> RbfKernel {
+        self.kernel
+    }
+
+    /// Returns the degree of the polynomial that was used, or `None` when
+    /// there is none. See [`kernel`](RBFInterpolator::kernel) for an example.
+    pub fn degree(&self) -> Option<usize> {
+        self.degree
+    }
+
+    /// Returns the smoothing. See [`kernel`](RBFInterpolator::kernel) for an
+    /// example.
+    pub fn smoothing(&self) -> f64 {
+        self.smoothing
+    }
+}
+
+impl<const D: usize, V: Value<f64>> Interpolator for RBFInterpolator<D, V> {
+    type Point = [f64; D];
+    type Output = V;
+
+    /// The kernels and the monomials, each times its coefficient, added one
+    /// by one: no row of them is built. `None` for a point with a coordinate
+    /// that is NaN or infinite, and for a value that is not finite.
+    fn eval(&self, point: &[f64; D]) -> Option<V> {
+        if !point.iter().all(|c| c.is_finite()) {
+            return None;
+        }
+        let (weights, coefficients) = self.coefficients.split_at(self.points.len());
+        // One running sum. Four of them, so that a term would not wait for the
+        // one before, changed nothing (0.95 to 1.00 of the time): a term costs
+        // what its kernel costs, a square root and for some a logarithm or an
+        // exponential.
+        let mut value = V::zero();
+        for (weight, center) in weights.iter().zip(&self.points) {
+            value = value.axpy(self.kernel.between(point, center), *weight);
+        }
+        for (coefficient, monomial) in coefficients.iter().zip(self.polynomial.at(point)) {
+            value = value.axpy(monomial, *coefficient);
+        }
+        value.all_finite().then_some(value)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{evaluation_row, monomial_count, system, Kernel, Polynomial};
+    use super::{monomial_count, system, Polynomial, RbfKernel};
     use crate::common::{assert_close, load, reals, Real, Tol, DIRECT_F64};
     use crate::{InterpolateError as E, ParamReason};
     use serde_json::Value as Json;
@@ -389,24 +855,41 @@ mod tests {
             .collect()
     }
 
+    /// The row of an evaluation: the kernel between the point and every data
+    /// point, then every monomial. Its inner product with the solution of the
+    /// system is the value of the interpolant.
+    fn evaluation_row<const D: usize>(
+        at: &[f64; D],
+        points: &[[f64; D]],
+        kernel: RbfKernel,
+        polynomial: &Polynomial<D>,
+        out: &mut [f64],
+    ) {
+        let (kernels, monomials) = out.split_at_mut(points.len());
+        for (entry, point) in kernels.iter_mut().zip(points) {
+            *entry = kernel.between(at, point);
+        }
+        polynomial.row(at, monomials);
+    }
+
     fn bits(v: &[f64]) -> Vec<u64> {
         v.iter().map(|x| x.to_bits()).collect()
     }
 
     /// Every kernel, with `epsilon` where it takes one.
-    fn kernels(epsilon: f64) -> [(&'static str, Kernel); 8] {
+    fn kernels(epsilon: f64) -> [(&'static str, RbfKernel); 8] {
         [
-            ("linear", Kernel::Linear),
-            ("thin_plate_spline", Kernel::ThinPlateSpline),
-            ("cubic", Kernel::Cubic),
-            ("quintic", Kernel::Quintic),
-            ("multiquadric", Kernel::Multiquadric { epsilon }),
+            ("linear", RbfKernel::Linear),
+            ("thin_plate_spline", RbfKernel::ThinPlateSpline),
+            ("cubic", RbfKernel::Cubic),
+            ("quintic", RbfKernel::Quintic),
+            ("multiquadric", RbfKernel::Multiquadric { epsilon }),
             (
                 "inverse_multiquadric",
-                Kernel::InverseMultiquadric { epsilon },
+                RbfKernel::InverseMultiquadric { epsilon },
             ),
-            ("inverse_quadratic", Kernel::InverseQuadratic { epsilon }),
-            ("gaussian", Kernel::Gaussian { epsilon }),
+            ("inverse_quadratic", RbfKernel::InverseQuadratic { epsilon }),
+            ("gaussian", RbfKernel::Gaussian { epsilon }),
         ]
     }
 
@@ -586,7 +1069,7 @@ mod tests {
             );
         }
         // One point fewer than the monomials is too few, as many is enough.
-        let gaussian = Kernel::Gaussian { epsilon: 1.0 };
+        let gaussian = RbfKernel::Gaussian { epsilon: 1.0 };
         assert_eq!(
             Polynomial::new(&points[..5], gaussian, Some(2)).err(),
             Some(E::InsufficientPoints {
@@ -602,7 +1085,7 @@ mod tests {
         assert_eq!(bits(&none.scale), bits(&[1.0, 1.0]));
         // A degree under the smallest is reported before too few points.
         assert_eq!(
-            Polynomial::new(&points[..0], Kernel::Quintic, Some(1)).err(),
+            Polynomial::new(&points[..0], RbfKernel::Quintic, Some(1)).err(),
             Some(E::InvalidParameter {
                 name: "degree",
                 reason: ParamReason::TooSmall { min: 2 },
@@ -627,7 +1110,7 @@ mod tests {
     fn monomials_in<const D: usize>() {
         // Enough points for every count below.
         let points = vec![[0.5; D]; 300];
-        let gaussian = Kernel::Gaussian { epsilon: 1.0 };
+        let gaussian = RbfKernel::Gaussian { epsilon: 1.0 };
         for degree in 0..=5_usize {
             let terms = Polynomial::new(&points, gaussian, Some(degree)).expect("valid terms");
             let count = binomial(D + degree, D).expect("small");
@@ -654,7 +1137,7 @@ mod tests {
         monomials_in::<4>();
         // Two variables, degree 2, in SciPy's order: 1, x, y, x^2, x y, y^2.
         let points = [[0.0, 0.0]; 6];
-        let terms = Polynomial::new(&points, Kernel::Linear, Some(2)).expect("valid terms");
+        let terms = Polynomial::new(&points, RbfKernel::Linear, Some(2)).expect("valid terms");
         assert_eq!(
             terms.powers,
             [[0, 0], [1, 0], [0, 1], [2, 0], [1, 1], [0, 2]]
@@ -669,7 +1152,7 @@ mod tests {
                 reason: ParamReason::TooLarge { max },
             })
         };
-        let gaussian = Kernel::Gaussian { epsilon: 1.0 };
+        let gaussian = RbfKernel::Gaussian { epsilon: 1.0 };
         // In one variable the count always fits; the power must fit `i32`.
         let line: [[f64; 1]; 0] = [];
         let largest_power = i32::MAX as usize;
@@ -733,7 +1216,7 @@ mod tests {
             let degree = kernel.default_degree();
             let Ok(polynomial) = Polynomial::new(&points, kernel, Some(degree)) else {
                 // The quintic needs degree 2: 10 monomials for 5 points.
-                assert_eq!(kernel, Kernel::Quintic);
+                assert_eq!(kernel, RbfKernel::Quintic);
                 continue;
             };
             let (n, side) = (points.len(), points.len() + polynomial.len());
@@ -813,12 +1296,12 @@ mod tests {
             // The largest matrix of `f64` a `Vec` holds has under 2^60
             // entries: a side of 2^30 is one too many. One row and one column
             // are for the constant term.
-            let terms = Polynomial::new(&points, Kernel::Linear, Some(0)).expect("valid terms");
+            let terms = Polynomial::new(&points, RbfKernel::Linear, Some(0)).expect("valid terms");
             assert_eq!(terms.len(), 1);
             let most = (isize::MAX.unsigned_abs() / 8).isqrt();
             assert_eq!(most, (1 << 30) - 1);
             assert_eq!(
-                system(&points, &values, 0.0, Kernel::Linear, &terms).err(),
+                system(&points, &values, 0.0, RbfKernel::Linear, &terms).err(),
                 Some(E::InvalidParameter {
                     name: "points",
                     reason: ParamReason::TooLarge { max: most - 1 },

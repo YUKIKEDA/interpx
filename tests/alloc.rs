@@ -175,6 +175,41 @@ fn scattered() -> Result<(), InterpolateError> {
         fresh, 0,
         "NearestNDInterpolator: the first queries of a thread allocate"
     );
+
+    // RBFInterpolator: each kind of kernel (with and without `epsilon`), with
+    // and without polynomial terms, scalar and array values. The queries are
+    // near, far, too far for a finite value, and not finite.
+    use interpx::{RBFInterpolator, RbfDegree, RbfKernel, RbfOptions};
+    // Every ninth point: every seventh would have the same third coordinate.
+    let centers: Vec<[f64; 3]> = points.iter().step_by(9).copied().collect();
+    let heights: Vec<f64> = (0..centers.len() as u32)
+        .map(|n| f64::from(n % 5))
+        .collect();
+    let pairs: Vec<[f64; 2]> = heights.iter().map(|v| [*v, -*v]).collect();
+    for kernel in [
+        RbfKernel::ThinPlateSpline,
+        RbfKernel::Quintic,
+        RbfKernel::Gaussian { epsilon: 0.05 },
+        RbfKernel::InverseMultiquadric { epsilon: 0.05 },
+    ] {
+        for degree in [RbfDegree::Default, RbfDegree::None, RbfDegree::Degree(2)] {
+            let options = RbfOptions::new().with_smoothing(0.5).with_degree(degree);
+            let rbf = RBFInterpolator::with_options(&centers, &heights, kernel, &options)?;
+            check(
+                &format!("RBFInterpolator<3> {kernel:?} {degree:?}"),
+                &rbf,
+                &queries,
+                f64::NAN,
+            );
+        }
+        let arrays = RBFInterpolator::new(&centers, &pairs, kernel)?;
+        check(
+            &format!("RBFInterpolator<3, [f64; 2]> {kernel:?}"),
+            &arrays,
+            &queries,
+            [f64::NAN; 2],
+        );
+    }
     Ok(())
 }
 

@@ -85,6 +85,10 @@ pub enum InterpolateError {
         reason: ParamReason,
     },
 
+    /// A system of equations the method has to solve could not be solved.
+    #[error("the solver failed: {0}")]
+    SolverFailed(SolverError),
+
     /// One axis of a grid cannot be used.
     #[error("axis {axis} of the grid: {fault}")]
     GridAxis {
@@ -198,6 +202,35 @@ pub enum ParamReason {
     /// The value is a valid one, but not together with the other arguments.
     #[error("not supported with the other arguments")]
     Unsupported,
+
+    /// The value is zero or negative, where it must be above zero.
+    #[error("not above zero")]
+    NotPositive,
+
+    /// The value is negative, where it must be zero or above.
+    #[error("negative")]
+    Negative,
+}
+
+/// Why a system of equations could not be solved, for
+/// [`InterpolateError::SolverFailed`].
+///
+/// The enum is `#[non_exhaustive]`: later versions add reasons.
+///
+/// # Examples
+///
+/// ```
+/// use interpx::{InterpolateError, SolverError};
+///
+/// let err = InterpolateError::SolverFailed(SolverError::Singular);
+/// assert_eq!(err.to_string(), "the solver failed: the system is singular");
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[non_exhaustive]
+pub enum SolverError {
+    /// The system has no solution, or more than one: its matrix is singular.
+    #[error("the system is singular")]
+    Singular,
 }
 
 #[cfg(test)]
@@ -207,6 +240,24 @@ mod tests {
     #[test]
     fn every_variant_has_its_message() {
         let cases = [
+            (
+                E::SolverFailed(super::SolverError::Singular),
+                "the solver failed: the system is singular",
+            ),
+            (
+                E::InvalidParameter {
+                    name: "epsilon",
+                    reason: super::ParamReason::NotPositive,
+                },
+                "invalid parameter `epsilon`: not above zero",
+            ),
+            (
+                E::InvalidParameter {
+                    name: "smoothing",
+                    reason: super::ParamReason::Negative,
+                },
+                "invalid parameter `smoothing`: negative",
+            ),
             (
                 E::InsufficientPoints {
                     required: 4,
