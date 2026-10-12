@@ -361,6 +361,40 @@ fn main() -> Result<(), InterpolateError> {
             );
         }
 
+        // The spline methods of the grid: six points an axis for the quintic.
+        let long = [0.0_f64, 0.5, 1.0, 1.25, 1.5, 2.0];
+        let on_long: Vec<f64> = (0..216).map(|n| f64::from(n % 11) - 5.0).collect();
+        for method in [GridMethod::Cubic, GridMethod::Quintic] {
+            let cube = RegularGridInterpolator::new([&long[..]; 3], &on_long, method)?
+                .with_extrapolate(mode);
+            check(
+                &format!("RegularGridInterpolator<f64, 3> {method:?} {mode:?}"),
+                &cube,
+                &in_grid,
+                f64::NAN,
+            );
+            let plane =
+                RegularGridInterpolator::new([&long[..]; 2], &[[1.0_f64, -1.0]; 36], method)?
+                    .with_extrapolate(mode);
+            let in_plane = in_grid.map(|p| [p[0], p[1]]);
+            check(
+                &format!("RegularGridInterpolator<f64, 2, [f64; 2]> {method:?} {mode:?}"),
+                &plane,
+                &in_plane,
+                [f64::NAN; 2],
+            );
+            let n = allocations(|| {
+                let mut hints = [Hint::new(); 3];
+                for point in &in_grid {
+                    std::hint::black_box(cube.eval_hinted(point, &mut hints));
+                }
+            });
+            assert_eq!(
+                n, 0,
+                "RegularGridInterpolator {method:?} {mode:?}: eval_hinted allocates"
+            );
+        }
+
         // BSplineCurve: evaluation is that of its BSpline. Parameters chosen
         // from the points, and given.
         let corners = [

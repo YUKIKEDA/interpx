@@ -9,8 +9,8 @@
 //! [`CubicSpline`], [`PchipInterpolator`], [`Akima1D`],
 //! [`CubicHermiteSpline`], and [`BSpline1D`] for data in one variable, and
 //! [`BSplineCurve`] for a curve through points, and
-//! [`RegularGridInterpolator`] (nearest and linear) for values on a grid in
-//! several dimensions; the others follow.
+//! [`RegularGridInterpolator`] (nearest, linear, cubic, and quintic) for values
+//! on a grid in several dimensions; the others follow.
 //!
 //! # Examples
 //!

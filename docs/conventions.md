@@ -39,7 +39,8 @@ src/
   grid/             interpolators of values on a rectilinear grid (a private module; mod.rs
                     re-exports)
     regular_grid.rs RegularGridInterpolator and GridMethod: axes kept ascending, values in C
-                    order, the interval of each axis from `search`
+                    order, the interval of each axis from `search`; the spline methods solve
+                    their coefficients axis by axis with the collocation system of BSpline1D
   bspline.rs        BSpline: basis functions on the stack, derivatives and integrals;
                     PPoly::from_bspline and BSpline::from_ppoly
 tests/
@@ -56,8 +57,9 @@ tests/
                     rules for the slopes, columns kept apart, properties
   curve.rs          BSplineCurve: SciPy's control points and values, the parameters each way
                     chooses, input checks and their order, motions and reversal, properties
-  grid.rs           RegularGridInterpolator (nearest, linear): SciPy's values, input checks and
-                    their order, the layout of the values, the modes outside the grid, properties
+  grid.rs           RegularGridInterpolator: SciPy's values for every method, input checks and
+                    their order, the layout of the values, the modes outside the grid, the
+                    spline methods against BSpline1D, properties
   bspline1d.rs      BSpline1D: SciPy's knots, control points, and values, input checks and their
                     order, the knots of each case, agreement with CubicSpline and Linear1D,
                     properties

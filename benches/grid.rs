@@ -1,4 +1,4 @@
-//! Time to evaluate a `RegularGridInterpolator` (`Linear` and `Nearest`).
+//! Time to evaluate and to build a `RegularGridInterpolator`.
 //!
 //! Grids in 2, 3, and 4 dimensions (200, 40, and 10 points an axis, unevenly
 //! spaced), 1000 points each: along a path that crosses the grid from corner
@@ -6,9 +6,15 @@
 //! and the same points shuffled. `eval` searches every axis for every point;
 //! `eval_hinted` starts each search where the last one ended.
 //!
-//! Construction copies the axes and the values and solves nothing; it is timed
-//! once per dimension, with one axis given in descending order (its values are
-//! reordered).
+//! The spline methods read 4 or 6 coefficients an axis: 16 to 256 for the
+//! cubic in 2 to 4 dimensions, 36 to 1296 for the quintic.
+//!
+//! Construction of the linear method copies the axes and the values and
+//! solves nothing; it is timed once per dimension, with one axis given in
+//! descending order (its values are reordered). The spline methods solve for
+//! their coefficients, one banded system an axis for every line of the grid:
+//! `grid_new_2d` times that for 10 to 400 points an axis (the cubic) and 10
+//! and 40 (the quintic), and the three-dimensional grid once.
 //!
 //! Run with `just bench`. Not a gate; CI does not run it.
 
@@ -71,6 +77,8 @@ fn dimension<const D: usize>(c: &mut Criterion, points_per_axis: usize) {
     for (label, method) in [
         ("linear", GridMethod::Linear),
         ("nearest", GridMethod::Nearest),
+        ("cubic", GridMethod::Cubic),
+        ("quintic", GridMethod::Quintic),
     ] {
         let Ok(grid) = RegularGridInterpolator::new(slices, &values, method) else {
             return;
@@ -124,11 +132,55 @@ fn dimension<const D: usize>(c: &mut Criterion, points_per_axis: usize) {
     group.finish();
 }
 
+/// The construction of the spline methods on square grids in 2D.
+fn spline_construction(c: &mut Criterion) {
+    let mut group = c.benchmark_group("grid_new_2d");
+    for (label, method, sizes) in [
+        ("cubic", GridMethod::Cubic, &[10, 40, 100, 200, 400][..]),
+        ("quintic", GridMethod::Quintic, &[10, 40][..]),
+        ("linear", GridMethod::Linear, &[400][..]),
+    ] {
+        for n in sizes {
+            let mut rng = Lcg(1);
+            let (x, y) = (axis(&mut rng, *n), axis(&mut rng, *n));
+            let values: Vec<f64> = (0..n * n).map(|_| 2.0 * rng.next() - 1.0).collect();
+            group.throughput(Throughput::Elements((n * n) as u64));
+            group.bench_function(format!("{label}/{n}"), |b| {
+                b.iter(|| {
+                    let built =
+                        RegularGridInterpolator::new([&x[..], &y[..]], black_box(&values), method);
+                    black_box(built.is_ok())
+                });
+            });
+        }
+    }
+    group.finish();
+    // Three dimensions, 40 points an axis.
+    let mut rng = Lcg(1);
+    let axes: [Vec<f64>; 3] = core::array::from_fn(|_| axis(&mut rng, 40));
+    let values: Vec<f64> = (0..64_000).map(|_| 2.0 * rng.next() - 1.0).collect();
+    let slices: [&[f64]; 3] = core::array::from_fn(|d| axes[d].as_slice());
+    let mut group = c.benchmark_group("grid_new_3d");
+    group.throughput(Throughput::Elements(64_000));
+    for (label, method) in [
+        ("cubic", GridMethod::Cubic),
+        ("quintic", GridMethod::Quintic),
+    ] {
+        group.bench_function(format!("{label}/40"), |b| {
+            b.iter(|| {
+                let built = RegularGridInterpolator::new(slices, black_box(&values), method);
+                black_box(built.is_ok())
+            });
+        });
+    }
+    group.finish();
+}
+
 fn grids(c: &mut Criterion) {
     dimension::<2>(c, 200);
     dimension::<3>(c, 40);
     dimension::<4>(c, 10);
 }
 
-criterion_group!(benches, grids);
+criterion_group!(benches, grids, spline_construction);
 criterion_main!(benches);
