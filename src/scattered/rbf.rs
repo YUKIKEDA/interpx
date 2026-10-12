@@ -13,11 +13,13 @@
 //! term. The formulas, the signs, and the order of every array are those of
 //! SciPy 1.18's `RBFInterpolator`.
 
+use super::kdtree::{self, Tree};
 use crate::error::{ParamReason, SolverError};
 use crate::{validate, InterpolateError, Interpolator, Value};
 use faer::dyn_stack::{MemBuffer, MemStack};
 use faer::linalg::lu::partial_pivoting::factor::{lu_in_place, lu_in_place_scratch};
 use faer::{MatMut, Par};
+use std::cell::RefCell;
 
 /// The kernel of an [`RBFInterpolator`]: a function of the distance `r` from a
 /// data point.
@@ -171,125 +173,146 @@ fn monomial_count(variables: usize, degree: usize) -> Option<usize> {
     usize::try_from(count).ok()
 }
 
-/// The polynomial terms of an interpolant: the monomials, and the change of
-/// coordinates they are evaluated in.
-#[derive(Debug, Clone, PartialEq)]
-struct Polynomial<const D: usize> {
-    /// The power of each variable in each monomial, in SciPy's order: by
-    /// degree, and among those of one degree by the variables they multiply,
-    /// taken in increasing order (`1, x, y, x^2, x y, y^2`).
-    powers: Vec<[i32; D]>,
+/// The number of monomials of the polynomial terms for `kernel`: of `degree`
+/// or less, or none.
+///
+/// # Errors
+///
+/// Returns [`InterpolateError::InvalidParameter`] for `degree`: with
+/// [`ParamReason::TooSmall`] when it is under the smallest degree the kernel
+/// needs (no terms at all is accepted for every kernel, as in SciPy), and with
+/// [`ParamReason::TooLarge`] when the monomials are too many to count.
+fn count_of<const D: usize>(
+    kernel: RbfKernel,
+    degree: Option<usize>,
+) -> Result<usize, InterpolateError> {
+    let invalid = |reason| InterpolateError::InvalidParameter {
+        name: "degree",
+        reason,
+    };
+    if let (Some(degree), Some(min)) = (degree, kernel.min_degree()) {
+        if degree < min {
+            return Err(invalid(ParamReason::TooSmall { min }));
+        }
+    }
+    // A power is an `i32` (what `powi` takes), and the count a `usize`.
+    let fits = |degree: usize| i32::try_from(degree).is_ok() && monomial_count(D, degree).is_some();
+    match degree {
+        None => Ok(0),
+        Some(degree) if fits(degree) => Ok(monomial_count(D, degree).unwrap_or(usize::MAX)),
+        Some(degree) => {
+            // The largest degree that fits is between 0, which does, and
+            // this one, which does not.
+            let (mut fitting, mut not) = (0, degree);
+            while not - fitting > 1 {
+                let middle = fitting + (not - fitting) / 2;
+                if fits(middle) {
+                    fitting = middle;
+                } else {
+                    not = middle;
+                }
+            }
+            Err(invalid(ParamReason::TooLarge { max: fitting }))
+        }
+    }
+}
+
+/// The power of each variable in each monomial of the polynomial terms, in
+/// SciPy's order: by degree, and among those of one degree by the variables
+/// they multiply, taken in increasing order (`1, x, y, x^2, x y, y^2`).
+///
+/// The terms are for `kernel` on `points` points: of `degree` or less, or
+/// none.
+///
+/// # Errors
+///
+/// Those of [`count_of`], and then [`InterpolateError::InsufficientPoints`]
+/// when there are fewer points than monomials: the terms could not be told
+/// apart on them.
+fn monomials<const D: usize>(
+    points: usize,
+    kernel: RbfKernel,
+    degree: Option<usize>,
+) -> Result<Vec<[i32; D]>, InterpolateError> {
+    let count = count_of::<D>(kernel, degree)?;
+    if points < count {
+        return Err(InterpolateError::InsufficientPoints {
+            required: count,
+            actual: points,
+        });
+    }
+
+    let mut powers = Vec::with_capacity(count);
+    // Without variables the constant is the only monomial.
+    let degrees = degree.map(|degree| 0..=if D == 0 { 0 } else { degree });
+    for total in degrees.into_iter().flatten() {
+        // The variables a monomial multiplies, with repeats, in increasing
+        // order: `[0, 1, 1]` is `x y^2`. All such lists of `total` variables,
+        // in the order of a dictionary.
+        let mut variables = vec![0; total];
+        loop {
+            let mut power = [0; D];
+            for variable in &variables {
+                power[*variable] += 1;
+            }
+            powers.push(power);
+            // The next list: the last entry that can still grow grows, and
+            // the entries after it start again from its value.
+            let Some(at) = variables.iter().rposition(|v| v + 1 < D) else {
+                break;
+            };
+            let next = variables[at] + 1;
+            variables[at..].fill(next);
+        }
+    }
+    Ok(powers)
+}
+
+/// The polynomial terms on a set of points: the monomials, and the change of
+/// coordinates they are evaluated in. The coordinates of the points go to
+/// `[-1, 1]` on each axis before a monomial is evaluated, so that the powers
+/// stay of a size.
+///
+/// The monomials are those of the interpolant. The change of coordinates is
+/// that of the points the terms are used on: all of them, or the neighbors of
+/// a query.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Terms<'a, const D: usize> {
+    powers: &'a [[i32; D]],
     /// The middle of the points on each axis.
     shift: [f64; D],
     /// Half the range of the points on each axis; 1 where they all agree.
     scale: [f64; D],
 }
 
-impl<const D: usize> Polynomial<D> {
-    /// The terms for `kernel` on `points`: of `degree` or less, or none.
-    ///
-    /// The coordinates of the points go to `[-1, 1]` on each axis before a
-    /// monomial is evaluated, so that the powers stay of a size.
-    ///
-    /// # Errors
-    ///
-    /// The first of these that applies:
-    ///
-    /// - [`InterpolateError::InvalidParameter`] for `degree` with
-    ///   [`ParamReason::TooSmall`] when it is under the smallest degree the
-    ///   kernel needs. No terms at all is accepted for every kernel, as in
-    ///   SciPy.
-    /// - [`InterpolateError::InvalidParameter`] for `degree` with
-    ///   [`ParamReason::TooLarge`] when the monomials are too many to count.
-    /// - [`InterpolateError::InsufficientPoints`] when there are fewer points
-    ///   than monomials: the terms could not be told apart on them.
-    fn new(
-        points: &[[f64; D]],
-        kernel: RbfKernel,
-        degree: Option<usize>,
-    ) -> Result<Self, InterpolateError> {
-        let invalid = |reason| InterpolateError::InvalidParameter {
-            name: "degree",
-            reason,
-        };
-        if let (Some(degree), Some(min)) = (degree, kernel.min_degree()) {
-            if degree < min {
-                return Err(invalid(ParamReason::TooSmall { min }));
+impl<'a, const D: usize> Terms<'a, D> {
+    /// The terms with the monomials `powers`, on `points`.
+    fn on(powers: &'a [[i32; D]], points: impl Iterator<Item = [f64; D]>) -> Self {
+        let (mut least, mut most) = ([f64::INFINITY; D], [f64::NEG_INFINITY; D]);
+        let mut any = false;
+        for point in points {
+            any = true;
+            for d in 0..D {
+                least[d] = least[d].min(point[d]);
+                most[d] = most[d].max(point[d]);
             }
         }
-        // A power is an `i32` (what `powi` takes), and the count a `usize`.
-        let fits =
-            |degree: usize| i32::try_from(degree).is_ok() && monomial_count(D, degree).is_some();
-        let count = match degree {
-            None => 0,
-            Some(degree) if fits(degree) => monomial_count(D, degree).unwrap_or(usize::MAX),
-            Some(degree) => {
-                // The largest degree that fits is between 0, which does, and
-                // this one, which does not.
-                let (mut fitting, mut not) = (0, degree);
-                while not - fitting > 1 {
-                    let middle = fitting + (not - fitting) / 2;
-                    if fits(middle) {
-                        fitting = middle;
-                    } else {
-                        not = middle;
-                    }
-                }
-                return Err(invalid(ParamReason::TooLarge { max: fitting }));
-            }
-        };
-        if points.len() < count {
-            return Err(InterpolateError::InsufficientPoints {
-                required: count,
-                actual: points.len(),
-            });
-        }
-
-        let mut powers = Vec::with_capacity(count);
-        // Without variables the constant is the only monomial.
-        let degrees = degree.map(|degree| 0..=if D == 0 { 0 } else { degree });
-        for total in degrees.into_iter().flatten() {
-            // The variables a monomial multiplies, with repeats, in
-            // increasing order: `[0, 1, 1]` is `x y^2`. All such lists of
-            // `total` variables, in the order of a dictionary.
-            let mut variables = vec![0; total];
-            loop {
-                let mut power = [0; D];
-                for variable in &variables {
-                    power[*variable] += 1;
-                }
-                powers.push(power);
-                // The next list: the last entry that can still grow grows,
-                // and the entries after it start again from its value.
-                let Some(at) = variables.iter().rposition(|v| v + 1 < D) else {
-                    break;
-                };
-                let next = variables[at] + 1;
-                variables[at..].fill(next);
-            }
-        }
-
         let mut shift = [0.0; D];
         let mut scale = [1.0; D];
         for d in 0..D {
-            let (mut least, mut most) = (f64::INFINITY, f64::NEG_INFINITY);
-            for point in points {
-                least = least.min(point[d]);
-                most = most.max(point[d]);
-            }
-            if !points.is_empty() {
-                shift[d] = (most + least) / 2.0;
-                let half = (most - least) / 2.0;
+            if any {
+                shift[d] = (most[d] + least[d]) / 2.0;
+                let half = (most[d] - least[d]) / 2.0;
                 if half > 0.0 {
                     scale[d] = half;
                 }
             }
         }
-        Ok(Self {
+        Self {
             powers,
             shift,
             scale,
-        })
+        }
     }
 
     /// The number of monomials.
@@ -298,7 +321,7 @@ impl<const D: usize> Polynomial<D> {
     }
 
     /// The value of every monomial at `point`, in their order.
-    fn at(&self, point: &[f64; D]) -> impl Iterator<Item = f64> + '_ {
+    fn at(&self, point: &[f64; D]) -> impl Iterator<Item = f64> + 'a {
         let moved: [f64; D] = core::array::from_fn(|d| (point[d] - self.shift[d]) / self.scale[d]);
         self.powers
             .iter()
@@ -342,9 +365,9 @@ fn system<const D: usize, V: Value<f64>>(
     values: &[V],
     smoothing: f64,
     kernel: RbfKernel,
-    polynomial: &Polynomial<D>,
+    terms: &Terms<D>,
 ) -> Result<(Vec<f64>, Vec<V>), InterpolateError> {
-    let (n, r) = (points.len(), polynomial.len());
+    let (n, r) = (points.len(), terms.len());
     // A `Vec` holds `isize::MAX` bytes at most, and asking it for more
     // panics.
     let most = isize::MAX.unsigned_abs() / size_of::<f64>();
@@ -362,6 +385,25 @@ fn system<const D: usize, V: Value<f64>>(
     };
 
     let mut matrix = vec![0.0; side * side];
+    fill(&mut matrix, n, |i| points[i], smoothing, kernel, terms);
+    let mut rhs = vec![V::zero(); side];
+    rhs[..n].copy_from_slice(values);
+    Ok((matrix, rhs))
+}
+
+/// Writes the matrix of a [`system`] on the `n` points that `point` gives to
+/// `matrix`, which has the square of `n` and the number of monomials entries,
+/// all zero.
+fn fill<const D: usize>(
+    matrix: &mut [f64],
+    n: usize,
+    point: impl Fn(usize) -> [f64; D],
+    smoothing: f64,
+    kernel: RbfKernel,
+    terms: &Terms<D>,
+) {
+    let r = terms.len();
+    let side = n + r;
     // The kernel of two points does not depend on their order: each is worked
     // out once and written at both places, tile by tile, so that both places
     // are in the cache. Against working out every entry, in ns an entry:
@@ -380,37 +422,29 @@ fn system<const D: usize, V: Value<f64>>(
     for rows in (0..n).step_by(TILE) {
         for columns in (rows..n).step_by(TILE) {
             for i in rows..n.min(rows + TILE) {
+                let from = point(i);
                 for j in columns.max(i)..n.min(columns + TILE) {
-                    let value = kernel.between(&points[i], &points[j]);
+                    let value = kernel.between(&from, &point(j));
                     matrix[i * side + j] = value;
                     matrix[j * side + i] = value;
                 }
             }
         }
     }
-    for (i, point) in points.iter().enumerate() {
+    for i in 0..n {
         matrix[i * side + i] += smoothing;
         // The monomials at the point: a row of the upper right block, and a
         // column of the lower left one.
         let start = i * side + n;
-        polynomial.row(point, &mut matrix[start..start + r]);
+        terms.row(&point(i), &mut matrix[start..start + r]);
         for j in 0..r {
             matrix[(n + j) * side + i] = matrix[start + j];
         }
     }
-    let mut rhs = vec![V::zero(); side];
-    rhs[..n].copy_from_slice(values);
-    Ok((matrix, rhs))
 }
 
 /// Solves the [`system`] of an interpolant: the weights of the kernels, then
 /// the coefficients of the monomials.
-///
-/// The matrix is factored by `faer` (LU with partial pivoting), in place: the
-/// matrix is symmetric, so its rows are the columns `faer` works on, and no
-/// second matrix is made. The two substitutions are done here, on the values
-/// as they are: a value of several columns is solved in one pass, by linear
-/// combinations of whole values.
 ///
 /// # Errors
 ///
@@ -419,27 +453,62 @@ fn system<const D: usize, V: Value<f64>>(
 /// numbers did not fit.
 fn solve<V: Value<f64>>(mut matrix: Vec<f64>, rhs: &[V]) -> Result<Vec<V>, InterpolateError> {
     let side = rhs.len();
-    // Row `i` of the factored matrix is row `order[i]` of the system.
     let (mut order, mut inverse) = (vec![0_usize; side], vec![0_usize; side]);
-    let mut scratch = MemBuffer::new(lu_in_place_scratch::<usize, f64>(
-        side,
-        side,
-        Par::Seq,
-        Default::default(),
-    ));
-    lu_in_place(
-        MatMut::from_column_major_slice_mut(&mut matrix, side, side),
+    factor(
+        &mut matrix,
         &mut order,
         &mut inverse,
+        &mut factor_scratch(side),
+    );
+    let mut solution: Vec<V> = order.iter().map(|row| rhs[*row]).collect();
+    substitute(&matrix, &mut solution);
+    if solution.iter().all(V::all_finite) {
+        Ok(solution)
+    } else {
+        Err(InterpolateError::SolverFailed(SolverError::Singular))
+    }
+}
+
+/// The working space [`factor`] needs for a matrix of `side` rows.
+fn factor_scratch(side: usize) -> MemBuffer {
+    MemBuffer::new(lu_in_place_scratch::<usize, f64>(
+        side,
+        side,
         Par::Seq,
-        MemStack::new(&mut scratch),
+        Default::default(),
+    ))
+}
+
+/// Factors the matrix of a [`system`] in place, by `faer` (LU with partial
+/// pivoting). The matrix is symmetric, so its rows are the columns `faer`
+/// works on, and no second matrix is made.
+///
+/// `order` and `inverse` have one entry a row. Afterwards row `i` of the
+/// factored matrix is row `order[i]` of the system. The factors are in
+/// `matrix`, column after column: `U` on the diagonal and above it, and under
+/// it `L`, whose diagonal of ones is not stored.
+fn factor(matrix: &mut [f64], order: &mut [usize], inverse: &mut [usize], scratch: &mut MemBuffer) {
+    let side = order.len();
+    lu_in_place(
+        MatMut::from_column_major_slice_mut(matrix, side, side),
+        order,
+        inverse,
+        Par::Seq,
+        MemStack::new(scratch),
         Default::default(),
     );
-    // The factors are in the matrix now, column after column: `U` on the
-    // diagonal and above it, and under it `L`, whose diagonal of ones is not
-    // stored.
+}
+
+/// Solves with a matrix [`factor`] has factored. `solution` holds the
+/// right-hand side in the order of the factored rows (`rhs[order[i]]` at `i`),
+/// and is left with the solution.
+///
+/// The substitutions are on the values as they are: a value of several columns
+/// is solved in one pass, by linear combinations of whole values. A pivot of
+/// zero leaves entries that are infinite or NaN, which the caller looks for.
+fn substitute<V: Value<f64>>(matrix: &[f64], solution: &mut [V]) {
+    let side = solution.len();
     let column = |j: usize| &matrix[j * side..(j + 1) * side];
-    let mut solution: Vec<V> = order.iter().map(|row| rhs[*row]).collect();
     // `L y = P b`: once `y[j]` is final it leaves every entry below it.
     for j in 0..side {
         let (lower, pivot) = (column(j), solution[j]);
@@ -450,19 +519,40 @@ fn solve<V: Value<f64>>(mut matrix: Vec<f64>, rhs: &[V]) -> Result<Vec<V>, Inter
     // `U x = y`, from the last column back.
     for j in (0..side).rev() {
         let upper = column(j);
-        // A pivot of zero makes this entry infinite or NaN, and every entry
-        // it goes into after it: the check at the end finds them.
         solution[j] = V::zero().axpy(upper[j].recip(), solution[j]);
         let solved = solution[j];
         for i in 0..j {
             solution[i] = solution[i].axpy(-upper[i], solved);
         }
     }
-    if solution.iter().all(V::all_finite) {
-        Ok(solution)
-    } else {
-        Err(InterpolateError::SolverFailed(SolverError::Singular))
-    }
+}
+
+/// What an evaluation in the `neighbors` mode works in: the system of the
+/// neighbors, the row of the query, and what the search and the factorization
+/// need.
+///
+/// One a thread ([`WORKING`]). The vectors grow to what the largest evaluation
+/// on the thread asked for and stay: after the first evaluation, one of the
+/// same size allocates nothing.
+#[derive(Default)]
+struct Working {
+    /// The neighbors of the query.
+    found: Vec<kdtree::Found>,
+    matrix: Vec<f64>,
+    /// The row of the query.
+    row: Vec<f64>,
+    /// The solution of the system with that row.
+    solution: Vec<f64>,
+    order: Vec<usize>,
+    inverse: Vec<usize>,
+    /// The working space of the factorization, and the largest side it has
+    /// room for.
+    factoring: Option<(usize, MemBuffer)>,
+}
+
+thread_local! {
+    /// The working space of this thread.
+    static WORKING: RefCell<Working> = RefCell::new(Working::default());
 }
 
 /// The degree of the polynomial an [`RBFInterpolator`] adds to its kernels.
@@ -509,11 +599,12 @@ pub enum RbfDegree {
 pub struct RbfOptions {
     smoothing: f64,
     degree: RbfDegree,
+    neighbors: Option<usize>,
 }
 
 impl RbfOptions {
-    /// The defaults: no smoothing, and the degree of [`RbfDegree::Default`].
-    /// See [`RbfOptions`] for an example.
+    /// The defaults: no smoothing, the degree of [`RbfDegree::Default`], and
+    /// every point for every query. See [`RbfOptions`] for an example.
     pub fn new() -> Self {
         Self::default()
     }
@@ -538,9 +629,37 @@ impl RbfOptions {
         self
     }
 
+    /// Returns the options with a number of neighbors: every query is then
+    /// answered from the `neighbors` data points nearest to it alone (SciPy's
+    /// `neighbors`).
+    ///
+    /// For many points, where one system over all of them is too large. See
+    /// [`RBFInterpolator`] for what changes. With as many neighbors as there
+    /// are points, or more, all points are used as without this option.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::RbfOptions;
+    ///
+    /// assert_eq!(RbfOptions::new().neighbors(), None);
+    /// assert_eq!(RbfOptions::new().with_neighbors(20).neighbors(), Some(20));
+    /// ```
+    #[must_use]
+    pub fn with_neighbors(mut self, neighbors: usize) -> Self {
+        self.neighbors = Some(neighbors);
+        self
+    }
+
     /// Returns the smoothing. See [`RbfOptions`] for an example.
     pub fn smoothing(&self) -> f64 {
         self.smoothing
+    }
+
+    /// Returns the number of neighbors, when one was given. See
+    /// [`with_neighbors`](RbfOptions::with_neighbors) for an example.
+    pub fn neighbors(&self) -> Option<usize> {
+        self.neighbors
     }
 
     /// Returns the degree of the polynomial. See [`RbfOptions`] for an example.
@@ -553,10 +672,10 @@ impl RbfOptions {
 /// sum of one kernel centered at every data point, and a polynomial of low
 /// degree.
 ///
-/// SciPy's `RBFInterpolator` without `neighbors`. The points need no order and
-/// no structure, in any number of dimensions. The weights of the kernels
-/// solve one system of equations with a row for every point, at construction.
-/// Coordinates are `f64`; a value is a scalar or a fixed-length array.
+/// SciPy's `RBFInterpolator`. The points need no order and no structure, in
+/// any number of dimensions. The weights of the kernels solve one system of
+/// equations with a row for every point, at construction. Coordinates are
+/// `f64`; a value is a scalar or a fixed-length array.
 ///
 /// The interpolant passes through the data, unless
 /// [smoothing](RbfOptions::with_smoothing) is asked for. It has a value
@@ -571,6 +690,21 @@ impl RbfOptions {
 /// with the cube of `n`. A matrix that the machine has no memory for is not
 /// an error: as for any allocation in Rust, the process stops. An evaluation
 /// takes one kernel for every point. This suits up to a few thousand points.
+///
+/// # Many points: neighbors
+///
+/// With [`RbfOptions::with_neighbors`] a query is answered from the `k` data
+/// points nearest to it alone. Construction then only sorts the points into a
+/// tree. Every evaluation finds the neighbors and solves their system of `k`
+/// rows: it costs far more than an evaluation of the other mode, and does not
+/// depend on the number of points beyond the search. The result is the
+/// interpolant of the neighbors, so it can jump where the set of neighbors
+/// changes from one query to the next. A query whose neighbors have a system
+/// without one solution has no value.
+///
+/// An evaluation in this mode works in a space its thread keeps. The space is
+/// allocated at the first evaluation on the thread; evaluations after it do
+/// not allocate.
 ///
 /// # Points
 ///
@@ -603,14 +737,35 @@ impl RbfOptions {
 #[derive(Debug, Clone)]
 pub struct RBFInterpolator<const D: usize, V: Value<f64> = f64> {
     points: Vec<[f64; D]>,
-    /// The weight of the kernel at every point, then the coefficient of every
-    /// monomial.
-    coefficients: Vec<V>,
     kernel: RbfKernel,
-    polynomial: Polynomial<D>,
+    /// The monomials of the polynomial terms.
+    powers: Vec<[i32; D]>,
     /// As asked for.
     smoothing: f64,
     degree: Option<usize>,
+    solved: Solved<D, V>,
+}
+
+/// What an interpolant evaluates from.
+#[derive(Debug, Clone)]
+enum Solved<const D: usize, V> {
+    /// One system over all points, solved at construction.
+    Globally {
+        /// The weight of the kernel at every point, then the coefficient of
+        /// every monomial.
+        coefficients: Vec<V>,
+        /// The middle and half the range of the points on each axis: the
+        /// change of coordinates of the polynomial terms.
+        shift: [f64; D],
+        scale: [f64; D],
+    },
+    /// A system over the neighbors of each query, solved at evaluation.
+    Locally {
+        values: Vec<V>,
+        tree: Tree<D>,
+        /// How many neighbors: fewer than there are points.
+        neighbors: usize,
+    },
 }
 
 impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
@@ -656,6 +811,8 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
     /// - [`InterpolateError::LengthMismatch`] when `points` and `values` differ
     ///   in length.
     /// - [`InterpolateError::InsufficientPoints`] when there is no point.
+    /// - With neighbors, [`InterpolateError::InvalidParameter`] for `points`
+    ///   when there are more than `u32::MAX` of them.
     /// - [`InterpolateError::NonFinite`] when a coordinate, or else a value, is
     ///   NaN or infinite. Its `index` is that of the point.
     /// - [`InterpolateError::InvalidParameter`] for `epsilon` when the one of
@@ -667,10 +824,15 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
     /// - [`InterpolateError::InvalidParameter`] for `degree` when it is under
     ///   the degree the kernel needs ([`ParamReason::TooSmall`]), or has more
     ///   monomials than can be counted ([`ParamReason::TooLarge`]).
-    /// - [`InterpolateError::InsufficientPoints`] when there are fewer points
-    ///   than monomials in the polynomial.
+    /// - [`InterpolateError::InvalidParameter`] for `neighbors` when it is 0
+    ///   ([`ParamReason::TooSmall`]).
+    /// - [`InterpolateError::InsufficientPoints`] when there are fewer points,
+    ///   or fewer neighbors, than monomials in the polynomial.
     /// - [`InterpolateError::DuplicatePoints`] when two points have the same
     ///   coordinates.
+    ///
+    /// And, when all points are used:
+    ///
     /// - [`InterpolateError::InvalidParameter`] for `points` when the matrix of
     ///   the system would be larger than a `Vec` can hold (`isize::MAX` bytes).
     ///   Running out of memory under that limit is not an error: the process
@@ -679,6 +841,9 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
     ///   not one alone: the points do not tell the monomials apart (all in a
     ///   line along an axis, with a polynomial of degree 1), or the kernel was
     ///   left without the polynomial it needs.
+    ///
+    /// With neighbors no system is solved here: an evaluation whose neighbors
+    /// have such a system returns `None`.
     ///
     /// # Examples
     ///
@@ -716,6 +881,17 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
     ) -> Result<Self, InterpolateError> {
         validate::length(values, points.len())?;
         validate::enough(points, 1)?;
+        // With neighbors the points go into a tree that numbers them with
+        // `u32`. (Counted before the points are looked at one by one.)
+        let in_a_tree = options.neighbors.is_some_and(|k| k < points.len());
+        if in_a_tree && u32::try_from(points.len()).is_err() {
+            return Err(InterpolateError::InvalidParameter {
+                name: "points",
+                reason: ParamReason::TooLarge {
+                    max: u32::MAX as usize,
+                },
+            });
+        }
         let not_finite = |point: &[f64; D]| !point.iter().all(|c| c.is_finite());
         if let Some(index) = points.iter().position(not_finite) {
             return Err(InterpolateError::NonFinite { index });
@@ -743,18 +919,39 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
             RbfDegree::None => None,
             RbfDegree::Degree(degree) => Some(degree),
         };
-        let polynomial = Polynomial::new(points, kernel, degree)?;
+        count_of::<D>(kernel, degree)?;
+        if options.neighbors == Some(0) {
+            return Err(invalid("neighbors", ParamReason::TooSmall { min: 1 }));
+        }
+        // With as many neighbors as points, every query has all the points.
+        let neighbors = options.neighbors.filter(|k| *k < points.len());
+        let powers = monomials(neighbors.unwrap_or(points.len()), kernel, degree)?;
         if let Some((first, second)) = super::first_repeat(points) {
             return Err(InterpolateError::DuplicatePoints { first, second });
         }
-        let (matrix, rhs) = system(points, values, smoothing, kernel, &polynomial)?;
+        let solved = match neighbors {
+            Some(neighbors) => Solved::Locally {
+                values: values.to_vec(),
+                tree: Tree::new(points),
+                neighbors,
+            },
+            None => {
+                let terms = Terms::on(&powers, points.iter().copied());
+                let (matrix, rhs) = system(points, values, smoothing, kernel, &terms)?;
+                Solved::Globally {
+                    coefficients: solve(matrix, &rhs)?,
+                    shift: terms.shift,
+                    scale: terms.scale,
+                }
+            }
+        };
         Ok(Self {
             points: points.to_vec(),
-            coefficients: solve(matrix, &rhs)?,
             kernel,
-            polynomial,
+            powers,
             smoothing,
             degree,
+            solved,
         })
     }
 
@@ -800,6 +997,99 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
     pub fn smoothing(&self) -> f64 {
         self.smoothing
     }
+
+    /// Returns how many neighbors a query is answered from, or `None` when it
+    /// is answered from all points: also when as many neighbors as there are
+    /// points, or more, were asked for.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{InterpolateError, Interpolator, RBFInterpolator, RbfKernel, RbfOptions};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// // 100 points on a line, and 3 x at each.
+    /// let points: Vec<[f64; 1]> = (0..100).map(|k| [f64::from(k)]).collect();
+    /// let values: Vec<f64> = points.iter().map(|p| 3.0 * p[0]).collect();
+    /// let options = RbfOptions::new().with_neighbors(8);
+    /// let rbf = RBFInterpolator::with_options(&points, &values, RbfKernel::Linear, &options)?;
+    /// assert_eq!(rbf.neighbors(), Some(8));
+    /// // From the 8 points around 41.5.
+    /// assert!(rbf.eval(&[41.5]).is_some_and(|v| (v - 124.5).abs() < 1e-9));
+    ///
+    /// let all = RbfOptions::new().with_neighbors(100);
+    /// let rbf = RBFInterpolator::with_options(&points, &values, RbfKernel::Linear, &all)?;
+    /// assert_eq!(rbf.neighbors(), None);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn neighbors(&self) -> Option<usize> {
+        match &self.solved {
+            Solved::Globally { .. } => None,
+            Solved::Locally { neighbors, .. } => Some(*neighbors),
+        }
+    }
+
+    /// The value at `point` from its neighbors: their system is put together
+    /// and factored in `working`, and solved for the row of the point. The sum
+    /// of the neighbors' values, each times its entry of that solution, is the
+    /// value of their interpolant at the point (the matrix is symmetric: the
+    /// row times the solution for the values is the solution for the row
+    /// times the values). Solving for the row takes one right-hand side of
+    /// numbers whatever a value is.
+    fn eval_near(
+        &self,
+        point: &[f64; D],
+        values: &[V],
+        tree: &Tree<D>,
+        neighbors: usize,
+        working: &mut Working,
+    ) -> Option<V> {
+        let Working {
+            found,
+            matrix,
+            row,
+            solution,
+            order,
+            inverse,
+            factoring,
+        } = working;
+        tree.nearest(point, neighbors, found);
+        // In the order given, as SciPy has them.
+        found.sort_unstable_by_key(|(_, place)| *place);
+        let near = |i: usize| self.points[found[i].1 as usize];
+        let terms = Terms::on(&self.powers, (0..neighbors).map(near));
+        let side = neighbors + terms.len();
+
+        matrix.clear();
+        matrix.resize(side * side, 0.0);
+        fill(matrix, neighbors, near, self.smoothing, self.kernel, &terms);
+        row.clear();
+        row.resize(side, 0.0);
+        let (kernels, tail) = row.split_at_mut(neighbors);
+        for (i, entry) in kernels.iter_mut().enumerate() {
+            *entry = self.kernel.between(point, &near(i));
+        }
+        terms.row(point, tail);
+
+        order.resize(side, 0);
+        inverse.resize(side, 0);
+        // Room for a larger matrix is room for this one.
+        if factoring.as_ref().is_none_or(|(of, _)| *of < side) {
+            *factoring = Some((side, factor_scratch(side)));
+        }
+        let (_, scratch) = factoring.as_mut()?;
+        factor(matrix, order, inverse, scratch);
+        // The row in the order of the factored rows.
+        solution.clear();
+        solution.extend(order.iter().map(|at| row[*at]));
+        substitute(matrix, solution);
+        let mut value = V::zero();
+        for (weight, (_, place)) in solution.iter().zip(found.iter()) {
+            value = value.axpy(*weight, values[*place as usize]);
+        }
+        value.all_finite().then_some(value)
+    }
 }
 
 impl<const D: usize, V: Value<f64>> Interpolator for RBFInterpolator<D, V> {
@@ -813,7 +1103,36 @@ impl<const D: usize, V: Value<f64>> Interpolator for RBFInterpolator<D, V> {
         if !point.iter().all(|c| c.is_finite()) {
             return None;
         }
-        let (weights, coefficients) = self.coefficients.split_at(self.points.len());
+        let (coefficients, shift, scale) = match &self.solved {
+            Solved::Globally {
+                coefficients,
+                shift,
+                scale,
+            } => (coefficients, *shift, *scale),
+            Solved::Locally {
+                values,
+                tree,
+                neighbors,
+            } => {
+                // The working space of this thread. Should it not be there
+                // (the thread is ending, and its space is gone), one is made
+                // for this call.
+                let local = |working: &mut Working| {
+                    self.eval_near(point, values, tree, *neighbors, working)
+                };
+                return WORKING
+                    .try_with(|working| working.try_borrow_mut().ok().map(|mut w| local(&mut w)))
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| local(&mut Working::default()));
+            }
+        };
+        let terms = Terms {
+            powers: &self.powers,
+            shift,
+            scale,
+        };
+        let (weights, coefficients) = coefficients.split_at(self.points.len());
         // One running sum. Four of them, so that a term would not wait for the
         // one before, changed nothing (0.95 to 1.00 of the time): a term costs
         // what its kernel costs, a square root and for some a logarithm or an
@@ -822,7 +1141,7 @@ impl<const D: usize, V: Value<f64>> Interpolator for RBFInterpolator<D, V> {
         for (weight, center) in weights.iter().zip(&self.points) {
             value = value.axpy(self.kernel.between(point, center), *weight);
         }
-        for (coefficient, monomial) in coefficients.iter().zip(self.polynomial.at(point)) {
+        for (coefficient, monomial) in coefficients.iter().zip(terms.at(point)) {
             value = value.axpy(monomial, *coefficient);
         }
         value.all_finite().then_some(value)
@@ -831,10 +1150,48 @@ impl<const D: usize, V: Value<f64>> Interpolator for RBFInterpolator<D, V> {
 
 #[cfg(test)]
 mod tests {
-    use super::{monomial_count, system, Polynomial, RbfKernel};
+    use super::{monomial_count, monomials, system, RbfKernel, Terms};
     use crate::common::{assert_close, load, reals, Real, Tol, DIRECT_F64};
     use crate::{InterpolateError as E, ParamReason};
     use serde_json::Value as Json;
+
+    /// The polynomial terms on all of a set of points, as the constructor
+    /// makes them for an interpolant that uses all its points.
+    #[derive(Debug, PartialEq)]
+    struct Polynomial<const D: usize> {
+        powers: Vec<[i32; D]>,
+        shift: [f64; D],
+        scale: [f64; D],
+    }
+
+    impl<const D: usize> Polynomial<D> {
+        fn new(points: &[[f64; D]], kernel: RbfKernel, degree: Option<usize>) -> Result<Self, E> {
+            let powers = monomials(points.len(), kernel, degree)?;
+            let terms = Terms::on(&powers, points.iter().copied());
+            let (shift, scale) = (terms.shift, terms.scale);
+            Ok(Self {
+                powers,
+                shift,
+                scale,
+            })
+        }
+
+        fn terms(&self) -> Terms<'_, D> {
+            Terms {
+                powers: &self.powers,
+                shift: self.shift,
+                scale: self.scale,
+            }
+        }
+
+        fn len(&self) -> usize {
+            self.powers.len()
+        }
+
+        fn row(&self, point: &[f64; D], out: &mut [f64]) {
+            self.terms().row(point, out);
+        }
+    }
 
     fn nums(v: &Json) -> Vec<f64> {
         reals(&serde_json::from_value::<Vec<Real>>(v.clone()).unwrap_or_default())
@@ -927,7 +1284,7 @@ mod tests {
         );
 
         let (matrix, rhs) =
-            system(&points, &values, smoothing, kernel, &polynomial).expect("a system");
+            system(&points, &values, smoothing, kernel, &polynomial.terms()).expect("a system");
         let side = points.len() + powers.len();
         let want: Vec<f64> = rows(&case["matrix"]).concat();
         assert_eq!(
@@ -1221,7 +1578,7 @@ mod tests {
             };
             let (n, side) = (points.len(), points.len() + polynomial.len());
             let (matrix, rhs) =
-                system(&points, &values, smoothing, kernel, &polynomial).expect("a system");
+                system(&points, &values, smoothing, kernel, &polynomial.terms()).expect("a system");
             for i in 0..side {
                 for j in 0..side {
                     let (here, there) = (matrix[i * side + j], matrix[j * side + i]);
@@ -1266,7 +1623,7 @@ mod tests {
                 .expect("valid terms");
             let side = points.len() + terms.len();
             let (matrix, _) =
-                system(&points, &values, smoothing, kernel, &terms).expect("a system");
+                system(&points, &values, smoothing, kernel, &terms.terms()).expect("a system");
             let mut monomials = vec![0.0; terms.len()];
             for (i, a) in points.iter().enumerate() {
                 for (j, b) in points.iter().enumerate() {
@@ -1296,12 +1653,19 @@ mod tests {
             // The largest matrix of `f64` a `Vec` holds has under 2^60
             // entries: a side of 2^30 is one too many. One row and one column
             // are for the constant term.
-            let terms = Polynomial::new(&points, RbfKernel::Linear, Some(0)).expect("valid terms");
-            assert_eq!(terms.len(), 1);
+            let powers = monomials::<0>(count, RbfKernel::Linear, Some(0)).expect("valid terms");
+            assert_eq!(powers.len(), 1);
+            // Without coordinates there is nothing to shift or scale by (and
+            // no need to go through the points for it).
+            let terms = Polynomial {
+                powers,
+                shift: [],
+                scale: [],
+            };
             let most = (isize::MAX.unsigned_abs() / 8).isqrt();
             assert_eq!(most, (1 << 30) - 1);
             assert_eq!(
-                system(&points, &values, 0.0, RbfKernel::Linear, &terms).err(),
+                system(&points, &values, 0.0, RbfKernel::Linear, &terms.terms()).err(),
                 Some(E::InvalidParameter {
                     name: "points",
                     reason: ParamReason::TooLarge { max: most - 1 },

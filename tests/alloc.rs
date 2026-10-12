@@ -210,6 +210,74 @@ fn scattered() -> Result<(), InterpolateError> {
             [f64::NAN; 2],
         );
     }
+
+    // The neighbors mode solves a system at every evaluation, in a working
+    // space its thread keeps: the first evaluation on a thread allocates it
+    // (and one with more neighbors widens it), and none after that allocates
+    // (docs/design.ja.md section 3.2 has the exception).
+    let near = |k: usize, degree| RbfOptions::new().with_neighbors(k).with_degree(degree);
+    let wide = RBFInterpolator::with_options(
+        &centers,
+        &heights,
+        RbfKernel::Quintic,
+        &near(16, RbfDegree::Default),
+    )?;
+    let narrow = RBFInterpolator::with_options(
+        &centers,
+        &pairs,
+        RbfKernel::Gaussian { epsilon: 0.05 },
+        &near(5, RbfDegree::None).with_smoothing(0.5),
+    )?;
+    let first = allocations(|| {
+        std::hint::black_box(wide.eval(&queries[0]));
+    });
+    assert!(
+        first > 0,
+        "the working space of the thread is made at the first evaluation"
+    );
+    check(
+        "RBFInterpolator<3>, 16 neighbors",
+        &wide,
+        &queries,
+        f64::NAN,
+    );
+    // Fewer neighbors fit the space that is there, also by turns with more.
+    check(
+        "RBFInterpolator<3, [f64; 2]>, 5 neighbors",
+        &narrow,
+        &queries,
+        [f64::NAN; 2],
+    );
+    let by_turns = allocations(|| {
+        for query in &queries {
+            std::hint::black_box((wide.eval(query), narrow.eval(query)));
+        }
+    });
+    assert_eq!(
+        by_turns, 0,
+        "RBFInterpolator: two numbers of neighbors by turns allocate"
+    );
+    // Another thread makes a space of its own, once.
+    let (again, after) = std::thread::spawn(move || {
+        let again = allocations(|| {
+            std::hint::black_box(wide.eval(&queries[0]));
+        });
+        let after = allocations(|| {
+            for query in &queries {
+                std::hint::black_box(wide.eval(query));
+            }
+        });
+        (again, after)
+    })
+    .join()
+    .unwrap_or((0, usize::MAX));
+    assert!(
+        again > 0 && after == 0,
+        "RBFInterpolator, another thread: {again} then {after}"
+    );
+    println!(
+        "tests/alloc.rs: the first evaluation with neighbors on a thread allocates {first} times"
+    );
     Ok(())
 }
 

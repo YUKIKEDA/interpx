@@ -1,5 +1,6 @@
-//! `RBFInterpolator` solved over all its points: SciPy's values, the input
-//! checks and their order, the systems without a solution, and the properties.
+//! `RBFInterpolator`, solved over all its points and from the neighbors of
+//! each query: SciPy's values, the input checks and their order, the systems
+//! without a solution, and the properties.
 
 #![cfg(feature = "scattered")]
 
@@ -77,12 +78,28 @@ fn asked(case: &Json) -> (RbfKernel, RbfOptions) {
         Some(degree) => RbfDegree::Degree(usize::try_from(degree).expect("a degree")),
     };
     let smoothing = options["smoothing"].as_f64().expect("smoothing");
-    (
-        kernel,
-        RbfOptions::new()
-            .with_smoothing(smoothing)
-            .with_degree(degree),
-    )
+    let asked = RbfOptions::new()
+        .with_smoothing(smoothing)
+        .with_degree(degree);
+    match options["neighbors"].as_u64() {
+        Some(k) => (
+            kernel,
+            asked.with_neighbors(usize::try_from(k).expect("a count")),
+        ),
+        None => (kernel, asked),
+    }
+}
+
+/// Whether the `k`-th nearest point of `query` and the next one are at the
+/// same distance (by a scan of all points): which of the two is a neighbor
+/// then follows from how a tree was built, in SciPy as here.
+fn tied<const D: usize>(points: &[[f64; D]], query: &[f64; D], k: usize) -> bool {
+    let mut squared: Vec<f64> = points
+        .iter()
+        .map(|p| (0..D).map(|d| (p[d] - query[d]) * (p[d] - query[d])).sum())
+        .collect();
+    squared.sort_by(f64::total_cmp);
+    k < points.len() && (squared[k] - squared[k - 1]).abs() <= 1e-12 * squared[k].max(1.0)
 }
 
 /// Rebuilds one golden case in `D` dimensions and compares it with SciPy.
@@ -112,6 +129,11 @@ fn check<const D: usize>(case: &Json) -> f64 {
     }
     let rbf = built.expect("a system with a solution");
     assert_eq!(rbf.len(), points.len(), "{name}");
+    // As many neighbors as points, or more, is all points.
+    let local = options.neighbors().filter(|k| *k < points.len());
+    assert_eq!(rbf.neighbors(), local, "{name}");
+    let at_a_tie = |query: &[f64; D]| local.is_some_and(|k| tied(&points, query, k));
+    let marked: Vec<bool> = serde_json::from_value(case["tied"].clone()).unwrap_or_default();
     assert_eq!(rbf.kernel(), kernel, "{name}");
     assert_eq!(
         rbf.smoothing().to_bits(),
@@ -125,12 +147,19 @@ fn check<const D: usize>(case: &Json) -> f64 {
     let mut worst = 0.0_f64;
     for (k, (query, want)) in queries.iter().zip(&expected).enumerate() {
         let got = rbf.eval(query).expect("a value");
+        assert_eq!(batch[k].to_bits(), got.to_bits(), "{name} query {k}");
+        if let Some(marked) = marked.get(k) {
+            assert_eq!(at_a_tie(query), *marked, "{name} query {k}: a tie");
+        }
+        if at_a_tie(query) {
+            // Another set of neighbors than SciPy's is as right.
+            continue;
+        }
         let apart = (got - want).abs() / largest;
         assert!(
             apart <= SOLVED,
             "{name} query {k}: {got} for {want} ({apart:e} of {largest})"
         );
-        assert_eq!(batch[k].to_bits(), got.to_bits(), "{name} query {k}");
         worst = worst.max(apart);
     }
 
@@ -143,11 +172,14 @@ fn check<const D: usize>(case: &Json) -> f64 {
         let size = |column: usize| wanted.iter().fold(0.0_f64, |m, w| m.max(w[column].abs()));
         for (query, want) in queries.iter().zip(&wanted) {
             let got = pair.eval(query).expect("a value");
+            assert_eq!(bits(Some(got[0])), bits(rbf.eval(query)), "{name}");
+            if at_a_tie(query) {
+                continue;
+            }
             for column in 0..2 {
                 let apart = (got[column] - want[column]).abs() / size(column);
                 assert!(apart <= SOLVED, "{name} column {column}: {apart:e}");
             }
-            assert_eq!(bits(Some(got[0])), bits(rbf.eval(query)), "{name}");
         }
     }
     worst
@@ -156,16 +188,13 @@ fn check<const D: usize>(case: &Json) -> f64 {
 // --- Golden data -------------------------------------------------------------
 
 #[test]
-fn scipy_rbf_interpolants_solved_globally_evaluate_to_the_golden_values() {
+fn scipy_rbf_interpolants_evaluate_to_the_golden_values() {
     let file = load::<Json>("rbf").expect("golden file rbf");
     let mut by_kernel = std::collections::BTreeMap::new();
-    let (mut local, mut refused, mut worst) = (0, 0, (0.0_f64, String::new()));
+    let (mut local, mut refused) = (0, 0);
+    // The worst case of each mode: solved over all points, and from neighbors.
+    let mut worst = [(0.0_f64, String::new()), (0.0_f64, String::new())];
     for case in &file.cases {
-        // The `neighbors` mode is another row (M3-4).
-        if !case["options"]["neighbors"].is_null() {
-            local += 1;
-            continue;
-        }
         let apart = match rows(&case["points"])[0].len() {
             1 => check::<1>(case),
             2 => check::<2>(case),
@@ -173,38 +202,40 @@ fn scipy_rbf_interpolants_solved_globally_evaluate_to_the_golden_values() {
             4 => check::<4>(case),
             other => panic!("points in {other} dimensions"),
         };
+        let neighbors = usize::from(!case["options"]["neighbors"].is_null());
+        local += neighbors;
         refused += usize::from(case.get("expected_error").is_some());
         let kernel = case["options"]["kernel"]
             .as_str()
             .expect("kernel")
             .to_owned();
         *by_kernel.entry(kernel).or_insert(0) += 1;
-        if apart > worst.0 {
-            worst = (apart, case["name"].as_str().expect("name").to_owned());
+        if apart > worst[neighbors].0 {
+            worst[neighbors] = (apart, case["name"].as_str().expect("name").to_owned());
         }
     }
     let counts: Vec<(String, i32)> = by_kernel.into_iter().collect();
     let want = [
-        ("cubic", 11),
-        ("gaussian", 10),
-        ("inverse_multiquadric", 9),
-        ("inverse_quadratic", 9),
-        ("linear", 10),
-        ("multiquadric", 10),
-        ("quintic", 10),
-        ("thin_plate_spline", 14),
+        ("cubic", 15),
+        ("gaussian", 14),
+        ("inverse_multiquadric", 12),
+        ("inverse_quadratic", 13),
+        ("linear", 15),
+        ("multiquadric", 14),
+        ("quintic", 14),
+        ("thin_plate_spline", 20),
     ]
     .map(|(kernel, n)| (kernel.to_owned(), n));
     assert_eq!(counts, want);
-    assert_eq!((local, refused), (24, 1));
-    // The tolerance has room, and not more than it needs: the worst case is
-    // within a tenth of it, and over a thousandth.
-    assert!(
-        worst.0 < SOLVED / 10.0 && worst.0 > SOLVED / 1000.0,
-        "the worst case is {} at {:e}",
-        worst.1,
-        worst.0
-    );
+    assert_eq!((local, refused), (34, 1));
+    // The tolerance has room, and not more than it needs: the worst case of
+    // each mode is within a tenth of it, and over a thousandth.
+    for (apart, name) in &worst {
+        assert!(
+            *apart < SOLVED / 10.0 && *apart > SOLVED / 1000.0,
+            "the worst case is {name} at {apart:e}"
+        );
+    }
 }
 
 // --- Input checks ---------------------------------------------------------------
@@ -574,6 +605,212 @@ fn no_dimensions_columns_and_thread_safety() {
     assert_eq!(bits(from_thread), bits(rbf.eval(&[2.0])));
 }
 
+// --- Neighbors ---------------------------------------------------------------------
+
+#[test]
+fn the_number_of_neighbors_is_checked_against_the_points_and_the_polynomial() {
+    let points: Vec<[f64; 2]> = (0..12_u32)
+        .map(|k| [f64::from(k * 5 % 12) * 0.3, f64::from(k * k % 7) * 0.4])
+        .collect();
+    let values: Vec<f64> = (0..12).map(|k| f64::from(k % 5)).collect();
+    let tps = RbfKernel::ThinPlateSpline;
+    let with = |options: RbfOptions| Rbf::with_options(&points, &values, tps, &options);
+    let plain = RbfOptions::new();
+    assert_eq!(plain.neighbors(), None);
+    assert_eq!(plain.with_neighbors(5).neighbors(), Some(5));
+    // No neighbors at all.
+    assert_eq!(
+        with(plain.with_neighbors(0)).err(),
+        Some(invalid("neighbors", ParamReason::TooSmall { min: 1 }))
+    );
+    // The thin plate spline has three monomials: two neighbors cannot tell
+    // them apart, three can.
+    assert_eq!(
+        with(plain.with_neighbors(2)).err(),
+        Some(E::InsufficientPoints {
+            required: 3,
+            actual: 2
+        })
+    );
+    assert_eq!(
+        with(plain.with_neighbors(3)).map(|rbf| rbf.neighbors()),
+        Ok(Some(3))
+    );
+    // Fewer than the points is a number of neighbors; as many, or more, is
+    // all the points.
+    assert_eq!(
+        with(plain.with_neighbors(11)).map(|rbf| rbf.neighbors()),
+        Ok(Some(11))
+    );
+    for all in [12, 13, usize::MAX] {
+        let rbf = with(plain.with_neighbors(all)).expect("valid");
+        assert_eq!(rbf.neighbors(), None, "{all}");
+        let global = with(plain).expect("valid");
+        for query in [[0.5, 0.5], [3.0, -1.0]] {
+            assert_eq!(bits(rbf.eval(&query)), bits(global.eval(&query)), "{all}");
+        }
+    }
+    // More points than the tree of this mode can number. Points without
+    // coordinates and values without columns take no memory, so the count can
+    // be reached.
+    #[cfg(target_pointer_width = "64")]
+    {
+        let count = u32::MAX as usize + 1;
+        let (many, nothing) = (vec![[0.0_f64; 0]; count], vec![[0.0_f64; 0]; count]);
+        let built = Rbf::with_options(&many, &nothing, tps, &plain.with_neighbors(5));
+        assert_eq!(
+            built.err(),
+            Some(invalid(
+                "points",
+                ParamReason::TooLarge {
+                    max: u32::MAX as usize
+                }
+            ))
+        );
+        // The length still comes first.
+        assert_eq!(
+            Rbf::with_options(&many, &nothing[1..], tps, &plain.with_neighbors(5)).err(),
+            Some(E::LengthMismatch {
+                expected: count,
+                actual: count - 1
+            })
+        );
+    }
+    // A degree is checked before the neighbors, the neighbors before the same
+    // point twice.
+    let low = plain.with_neighbors(0).with_degree(RbfDegree::Degree(0));
+    assert_eq!(
+        with(low).err(),
+        Some(invalid("degree", ParamReason::TooSmall { min: 1 }))
+    );
+    let mut twice = points.clone();
+    twice[7] = twice[2];
+    let built = |options: RbfOptions| Rbf::with_options(&twice, &values, tps, &options).err();
+    assert_eq!(
+        built(plain.with_neighbors(0)),
+        Some(invalid("neighbors", ParamReason::TooSmall { min: 1 }))
+    );
+    assert_eq!(
+        built(plain.with_neighbors(2)),
+        Some(E::InsufficientPoints {
+            required: 3,
+            actual: 2
+        })
+    );
+    // The same point twice is refused in this mode as in the other.
+    assert_eq!(
+        built(plain.with_neighbors(5)),
+        Some(E::DuplicatePoints {
+            first: 2,
+            second: 7
+        })
+    );
+}
+
+#[test]
+fn neighbors_without_one_solution_are_no_value_and_not_a_panic() {
+    // A lattice ten times as wide along y as along x: the nearest points of a
+    // query are in one row, along the x axis, and do not determine a
+    // polynomial of degree 1 in two variables.
+    let mut points = Vec::new();
+    for i in 0..6 {
+        for j in 0..4 {
+            points.push([f64::from(i), 10.0 * f64::from(j)]);
+        }
+    }
+    let values: Vec<f64> = (0..24).map(|k| f64::from(k % 5)).collect();
+    let tps = RbfKernel::ThinPlateSpline;
+    let with = |kernel, k| {
+        let options = RbfOptions::new().with_neighbors(k);
+        Rbf::with_options(&points, &values, kernel, &options).expect("nothing is solved here")
+    };
+    let in_a_row = [2.2, 10.5];
+    let three = with(tps, 3);
+    assert_eq!(three.eval(&in_a_row), None);
+    assert_eq!(bits(Some(three.eval_or(&in_a_row, -7.0))), bits(Some(-7.0)));
+    // All six points of the row are in a line as well.
+    assert_eq!(with(tps, 6).eval(&in_a_row), None);
+    // The seventh neighbor is in the next row.
+    assert!(with(tps, 7).eval(&in_a_row).is_some());
+    // With a constant alone, three points in a row are enough.
+    assert!(with(RbfKernel::Linear, 3).eval(&in_a_row).is_some());
+    // A batch fills the queries without a value, and those that are not finite.
+    let queries = [in_a_row, [f64::NAN, 0.0], [0.0, f64::INFINITY], in_a_row];
+    let mut out = [0.0; 4];
+    assert_eq!(three.eval_batch_into(&queries, &mut out, -7.0), Ok(()));
+    assert!(out.iter().all(|v| v.to_bits() == (-7.0_f64).to_bits()));
+}
+
+#[test]
+fn one_neighbor_gives_the_value_of_the_nearest_point() {
+    // The linear kernel is 0 at the distance 0 and comes with a constant: the
+    // system of one point gives that constant the value of the point.
+    let points = [[0.0, 0.0], [3.0, 0.0], [0.0, 4.0], [3.0, 4.0], [1.0, 1.0]];
+    let values = [10.0, 20.0, 30.0, 40.0, 50.0];
+    let one = RbfOptions::new().with_neighbors(1);
+    let rbf = Rbf::with_options(&points, &values, RbfKernel::Linear, &one).expect("valid");
+    for (query, want) in [
+        ([0.1, -0.2], 10.0),
+        ([2.9, 0.4], 20.0),
+        ([-5.0, 9.0], 30.0),
+        ([2.0, 3.0], 40.0),
+        ([1.2, 0.9], 50.0),
+    ] {
+        assert_eq!(bits(rbf.eval(&query)), bits(Some(want)), "{query:?}");
+    }
+}
+
+#[test]
+fn evaluations_from_several_threads_and_from_clones_agree() {
+    let points: Vec<[f64; 3]> = (0..300_u32)
+        .map(|n| {
+            [
+                f64::from(n * 37 % 101) * 0.1,
+                f64::from(n * 61 % 53) * 0.2,
+                f64::from(n * 17 % 29) * 0.3,
+            ]
+        })
+        .collect();
+    let values: Vec<f64> = (0..300).map(|n| f64::from(n % 11) - 5.0).collect();
+    let queries: Vec<[f64; 3]> = (0..60_u32)
+        .map(|n| {
+            [
+                f64::from(n) * 0.15,
+                f64::from(n * 7 % 50) * 0.2,
+                f64::from(n % 9),
+            ]
+        })
+        .collect();
+    let options = RbfOptions::new().with_neighbors(20).with_smoothing(0.01);
+    let rbf = Rbf::with_options(&points, &values, RbfKernel::Cubic, &options).expect("valid");
+    let here: Vec<Option<u64>> = queries.iter().map(|q| bits(rbf.eval(q))).collect();
+    assert!(here.iter().all(Option::is_some));
+    // Each thread has a working space of its own, and the result does not
+    // depend on what the space held before.
+    let threads: Vec<_> = (0..4)
+        .map(|turn| {
+            let (rbf, queries) = (rbf.clone(), queries.clone());
+            std::thread::spawn(move || {
+                // In some of the threads, another interpolant with another
+                // number of neighbors first.
+                if turn % 2 == 0 {
+                    let line = [[0.0], [1.0], [2.0], [4.0], [7.0], [8.0], [9.0], [11.0]];
+                    let few = RbfOptions::new().with_neighbors(5 + turn);
+                    let other = Rbf::with_options(&line, &[1.0; 8], RbfKernel::Linear, &few);
+                    assert!(other.expect("valid").eval(&[3.0]).is_some());
+                }
+                let backward = queries.iter().rev().map(|q| bits(rbf.eval(q)));
+                backward.collect::<Vec<_>>()
+            })
+        })
+        .collect();
+    for thread in threads {
+        let mut there = thread.join().expect("joins");
+        there.reverse();
+        assert_eq!(there, here);
+    }
+}
+
 // --- Properties ----------------------------------------------------------------
 
 /// Points in the unit square that are no closer than a twentieth to one
@@ -678,6 +915,49 @@ proptest! {
             let columns = pair.eval(query);
             prop_assert_eq!(bits(columns.map(|c| c[0])), bits(got));
             prop_assert_eq!(bits(columns.map(|c| c[1])), bits(other.eval(query)));
+        }
+    }
+
+    #[test]
+    fn with_neighbors_the_value_is_that_of_the_interpolant_through_the_neighbors(
+        (points, values) in data(),
+        kernel in kernel(),
+        k in 6..14_usize,
+        smoothing in prop::option::of(0.0_f64..0.5),
+        scale in -3.0_f64..3.0,
+        queries in prop::collection::vec(prop::array::uniform2(-0.2_f64..1.2), 1..12),
+    ) {
+        prop_assume!(points.len() > k);
+        let options = RbfOptions::new().with_smoothing(smoothing.unwrap_or(0.0));
+        let near_only = options.with_neighbors(k);
+        let local = Rbf::with_options(&points, &values, kernel, &near_only).expect("valid");
+        prop_assert_eq!(local.neighbors(), Some(k));
+        let second: Vec<f64> = values.iter().rev().map(|v| v * scale + 1.0).collect();
+        let both: Vec<[f64; 2]> = values.iter().zip(&second).map(|(a, b)| [*a, *b]).collect();
+        let pair = Rbf::with_options(&points, &both, kernel, &near_only).expect("valid");
+        let other = Rbf::with_options(&points, &second, kernel, &near_only).expect("valid");
+        let mut out = vec![0.0; queries.len()];
+        prop_assert_eq!(local.eval_batch_into(&queries, &mut out, -7.0), Ok(()));
+        for (query, slot) in queries.iter().zip(&out) {
+            // The nearest points, by a scan of all of them, in the order given.
+            let squared = |p: &[f64; 2]| (p[0] - query[0]).powi(2) + (p[1] - query[1]).powi(2);
+            let mut order: Vec<usize> = (0..points.len()).collect();
+            order.sort_by(|a, b| squared(&points[*a]).total_cmp(&squared(&points[*b])).then(a.cmp(b)));
+            let mut nearest = order[..k].to_vec();
+            nearest.sort_unstable();
+            let near: Vec<[f64; 2]> = nearest.iter().map(|i| points[*i]).collect();
+            let theirs: Vec<f64> = nearest.iter().map(|i| values[*i]).collect();
+            let got = local.eval(query);
+            prop_assert_eq!(bits(Some(*slot)), bits(Some(got.unwrap_or(-7.0))));
+            // Their interpolant, solved the other way round: for its
+            // coefficients, where the neighbors mode solves for the row.
+            let global = Rbf::with_options(&near, &theirs, kernel, &options).expect("valid");
+            let (got, want) = (got.expect("a value"), global.eval(query).expect("a value"));
+            prop_assert!((got - want).abs() <= 1e-7 * want.abs().max(1.0), "{:?} with {} neighbors at {:?}: {} for {}", kernel, k, query, got, want);
+            // Each column as when it is alone.
+            let columns = pair.eval(query).expect("a value");
+            prop_assert_eq!(columns[0].to_bits(), got.to_bits());
+            prop_assert_eq!(bits(Some(columns[1])), bits(other.eval(query)));
         }
     }
 
