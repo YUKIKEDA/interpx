@@ -44,6 +44,10 @@ src/
                     their coefficients axis by axis with the collocation system of BSpline1D;
                     pchip keeps the slopes of the last axis and folds the earlier axes at
                     evaluation with the window of `oned::pchip`
+  scattered/        interpolators of values at points without structure (a private module,
+                    built with the `scattered` feature; mod.rs re-exports)
+    nearest_nd.rs   NearestNDInterpolator: equal points taken as one, then a k-d tree of
+                    `kiddo`, kept behind an Arc
   bspline.rs        BSpline: basis functions on the stack, derivatives and integrals;
                     PPoly::from_bspline and BSpline::from_ppoly
 tests/
@@ -64,6 +68,9 @@ tests/
                     their order, the layout of the values, the modes outside the grid, the
                     spline methods against BSpline1D, pchip against PchipInterpolator applied
                     axis by axis, properties
+  nearest_nd.rs     NearestNDInterpolator: SciPy's values, a scan of all points, repeated
+                    points, ties, the bound, rescaled coordinates, input checks, properties
+                    (the file is empty without the `scattered` feature)
   bspline1d.rs      BSpline1D: SciPy's knots, control points, and values, input checks and their
                     order, the knots of each case, agreement with CubicSpline and Linear1D,
                     properties
@@ -94,6 +101,8 @@ benches/
                     evaluate it
   grid.rs           time to evaluate a RegularGridInterpolator in 2, 3, and 4 dimensions, and to
                     build it
+  nearest_nd.rs     time to build a NearestNDInterpolator and to evaluate it, in 2 and 3
+                    dimensions (needs the `scattered` feature)
 compare/            Python side: pinned SciPy, data sets, generators, goldens (see the golden-data skill)
 docs/               design.ja.md, roadmap.md, conventions.md, adr/
 ```

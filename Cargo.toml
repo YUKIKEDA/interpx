@@ -40,7 +40,14 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.152", features = ["float_roundtrip"] }
 stats_alloc = "0.1.10"
 
+[features]
+default = ["scattered"]
+# Interpolators of scattered data, and the dependencies only they need.
+scattered = ["dep:kiddo"]
+
 [dependencies]
+# Without the default features: no fixed-point coordinates, no rayon.
+kiddo = { version = "6.3.0", default-features = false, optional = true }
 num-traits = "0.2.19"
 thiserror = "2"
 
@@ -98,3 +105,8 @@ harness = false
 [[bench]]
 name = "bspline"
 harness = false
+
+[[bench]]
+name = "nearest_nd"
+harness = false
+required-features = ["scattered"]

@@ -70,6 +70,8 @@ mod interpolator;
 mod oned;
 mod ppoly;
 mod scalar;
+#[cfg(feature = "scattered")]
+mod scattered;
 mod search;
 mod tridiagonal;
 mod validate;
@@ -88,5 +90,7 @@ pub use oned::{
 };
 pub use ppoly::PPoly;
 pub use scalar::Scalar;
+#[cfg(feature = "scattered")]
+pub use scattered::NearestNDInterpolator;
 pub use search::Hint;
 pub use value::Value;

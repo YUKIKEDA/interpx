@@ -105,6 +105,79 @@ impl Interpolator for Triple {
     }
 }
 
+/// The interpolators of scattered data.
+#[cfg(feature = "scattered")]
+fn scattered() -> Result<(), InterpolateError> {
+    use interpx::NearestNDInterpolator;
+
+    // NearestNDInterpolator: enough points for a tree with several leaves,
+    // some of them given twice; plain and rescaled, with and without a bound;
+    // scalar and array values. The queries are near, far, past the bound, too
+    // far to measure, and not finite.
+    let points: Vec<[f64; 3]> = (0..200_u32)
+        .map(|n| {
+            [
+                f64::from(n * 37 % 100),
+                f64::from(n * 61 % 50),
+                f64::from(n % 7),
+            ]
+        })
+        .collect();
+    let values: Vec<f64> = (0..200).map(f64::from).collect();
+    let pairs: Vec<[f64; 2]> = values.iter().map(|v| [*v, -*v]).collect();
+    let queries = [
+        [10.2, 20.1, 3.3],
+        [99.0, 0.0, 6.0],
+        [500.0, 500.0, 500.0],
+        [1e200, 0.0, 0.0],
+        [f64::NAN, 1.0, 1.0],
+        [0.0, f64::INFINITY, 1.0],
+    ];
+    type Build<V> = fn(&[[f64; 3]], &[V]) -> Result<NearestNDInterpolator<3, V>, InterpolateError>;
+    let scalars: [(&str, Build<f64>); 2] = [
+        ("new", NearestNDInterpolator::new),
+        ("rescaled", NearestNDInterpolator::rescaled),
+    ];
+    for (label, build) in scalars {
+        let nearest = build(&points, &values)?;
+        check(
+            &format!("NearestNDInterpolator<3> {label}"),
+            &nearest,
+            &queries,
+            f64::NAN,
+        );
+        check(
+            &format!("NearestNDInterpolator<3> {label}, bounded"),
+            &nearest.with_distance_bound(2.5),
+            &queries,
+            f64::NAN,
+        );
+    }
+    let arrays = NearestNDInterpolator::new(&points, &pairs)?;
+    check(
+        "NearestNDInterpolator<3, [f64; 2]>",
+        &arrays,
+        &queries,
+        [f64::NAN; 2],
+    );
+    // From a thread that has made no query before.
+    let nearest = NearestNDInterpolator::new(&points, &values)?;
+    let fresh = std::thread::spawn(move || {
+        allocations(|| {
+            for query in &queries {
+                std::hint::black_box(nearest.eval(query));
+            }
+        })
+    })
+    .join()
+    .unwrap_or(usize::MAX);
+    assert_eq!(
+        fresh, 0,
+        "NearestNDInterpolator: the first queries of a thread allocate"
+    );
+    Ok(())
+}
+
 fn main() -> Result<(), InterpolateError> {
     // Inside, outside, and NaN: each takes a different path through `eval`.
     check("Double", &Double, &[0.25, 0.5, 2.0, f64::NAN], f64::NAN);
@@ -602,6 +675,9 @@ fn main() -> Result<(), InterpolateError> {
         });
         assert_eq!(n, 0, "Linear1D or Nearest1D: a long batch allocates");
     }
+
+    #[cfg(feature = "scattered")]
+    scattered()?;
 
     // The two that build an object do allocate: the counter sees these calls.
     let n = allocations(|| {
