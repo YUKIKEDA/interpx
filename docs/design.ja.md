@@ -196,11 +196,12 @@ pub enum InterpolateError {
   | variant                                                    | 追加する行         | 用途                                                   |
   | :--------------------------------------------------------- | :----------------- | :----------------------------------------------------- |
   | `InvalidParameter { name: &'static str, reason: ParamReason }` | M1-4（`BSpline`） | 引数が範囲外。M1-4 は `ParamReason::TooLarge { max: usize }`（次数の上限）を入れる。必須欠落・最小次数未満などの `ParamReason` は、それを返す行で足す |
+  | `GridAxis { axis: usize, fault: AxisFault }` | M2-1（`RegularGridInterpolator`） | グリッドの軸 `axis` の誤り。`AxisFault` は `InsufficientPoints { required, actual }`、`NonFinite { index }`、`NotMonotonic { index }`、`DuplicatePoints { first, second }`（位置はその軸の中のもの）。1D の variant は、どの軸かを持てない |
   | `SolverFailed(SolverError)`                                | M3（RBF）          | 特異な連立方程式（`SolverError::Singular`）            |
   | `DegenerateGeometry(DegeneracyKind)`                       | M4（`LinearND`）   | `LowerDimensional { affine_dim }`、`NumericalLimit`    |
 
 * `NonFinite { index }` の `index` は、座標に非有限値があればその座標の位置で、座標がすべて有限のときに限り値の位置である（検証は座標が先。§3.5）。variant からはどちらの配列かを区別できない。
-* 文字列のペイロードは持たない（パターンマッチできる型付きの値だけ）。`ParamReason`・`SolverError`・`DegeneracyKind` も `#[non_exhaustive]`。
+* 文字列のペイロードは持たない（パターンマッチできる型付きの値だけ）。`ParamReason`・`AxisFault`・`SolverError`・`DegeneracyKind` も `#[non_exhaustive]`。
 * 次元の不一致を表す variant は持たない（`const D` のみなので、型で表現できない）。
 * `NotSorted { index }` の `index` は、直前の座標より小さい最初の要素。`LengthMismatch` の `expected` は座標（またはクエリ）の長さ、`actual` は値（または出力バッファ）の長さ。
 * **`convx::ConvexHullError` は公開しない**（`convx` の版と SemVer を結合させないため）。M4 で、内部で次のように変換する（`From` は `pub(crate)`）:
@@ -587,12 +588,46 @@ interpx/
 * `neighbors` 指定時はクエリごとに `kiddo` で近傍 $k$ 点を抽出し、局所問題を解く。
 
 ### 6.4 `RegularGridInterpolator`
-* `values` は **C 順（row-major、最後の軸が最速）** の平坦な `Vec<T>` と `shape: [usize; D]` で受け取る（`ndarray` 標準レイアウト・numpy と一致）。
-* `method`: `nearest` / `linear` / `slinear` / `cubic` / `quintic` / `pchip`。
+* **型**: `RegularGridInterpolator<T: Scalar, const D: usize, V: Value<T> = T>`。$D$ 次元の直交グリッド（軸ごとの座標の直積）の上の値を補間する。`Point = [T; D]`、`Output = V`。
+* **構築**: `new(axes: [&[T]; D], values: &[V], method: GridMethod)` と、所有権を受け取る `from_owned(axes: [Vec<T>; D], values: Vec<V>, method: GridMethod)`。
+  * `values` は **C 順（row-major、最後の軸が最速）** の平坦な配列（`ndarray` の標準レイアウト・numpy と一致）。点 $(i_0, \dots, i_{D-1})$ の値は `values[((i_0 n_1 + i_1) n_2 + \dots) + i_{D-1}]`。
+  * 形は軸の長さ $n_d$ から決まるので、引数に取らない。`values.len()` が $\prod_d n_d$ と違えば `LengthMismatch`。`shape() -> [usize; D]` で返す。
+* **`GridMethod`**（`#[non_exhaustive]`）: 構築時に決め、あとから変えない（SciPy は評価のたびに変えられるが、スプラインの方法は構築時に係数を解く）。M2-1 は `Nearest` と `Linear`、M2-2 が `Slinear`・`Cubic`・`Quintic`、M2-3 が `Pchip` を足す。
+* **軸**: 狭義の昇順か、狭義の降順（SciPy と同じ）。どちらの方法も、軸あたり 2 点以上（グリッドは各次元に幅を持つ。あとの行の方法は、これより多い点を求める）。
+  * 降順の軸は、構築時に昇順へ並べ替えて持つ（軸の座標を逆順にし、値をその軸に沿って逆順にする）。評価はいつも昇順のグリッドで行う。`axes()` と `values()` は並べ替えたあとのものを返す。
+* **区間と領域外（軸ごと）**: 各軸で、座標 $x_d$ の区間 $i_d$（$g_{i_d} \le x_d < g_{i_d + 1}$、上端は最後の区間に含める）を二分探索で求める。領域外の扱いは `Extrapolate` の 4 モードで、**全部の軸に同じモードを、軸ごとに独立に**当てる。規則は `PPoly`（§6.1）と同じである（区間探索のコードを共用する）。既定は `Forbid`。
+
+  | モード | 軸ごとの扱い | `Linear` の結果 | `Nearest` の結果 |
+  | :--- | :--- | :--- | :--- |
+  | `Forbid` | どれかの座標が領域外なら値なし | `None` | `None` |
+  | `Extend` | 端の区間を使い、座標はそのまま | 端のセルの式の延長（SciPy の `fill_value=None`） | 端の点の値（SciPy と同じ） |
+  | `Clamp` | 座標を $[g_0, g_{n-1}]$ に切り詰める | 箱の表面の値 | `Extend` と同じ |
+  | `Periodic` | 座標を $[g_0, g_{n-1})$ に折り返す | 折り返した点の値 | 同じ |
+
+  `Periodic` は値の周期性を検査しない（外挿モードであり、境界条件ではない）。NaN を含む点は `None`。無限大の座標は `PPoly` と同じ（`Forbid`・`Periodic` で `None`、`Clamp` は端、`Extend` は式をそのまま評価する）。軸ごとに別のモードを指定する形は持たない（SciPy にもない）。
+* **`Linear`**: 軸 $d$ の正規化した距離を $y_d = (x_d - g_{i_d}) / (g_{i_d + 1} - g_{i_d})$ として、セルの $2^D$ 個の角の値を、重み $\prod_d w_d$（角が下側なら $w_d = 1 - y_d$、上側なら $y_d$）で足す。角は、軸 0 をいちばん外側にして数える順に足す（SciPy と同じ順）。確保しない。
+* **`Nearest`**: 軸ごとに、$y_d \le 0.5$ なら下側の点、そうでなければ上側の点を取り、その格子点の値を返す。ちょうど中間は下側である（SciPy と同じ）。降順で渡した軸では、昇順に並べ替えたあとの下側になる（SciPy も並べ替えてから判定する）。
+* **ヒント**: `eval_hinted(&[T; D], &mut [Hint; D])`。軸ごとにヒントを持ち、結果は `eval` とビット同一。`eval_batch_into` は内部でこれを使う。
+* **等間隔の軸**: 区間を割り算で求める近道は入れない（丸めで二分探索と違う区間になりうる）。入れるなら、測ってから別の行で決める。
+* **エラー**: 検査の順は §3.5 の段に合わせる。
+  1. `LengthMismatch`（`values.len()` と $\prod_d n_d$。積が `usize` に収まらなければ、どんな配列とも一致しないので同じエラー）
+  2. `GridAxis { axis, fault: InsufficientPoints { required: 2, actual } }`（軸 0 から順に）
+  3. `GridAxis { axis, fault: NonFinite { index } }`（軸 0 から順に）、次に値の `NonFinite { index }`（`index` は平坦な配列での位置）
+  4. 軸の向き（軸 0 から順に）: 最初の 2 点が等しければ `DuplicatePoints { first: 0, second: 1 }`。それ以降は、隣と等しければ `DuplicatePoints`、最初の 2 点が決めた向きに逆らえば `NotMonotonic { index }`（逆らった点の位置）。
+  * 位置は、渡された順（並べ替える前）のものである。
+* **SciPy との差**:
+
+  | 項目 | SciPy 1.18 | `interpx` |
+  | :--- | :--- | :--- |
+  | 領域外の既定 | 例外（`bounds_error=True`） | `None`（`Forbid`）。`eval_or(point, fill)` が `fill_value` に当たる |
+  | 値の NaN | 受け付ける（NaN に触れた評価が NaN になる） | `NonFinite` で拒む（§3.5。スプラインの方法は NaN を含む系を解けないので、方法によらず 1 つの規則にする）。欠損のあるグリッドは、欠損を埋めてから渡す |
+  | 方法 | 評価のたびに変えられる | 構築時に決める |
+  | 1 点だけの軸 | `nearest` と `linear` は受け付ける | 2 点以上 |
+  | `Clamp`・`Periodic` | ない | ある |
+  | 2 次元の `linear` | 専用の経路（足す順が違う） | どの次元も同じ式。差は丸めの範囲 |
 * **`slinear` / `cubic` / `quintic`**: 軸ごとの補間演算子は可換なので、構築時に全軸のテンソル積 B-spline 係数を一度だけ解く。評価は局所 $(k+1)^D$ 点のみ。メモリはグリッド点数に比例。
 * **SciPy 1.18 の既定値との差（`cubic` / `quintic`）**: SciPy はこの 2 メソッドの係数を、既定では反復解法（`gcrotmk`）で求める。その結果はテンソル積スプラインの厳密解から、等間隔の 2D グリッドで約 $10^{-5}$、非等間隔や 3D のグリッドでは最大約 $10^{-2}$ ずれる（golden 作成時の実測）。`interpx` は係数を直接法で厳密に解くため、SciPy の既定の出力とはこの分だけ一致しない。一致する相手は、SciPy で `solver=scipy.sparse.linalg.spsolve` を指定した結果、および `cubic_legacy` / `quintic_legacy` である（両者は $3 \times 10^{-13}$ 以内で一致する）。golden の `expected` は直接解法の値とし、既定の値は `expected_scipy_default` として併記する（§8.4.1）。この差は rustdoc にも書く。
 * **`pchip`**: 値に対して非線形で軸順が結果に影響するため、SciPy と同じ軸順で、評価時に局所ステンシルのみを使って遅延畳み込みする。
-* 外挿は `Extrapolate`（§3.3）。
 
 ### 6.5 直列化（`serde` feature）
 * 頂点配列・隣接配列・値・パラメータをすべて直列化する（再三角形分割はしない）。`convx` のバージョンと保存データを結合させないため。
@@ -666,7 +701,7 @@ serde   = ["dep:serde"]
 
 * **照合の記録**: F1〜F5 は 2 つの独立した実装（UQTestFuns、および Burkardt の `test_interp_2d`（MIT））で式が一致した（F4 の係数 $\tfrac{81}{16}$ = 5.0625、F5 の $\tfrac{81}{4}$ = 20.25、いずれも因子 $\tfrac13$ を持つ）。F6 は UQTestFuns が $\tfrac19$ を欠くが、半径 $\tfrac89$ の球という記述と整合するのは $\tfrac19$ を持つ式であり、Burkardt の実装もこれと一致する。F1 の第 2 項は Burkardt の抜粋で二乗が見えないため、UQTestFuns の式を採る。Franke (1979) 原典は取得できていないため、golden を作る最初の行で原典または Renka–Brown の公開コードと再照合し、結果をこの節に追記する。
 * **散乱点の配置**: Franke の 100 点・33 点と、Lawson の 25 点の節点配置を使う（25 点は Franke ではなく Lawson の配置である）。座標は Burkardt の `test_interp_2d`（MIT）から機械的に転記する。Franke の 100 点には単位正方形の外に出る点があるため、単位正方形上のクエリの一部は凸包の外になる。
-* **golden の範囲**: 層 A の golden は、補間族ごとに `compare/goldens/` の `oned` / `cubic_spline` / `bspline1d` / `calculus` / `curve` / `grid` / `scattered` / `rbf` に置く（`cubic_spline` は `CubicSpline` の全ケース、`calculus` は `PPoly` と `BSpline` の導関数・積分で、どちらも 1 ファイルの上限に収めるため `oned` から分けてある。`bspline1d` は `make_interp_spline` の全ケースで、M1-12 で同じ理由から分ける）。入力のみの `datasets`（古典データ・節点配置・敵対的入力）と、解析関数の値の `functions` も置く。1D のケースは値に加えて、1 階・2 階導関数、原始関数、定積分、区分多項式の係数（または B-spline のノットと制御点）を持つ。`calculus` は、導関数と原始関数そのもの（`PPoly` の係数、`BSpline` のノットと制御点）、3 階以上の導関数、2 階の原始関数、領域外にまたがる定積分、周期をまたぐ定積分を持つ。SciPy と意図して変える挙動（§6.1 の「SciPy との差」）は golden に入れず、解析解と性質テストで確かめる。`oned` には M1-7 で、無限大のクエリ（`numpy.interp`）、`fill_value="extrapolate"` の `nearest` / `nearest-up`、2 列の値（`interp1d`）を加える。M1-13 では `curve` に、3 つのパラメータの決め方それぞれ（パラメータそのものも持つ）、閉じた曲線（周期の 2・3・5 次）、4 次元の点、点数が $k + 1$ ちょうどの点列、間隔が極端に不均一な点列を加える。M1-12 では `bspline1d` に、偶数次（2・4 次）と 6 次以上、点数が $k + 1$ ちょうどのデータ、周期の 1〜5 次と点数が次数以下の周期、3 次の端の導関数が 0 でないもの、3 次で片端だけ not-a-knot のもの（基準は SciPy の `CubicSpline`）、2 列の値、間隔が不均一なデータを加える。帯行列ソルバーの golden は `banded` に置く（LAPACK の `gbsv` の解で、`scipy.linalg.lapack.dgbsv` から得る。`make_interp_spline` が呼ぶものである。`scipy.linalg.solve_banded` は、帯が上下 1 本ずつのとき三重対角専用の `gtsv` を呼ぶので、基準にしない。LAPACK が行を入れ替えた列の数も持ち、ピボットの選び方まで照合する。巡回帯行列は密行列の `scipy.linalg.solve` の解。ランダムな帯行列、行の入れ替えが実際に起きる行列、条件の悪い行列、$n = 1$〜$3$、全幅の帯（密行列）、複数列の右辺）。M1-11 では `CubicHermiteSpline` に、2 点、3 点、間隔が不均一なデータ、傾きが全部 0 のデータ、直線上のデータにその直線の傾きを与えたもの、データと合わない傾き（行き過ぎる例）、2 列の値、周期の外挿（両端が合うデータと、合わないデータ）を加える。M1-10 では `Akima1D` の両方式に、2 点、3 点、4 点、直線上のデータと平らな区間（傾きが式で定まらない点）、2 列の値を加える。M1-9 では `PchipInterpolator` の、2 点、3 点、平らな区間と符号の変化を含むデータ、単調なデータ、2 列の値を加える。M1-8 では `CubicSpline` の、2 点（境界条件ごと）、3 点（not-a-knot・周期・混在）、4 点の周期、not-a-knot と導関数の混在、2 列の値、間隔が極端に不均一なデータを加える。三重対角ソルバーの golden は `tridiagonal` に置く（SciPy の `solve_banded` の解。優対角のランダム行列、古典データから作った 4 種の境界条件の行列、巡回行列、条件の悪い行列、$n = 1$〜$3$、複数列の右辺）。グリッドの `cubic` / `quintic` の基準は §6.4 のとおり直接解法の値とする。
+* **golden の範囲**: 層 A の golden は、補間族ごとに `compare/goldens/` の `oned` / `cubic_spline` / `bspline1d` / `calculus` / `curve` / `grid` / `scattered` / `rbf` に置く（`cubic_spline` は `CubicSpline` の全ケース、`calculus` は `PPoly` と `BSpline` の導関数・積分で、どちらも 1 ファイルの上限に収めるため `oned` から分けてある。`bspline1d` は `make_interp_spline` の全ケースで、M1-12 で同じ理由から分ける）。入力のみの `datasets`（古典データ・節点配置・敵対的入力）と、解析関数の値の `functions` も置く。1D のケースは値に加えて、1 階・2 階導関数、原始関数、定積分、区分多項式の係数（または B-spline のノットと制御点）を持つ。`calculus` は、導関数と原始関数そのもの（`PPoly` の係数、`BSpline` のノットと制御点）、3 階以上の導関数、2 階の原始関数、領域外にまたがる定積分、周期をまたぐ定積分を持つ。SciPy と意図して変える挙動（§6.1 の「SciPy との差」）は golden に入れず、解析解と性質テストで確かめる。`oned` には M1-7 で、無限大のクエリ（`numpy.interp`）、`fill_value="extrapolate"` の `nearest` / `nearest-up`、2 列の値（`interp1d`）を加える。M2-1 では `grid` に、`Nearest` でちょうど中間の問い合わせ点、2 列の値、3 次元で一部の軸だけ降順のグリッド、不均一なグリッドと 3 次元での `Extend` を加える。`Clamp` と `Periodic` は SciPy に対応がないので、性質テストで確かめる。M1-13 では `curve` に、3 つのパラメータの決め方それぞれ（パラメータそのものも持つ）、閉じた曲線（周期の 2・3・5 次）、4 次元の点、点数が $k + 1$ ちょうどの点列、間隔が極端に不均一な点列を加える。M1-12 では `bspline1d` に、偶数次（2・4 次）と 6 次以上、点数が $k + 1$ ちょうどのデータ、周期の 1〜5 次と点数が次数以下の周期、3 次の端の導関数が 0 でないもの、3 次で片端だけ not-a-knot のもの（基準は SciPy の `CubicSpline`）、2 列の値、間隔が不均一なデータを加える。帯行列ソルバーの golden は `banded` に置く（LAPACK の `gbsv` の解で、`scipy.linalg.lapack.dgbsv` から得る。`make_interp_spline` が呼ぶものである。`scipy.linalg.solve_banded` は、帯が上下 1 本ずつのとき三重対角専用の `gtsv` を呼ぶので、基準にしない。LAPACK が行を入れ替えた列の数も持ち、ピボットの選び方まで照合する。巡回帯行列は密行列の `scipy.linalg.solve` の解。ランダムな帯行列、行の入れ替えが実際に起きる行列、条件の悪い行列、$n = 1$〜$3$、全幅の帯（密行列）、複数列の右辺）。M1-11 では `CubicHermiteSpline` に、2 点、3 点、間隔が不均一なデータ、傾きが全部 0 のデータ、直線上のデータにその直線の傾きを与えたもの、データと合わない傾き（行き過ぎる例）、2 列の値、周期の外挿（両端が合うデータと、合わないデータ）を加える。M1-10 では `Akima1D` の両方式に、2 点、3 点、4 点、直線上のデータと平らな区間（傾きが式で定まらない点）、2 列の値を加える。M1-9 では `PchipInterpolator` の、2 点、3 点、平らな区間と符号の変化を含むデータ、単調なデータ、2 列の値を加える。M1-8 では `CubicSpline` の、2 点（境界条件ごと）、3 点（not-a-knot・周期・混在）、4 点の周期、not-a-knot と導関数の混在、2 列の値、間隔が極端に不均一なデータを加える。三重対角ソルバーの golden は `tridiagonal` に置く（SciPy の `solve_banded` の解。優対角のランダム行列、古典データから作った 4 種の境界条件の行列、巡回行列、条件の悪い行列、$n = 1$〜$3$、複数列の右辺）。グリッドの `cubic` / `quintic` の基準は §6.4 のとおり直接解法の値とする。
 * **サイズの上限**: golden は 1 ファイル 1 MB、ディレクトリ合計 8 MB を上限とする（どちらも圧縮しない大きさ）。golden は公開パッケージに含める（取ってきたクレートで `cargo test` が通るようにするため）。crates.io の上限 10 MB は圧縮後の大きさで、golden は約 1/5 に圧縮されるので、8 MB は圧縮後で約 1.6 MB である。1 ファイルの上限は差分とレビューのためのもので、超える系統はファイルを分ける。合計が上限の 90% を超えることになる行は、ケースを落とさず、先に上限を決め直す。経緯と、採らなかった案は ADR 0010。
 
 **1D の古典データ。** 値は一次資料（原論文・原典）から転記し、出典を golden の `meta` に記録する。
