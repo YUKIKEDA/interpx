@@ -123,12 +123,12 @@ pub trait Interpolator {
 #[non_exhaustive]
 pub enum Extrapolate { Forbid, Clamp, Extend, Periodic }   // 1D / curve / grid
 
-pub enum BoundaryCondition<T> {                            // CubicSpline / BSpline1D
+pub enum BoundaryCondition<V> {                            // CubicSpline / BSpline1D。V は値の型
     NotAKnot,                                 // 既定（SciPy に合わせる）
     Periodic,
-    Ends(EndCondition<T>, EndCondition<T>),   // 左端、右端
+    Ends(EndCondition<V>, EndCondition<V>),   // 左端、右端
 }
-pub enum EndCondition<T> { NotAKnot, FirstDerivative(T), SecondDerivative(T) }
+pub enum EndCondition<V> { NotAKnot, FirstDerivative(V), SecondDerivative(V) }
 ```
 * **`Extrapolate`**: `Forbid` は領域外で `None`。`Clamp` は端の値を返す（`numpy.interp` の挙動）。`Extend` は端の多項式をそのまま延長する（SciPy の `extrapolate=True`）。`Periodic` は領域に折り返す。
 * **既定値は型ごとに SciPy 1.18 に合わせる。**
@@ -140,7 +140,7 @@ pub enum EndCondition<T> { NotAKnot, FirstDerivative(T), SecondDerivative(T) }
   | `CubicSpline`・`BSpline1D` で境界条件が `Periodic` のとき               | `Periodic`  |
   | `Akima1D`、`Nearest1D`、`RegularGridInterpolator`                       | `Forbid`    |
 
-* **`BoundaryCondition`**: 端ごとに条件を持ち、左右で別の条件を指定できる（SciPy の `bc_type=((1, a), (2, b))`）。`Natural` は両端 `SecondDerivative(0)`、`Clamped` は両端 `FirstDerivative(0)` で、`BoundaryCondition::natural()` / `clamped()` で作る。周期は両端まとめての指定で、片側だけ周期という状態は型で表せない。
+* **`BoundaryCondition`**: 端ごとに条件を持ち、左右で別の条件を指定できる（SciPy の `bc_type=((1, a), (2, b))`）。`Natural` は両端 `SecondDerivative(0)`、`Clamped` は両端 `FirstDerivative(0)` で、`BoundaryCondition::natural()` / `clamped()` で作る。周期は両端まとめての指定で、片側だけ周期という状態は型で表せない。型パラメータは**値の型**である（M1-8 で確定）。端の導関数は値と同じ形を持つので、値が `[T; M]` のスプラインでは `FirstDerivative([..; M])` と列ごとに与える（SciPy も列ごとの配列を受け取る）。
 * 散乱系は外挿モードを持たず、領域外（凸包外）は `None`（`fill` で置換）のみ。
 
 ### 3.4 所有権・スレッド安全性
@@ -186,7 +186,8 @@ pub enum InterpolateError {
     NotPeriodic,
 }
 ```
-* `#[non_exhaustive]` なので、variant は最初に必要になる行で追加する（使う前に定義しない）。上は M1（1D・curve）が使うものである。
+* `#[non_exhaustive]` なので、variant は最初に必要になる行で追加する（使う前に定義しない）。上は M1（1D・curve）が使うものである。`NotPeriodic` は M1-2 で定義済みで、最初に返すのは M1-8（`CubicSpline`）である。
+* `ParamReason` には、M1-8 が `NonFinite`（引数の値が NaN または無限大。境界条件の導関数）を追加する。
 * 後の行で追加する variant:
 
   | variant                                                    | 追加する行         | 用途                                                   |
@@ -398,6 +399,37 @@ interpx/
   | `fill_value="extrapolate"` の `previous` の左外、`next` の右外 | NaN | `Clamp` / `Extend` は端のデータ値 |
 
   いずれも NumPy 2.5.4 と SciPy 1.18.1 を実行して確かめた。
+* **`CubicSpline<T: Scalar, V: Value<T> = T>`（M1-8、SciPy の `CubicSpline`）**: $C^2$ の 3 次スプライン。
+  * **構築**: `CubicSpline::new(&[T], &[V], BoundaryCondition<V>)`。境界条件は必須の引数で、既定の not-a-knot は `BoundaryCondition::default()` で書く。点は 2 個以上。
+  * **保持するもの**: 3 次の `PPoly`。`as_ppoly()` で貸し出す。評価・`eval_hinted`・バッチは `PPoly` のものをそのまま使う（`Linear1D` と違い、右端の特別扱いはしない。SciPy も右端は多項式の値を返す）。
+  * **求め方**: 各データ点での傾き $s_i$ を連立方程式で求め、区間 $i$ の係数を傾きから作る。$h_i = x_{i+1} - x_i$、$\delta_i = (y_{i+1} - y_i)/h_i$ とおく。
+    * 内側の行（$1 \le i \le n-2$）: $h_i\,s_{i-1} + 2(h_{i-1} + h_i)\,s_i + h_{i-1}\,s_{i+1} = 3\,(h_i\,\delta_{i-1} + h_{i-1}\,\delta_i)$。
+    * 端の行（左端。右端は対称）:
+
+      | 端の条件 | 行 | 右辺 |
+      | :------- | :- | :--- |
+      | `NotAKnot` | $h_1\,s_0 + (h_0 + h_1)\,s_1$ | $\bigl((h_0 + 2d)\,h_1\,\delta_0 + h_0^2\,\delta_1\bigr)/d$、$d = h_0 + h_1$ |
+      | `FirstDerivative(v)` | $s_0$ | $v$ |
+      | `SecondDerivative(v)` | $2h_0\,s_0 + h_0\,s_1$ | $-\tfrac12 v\,h_0^2 + 3\,(y_1 - y_0)$ |
+
+    * 係数: $t = (s_i + s_{i+1} - 2\delta_i)/h_i$ として、区間 $i$ は $\dfrac{t}{h_i}(x - x_i)^3 + \Bigl(\dfrac{\delta_i - s_i}{h_i} - t\Bigr)(x - x_i)^2 + s_i\,(x - x_i) + y_i$。
+    * 系は三重対角ソルバー（Thomas 法、ピボット選択なし）で解く。行列と右辺の組み立ては SciPy（`_cubic.py`）と同じである。
+  * **周期境界**: $s_{n-1} = s_0$ なので、未知数は $s_0, \dots, s_{n-2}$ の $n-1$ 個。行 $i$ は内側の行と同じ式で、添字を $n-1$ を法として回す。右上と左下に 1 要素ずつが出る巡回三重対角になり、巡回ソルバー（Sherman–Morrison）で解く。
+  * **点が少ない場合**（SciPy と同じ扱い）:
+
+    | 点数 | 境界条件 | 結果 |
+    | :--- | :------- | :--- |
+    | 2 | `NotAKnot`（どちらの端でも） | その端の条件を `FirstDerivative(δ_0)` に置き換える。両端なら直線 |
+    | 2 | `Periodic` | 両端の条件を `FirstDerivative(δ_0)` に置き換える。$y_0 = y_1$ なので、定数になる |
+    | 3 | 両端 `NotAKnot` | 3 点を通る放物線。行は $[1, 1, 0]$、$[h_1, 2(h_0 + h_1), h_0]$、$[0, 1, 1]$、右辺は $2\delta_0$、$3(h_0\delta_1 + h_1\delta_0)$、$2\delta_1$（三重対角なので同じソルバーで解く） |
+    | 3 | `Periodic` | 未知数が 2 個で、巡回ソルバーの範囲外。$s_0 = s_1 = s_2 = \dfrac{\delta_0/h_0 + \delta_1/h_1}{1/h_0 + 1/h_1}$ |
+    | 4 以上 | `Periodic` | 巡回ソルバー（3 行以上） |
+
+    上以外（3 点で片端だけ `NotAKnot` など）は一般の式のままである。
+  * **周期性の検査**: `Periodic` では $y_0$ と $y_{n-1}$ が一致しなければ `NotPeriodic` を返す。一致の判定は SciPy と同じ許容誤差で、列ごとに $|y_0 - y_{n-1}| \le \tau\,(1 + |y_{n-1}|)$、$\tau = 4.5\,\varepsilon$（`f64` で約 $10^{-15}$。SciPy は `rtol = atol = 1e-15`）。厳密な一致にしないのは、`sin(0)` と `sin(2π)` のような丸めの差で拒否しないためである。検査を通ったあとは、$y_{n-1}$ も与えられた値のまま使う（SciPy と同じ。最後の区間の $\delta_{n-2}$ に入る）。
+  * **領域外**: 既定は `Extend`、境界条件が `Periodic` なら `Periodic`（§3.3、SciPy と同じ）。`with_extrapolate` で 4 モードのどれにも変えられる。
+  * **エラー**: 検査の順は、§3.5 の共通の検査 → 境界条件の導関数の値（NaN・無限大なら `InvalidParameter { name: "bc", reason: ParamReason::NonFinite }`）→ 周期性（`NotPeriodic`）→ 求解。三重対角ソルバーの破綻と、傾き・係数の桁あふれは `NonFinite { index }` で返す（`index` は該当するデータ点）。有効な入力に対して行列は正則なので、破綻は桁あふれでしか起きない。専用の variant は足さない（`Linear1D` の傾きの桁あふれと同じ扱い）。
+  * **SciPy との差**: 共通の検査による差（重複・未ソートの $x$、非有限の値）だけである。点数の下限（2 点）、少ない点の扱い、周期性の許容誤差は SciPy と同じ。
 
 ### 6.2 散乱データ幾何探索（`convx` 連携）
 * **Delaunay 分割**: `[[f64; D]]` をコピーなしで `&[f64]`（row-major）にフラット化して `convx` に渡す。
@@ -514,7 +546,7 @@ serde   = ["dep:serde"]
 
 * **照合の記録**: F1〜F5 は 2 つの独立した実装（UQTestFuns、および Burkardt の `test_interp_2d`（MIT））で式が一致した（F4 の係数 $\tfrac{81}{16}$ = 5.0625、F5 の $\tfrac{81}{4}$ = 20.25、いずれも因子 $\tfrac13$ を持つ）。F6 は UQTestFuns が $\tfrac19$ を欠くが、半径 $\tfrac89$ の球という記述と整合するのは $\tfrac19$ を持つ式であり、Burkardt の実装もこれと一致する。F1 の第 2 項は Burkardt の抜粋で二乗が見えないため、UQTestFuns の式を採る。Franke (1979) 原典は取得できていないため、golden を作る最初の行で原典または Renka–Brown の公開コードと再照合し、結果をこの節に追記する。
 * **散乱点の配置**: Franke の 100 点・33 点と、Lawson の 25 点の節点配置を使う（25 点は Franke ではなく Lawson の配置である）。座標は Burkardt の `test_interp_2d`（MIT）から機械的に転記する。Franke の 100 点には単位正方形の外に出る点があるため、単位正方形上のクエリの一部は凸包の外になる。
-* **golden の範囲**: 層 A の golden は、補間族ごとに `compare/goldens/` の `oned` / `calculus` / `curve` / `grid` / `scattered` / `rbf` に置く（`calculus` は `PPoly` と `BSpline` の導関数・積分で、1 ファイルの上限に収めるため `oned` から分けてある）。入力のみの `datasets`（古典データ・節点配置・敵対的入力）と、解析関数の値の `functions` も置く。1D のケースは値に加えて、1 階・2 階導関数、原始関数、定積分、区分多項式の係数（または B-spline のノットと制御点）を持つ。`calculus` は、導関数と原始関数そのもの（`PPoly` の係数、`BSpline` のノットと制御点）、3 階以上の導関数、2 階の原始関数、領域外にまたがる定積分、周期をまたぐ定積分を持つ。SciPy と意図して変える挙動（§6.1 の「SciPy との差」）は golden に入れず、解析解と性質テストで確かめる。`oned` には M1-7 で、無限大のクエリ（`numpy.interp`）、`fill_value="extrapolate"` の `nearest` / `nearest-up`、2 列の値（`interp1d`）を加える。三重対角ソルバーの golden は `tridiagonal` に置く（SciPy の `solve_banded` の解。優対角のランダム行列、古典データから作った 4 種の境界条件の行列、巡回行列、条件の悪い行列、$n = 1$〜$3$、複数列の右辺）。グリッドの `cubic` / `quintic` の基準は §6.4 のとおり直接解法の値とする。
+* **golden の範囲**: 層 A の golden は、補間族ごとに `compare/goldens/` の `oned` / `calculus` / `curve` / `grid` / `scattered` / `rbf` に置く（`calculus` は `PPoly` と `BSpline` の導関数・積分で、1 ファイルの上限に収めるため `oned` から分けてある）。入力のみの `datasets`（古典データ・節点配置・敵対的入力）と、解析関数の値の `functions` も置く。1D のケースは値に加えて、1 階・2 階導関数、原始関数、定積分、区分多項式の係数（または B-spline のノットと制御点）を持つ。`calculus` は、導関数と原始関数そのもの（`PPoly` の係数、`BSpline` のノットと制御点）、3 階以上の導関数、2 階の原始関数、領域外にまたがる定積分、周期をまたぐ定積分を持つ。SciPy と意図して変える挙動（§6.1 の「SciPy との差」）は golden に入れず、解析解と性質テストで確かめる。`oned` には M1-7 で、無限大のクエリ（`numpy.interp`）、`fill_value="extrapolate"` の `nearest` / `nearest-up`、2 列の値（`interp1d`）を加える。M1-8 では `CubicSpline` の、2 点（境界条件ごと）、3 点（not-a-knot・周期・混在）、4 点の周期、not-a-knot と導関数の混在、2 列の値、間隔が極端に不均一なデータを加える。三重対角ソルバーの golden は `tridiagonal` に置く（SciPy の `solve_banded` の解。優対角のランダム行列、古典データから作った 4 種の境界条件の行列、巡回行列、条件の悪い行列、$n = 1$〜$3$、複数列の右辺）。グリッドの `cubic` / `quintic` の基準は §6.4 のとおり直接解法の値とする。
 * **サイズの上限**: golden は 1 ファイル 1 MB、ディレクトリ合計 4 MB を上限とする（公開パッケージに含めるため）。
 
 **1D の古典データ。** 値は一次資料（原論文・原典）から転記し、出典を golden の `meta` に記録する。
