@@ -94,6 +94,7 @@ Named so that no deferral is anonymous. Each becomes a roadmap row with an Issue
 | A-8  | Task | `no_std` (`alloc`) feasibility                                                                          |       | Todo   |
 | A-9  | Feat | `BSpline::from_ppoly`: lower the knot multiplicity where the pieces join smoothly                       |       | Todo   |
 | A-10 | Feat | `BSpline1D`: several derivatives at an end (`bc_type` as lists of pairs), and knots given by the caller |       | Todo   |
+| A-11 | Feat | `RBFInterpolator`: a smoothing value for each point                                                     |       | Todo   |
 
 ## Intentionally out of scope
 
