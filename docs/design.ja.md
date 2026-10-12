@@ -230,7 +230,7 @@ interpx/
 │   ├── bspline1d     # make_interp_spline (次数 1〜15)
 │   └── nearest       # Nearest1D (nearest / nearest-up / previous / next)
 ├── curve/            # N次元パラメトリック曲線
-│   └── nd_curve      # BSplineCurve
+│   └── bspline_curve # BSplineCurve、Parametrization
 ├── grid/             # N次元直交グリッド補間
 │   └── regular_grid  # RegularGridInterpolator
 └── scattered/        # N次元不規則散乱データ補間
@@ -253,7 +253,7 @@ interpx/
 | **1D**            | `PchipInterpolator`                             | `PchipInterpolator`                           | `PPoly`（単調性制限導関数）            |
 | **1D**            | `Akima1DInterpolator`（`method='makima'` 含む） | `Akima1D`                                     | `PPoly`                                |
 | **1D**            | `CubicHermiteSpline`                            | `CubicHermiteSpline`                          | `PPoly`                                |
-| **1D**            | `make_interp_spline`（任意次数 $k$）            | `BSpline1D`                                   | `BSpline`（de Boor）                   |
+| **1D**            | `make_interp_spline`（次数 1〜15）              | `BSpline1D`                                   | `BSpline`（de Boor）                   |
 | **1D**            | `interp1d` の nearest / previous / next         | `Nearest1D`                                   | 二分探索                               |
 | **1D**            | `PPoly` / `BSpline` の導関数・積分              | `derivative` / `antiderivative` / `integrate` | `PPoly` ⇄ `BSpline` 相互変換           |
 | **N-D Curve**     | `make_interp_spline`（N-D y）                   | `BSplineCurve<T, D>`                          | `BSpline`（ベクトル制御点）            |
@@ -525,6 +525,31 @@ interpx/
     | 偶数次で、隣り合う 2 点の中点がどちらかの点に丸められる | 特異な行列の例外、または NaN | `DuplicatePoints` |
     | 偶数次の中点の和が桁あふれする | ノットが無限大になる | あふれない形で求める |
     | 端ごとに複数の導関数、ノット列の指定 | 受け付ける | 持たない（A-10） |
+* **`BSplineCurve<T: Scalar, const D: usize>`（M1-13）**: $D$ 次元の点列を通るパラメトリック曲線 $u \mapsto [T; D]$。値の型が `[T; D]` の `BSpline1D` に、パラメータの決め方を足したものである。
+  * **`BSpline1D` との関係**: SciPy に曲線のクラスはなく、`make_interp_spline(t, points)` に 2 次元の `y` を渡す。これは `BSpline1D<T, [T; D]>` と同じで、各点のパラメータ $t_i$ を呼び出し側が用意する。曲線では点列だけがあって $t_i$ がないのが普通なので、`BSplineCurve` は点列から $t_i$ を決める。内部に `BSpline1D<T, [T; D]>` を持ち、次数・境界条件・ノット列・連立方程式・エラーは `BSpline1D` のものである。
+  * **構築**:
+    * `BSplineCurve::new(points: &[[T; D]], degree: usize, bc: BoundaryCondition<[T; D]>, parametrization: Parametrization)`: パラメータを点列から決める。
+    * `BSplineCurve::with_parameters(t: &[T], points: &[[T; D]], degree: usize, bc: BoundaryCondition<[T; D]>)`: パラメータを与える（SciPy の `make_interp_spline(t, points)`）。結果は同じ引数の `BSpline1D` とビット同一である。
+  * **`Parametrization`**（`#[non_exhaustive]`。既定値は持たせず、引数で明示する）: 隣り合う点の距離を $d_i = \lVert p_{i+1} - p_i \rVert_2$ として、
+
+    | 値 | $t_i$（正規化の前） | 性質 |
+    | :--- | :--- | :--- |
+    | `Uniform` | $i$ | 点の間隔を見ない。間隔が不揃いな点列では波打つ |
+    | `ChordLength` | $\sum_{j < i} d_j$ | 曲線に沿った長さの近似。FITPACK の `splprep` の既定と同じ |
+    | `Centripetal` | $\sum_{j < i} \sqrt{d_j}$ | 尖った箇所での行き過ぎが少ない |
+
+    どれも最後の値で割って $[0, 1]$ に正規化する（$t_0 = 0$、$t_{n-1} = 1$）。和は前から順に足す。
+  * **距離の計算**: $d_i$ は、差の成分のうち絶対値が最大のもので割ってから 2 乗和を取る（途中の 2 乗が桁あふれ・桁落ちしない）。したがって $d_i = 0$ になるのは 2 点が完全に同じときだけである。
+  * **保持するもの**: `BSpline1D<T, [T; D]>` と、各データ点のパラメータ。`parameters() -> &[T]` で返す（自動で決めたとき、どの $u$ がどの点に当たるかを知る手段がほかにない）。`as_bspline()` で `BSpline<T, [T; D]>` を貸し出す。接線（1 階導関数）や 2 階導関数は `as_bspline().eval_derivative(u, nu)` で取り、曲線の型に同じ関数を重ねて持たせない。
+  * **閉じた曲線**: `BoundaryCondition::Periodic`。最初と最後の点が（`BSpline1D` と同じ許容誤差で）一致していなければ `NotPeriodic`。
+  * **領域外**: `BSpline1D` と同じ（既定は `Extend`、`Periodic` のときは `Periodic`）。パラメータの定義域は、`new` では $[0, 1]$、`with_parameters` では $[t_0, t_{n-1}]$。
+  * **エラー**: `new` の検査の順は、次数 → 境界条件と次数の組み合わせ → 点数（下限は `BSpline1D` と同じ）→ 点の非有限（`NonFinite { index }`）→ パラメータ → 以降は `BSpline1D`。
+    * `ChordLength` と `Centripetal` で隣り合う 2 点が同じなら `DuplicatePoints { first: i, second: i + 1 }`。`Uniform` はパラメータが重ならないので、同じ点が続いても通す。
+    * 2 点が同じでなくても、全体の長さに比べて近すぎると、正規化したパラメータが丸めで重なることがある。これも `DuplicatePoints` になる（`BSpline1D` の座標の検査による）。
+    * 点が有限でも、差や和が桁あふれするほど離れていれば、パラメータが有限でなくなり `NonFinite { index }`。
+    * `with_parameters` のエラーは `BSpline1D::new` と同じ。
+  * **持たないもの**: 弧長、弧長による再パラメータ化、最近点の探索。SciPy に対応する機能がなく、この設計の対象外である。平滑化つきの当てはめ（`splprep` の $s > 0$）は FITPACK 族（ロードマップ A-7）。
+  * **SciPy との差**: `with_parameters` は `BSpline1D` と同じ（§6.1 の表）。`new` に当たる関数は `make_interp_spline` にはない。パラメータの式は上のとおりで、golden では生成スクリプトが同じ式で $t_i$ を計算して `make_interp_spline` に渡す。
 
 ### 6.2 散乱データ幾何探索（`convx` 連携）
 * **Delaunay 分割**: `[[f64; D]]` をコピーなしで `&[f64]`（row-major）にフラット化して `convx` に渡す。
@@ -641,7 +666,7 @@ serde   = ["dep:serde"]
 
 * **照合の記録**: F1〜F5 は 2 つの独立した実装（UQTestFuns、および Burkardt の `test_interp_2d`（MIT））で式が一致した（F4 の係数 $\tfrac{81}{16}$ = 5.0625、F5 の $\tfrac{81}{4}$ = 20.25、いずれも因子 $\tfrac13$ を持つ）。F6 は UQTestFuns が $\tfrac19$ を欠くが、半径 $\tfrac89$ の球という記述と整合するのは $\tfrac19$ を持つ式であり、Burkardt の実装もこれと一致する。F1 の第 2 項は Burkardt の抜粋で二乗が見えないため、UQTestFuns の式を採る。Franke (1979) 原典は取得できていないため、golden を作る最初の行で原典または Renka–Brown の公開コードと再照合し、結果をこの節に追記する。
 * **散乱点の配置**: Franke の 100 点・33 点と、Lawson の 25 点の節点配置を使う（25 点は Franke ではなく Lawson の配置である）。座標は Burkardt の `test_interp_2d`（MIT）から機械的に転記する。Franke の 100 点には単位正方形の外に出る点があるため、単位正方形上のクエリの一部は凸包の外になる。
-* **golden の範囲**: 層 A の golden は、補間族ごとに `compare/goldens/` の `oned` / `cubic_spline` / `bspline1d` / `calculus` / `curve` / `grid` / `scattered` / `rbf` に置く（`cubic_spline` は `CubicSpline` の全ケース、`calculus` は `PPoly` と `BSpline` の導関数・積分で、どちらも 1 ファイルの上限に収めるため `oned` から分けてある。`bspline1d` は `make_interp_spline` の全ケースで、M1-12 で同じ理由から分ける）。入力のみの `datasets`（古典データ・節点配置・敵対的入力）と、解析関数の値の `functions` も置く。1D のケースは値に加えて、1 階・2 階導関数、原始関数、定積分、区分多項式の係数（または B-spline のノットと制御点）を持つ。`calculus` は、導関数と原始関数そのもの（`PPoly` の係数、`BSpline` のノットと制御点）、3 階以上の導関数、2 階の原始関数、領域外にまたがる定積分、周期をまたぐ定積分を持つ。SciPy と意図して変える挙動（§6.1 の「SciPy との差」）は golden に入れず、解析解と性質テストで確かめる。`oned` には M1-7 で、無限大のクエリ（`numpy.interp`）、`fill_value="extrapolate"` の `nearest` / `nearest-up`、2 列の値（`interp1d`）を加える。M1-12 では `bspline1d` に、偶数次（2・4 次）と 6 次以上、点数が $k + 1$ ちょうどのデータ、周期の 1〜5 次と点数が次数以下の周期、3 次の端の導関数が 0 でないもの、3 次で片端だけ not-a-knot のもの（基準は SciPy の `CubicSpline`）、2 列の値、間隔が不均一なデータを加える。帯行列ソルバーの golden は `banded` に置く（LAPACK の `gbsv` の解で、`scipy.linalg.lapack.dgbsv` から得る。`make_interp_spline` が呼ぶものである。`scipy.linalg.solve_banded` は、帯が上下 1 本ずつのとき三重対角専用の `gtsv` を呼ぶので、基準にしない。LAPACK が行を入れ替えた列の数も持ち、ピボットの選び方まで照合する。巡回帯行列は密行列の `scipy.linalg.solve` の解。ランダムな帯行列、行の入れ替えが実際に起きる行列、条件の悪い行列、$n = 1$〜$3$、全幅の帯（密行列）、複数列の右辺）。M1-11 では `CubicHermiteSpline` に、2 点、3 点、間隔が不均一なデータ、傾きが全部 0 のデータ、直線上のデータにその直線の傾きを与えたもの、データと合わない傾き（行き過ぎる例）、2 列の値、周期の外挿（両端が合うデータと、合わないデータ）を加える。M1-10 では `Akima1D` の両方式に、2 点、3 点、4 点、直線上のデータと平らな区間（傾きが式で定まらない点）、2 列の値を加える。M1-9 では `PchipInterpolator` の、2 点、3 点、平らな区間と符号の変化を含むデータ、単調なデータ、2 列の値を加える。M1-8 では `CubicSpline` の、2 点（境界条件ごと）、3 点（not-a-knot・周期・混在）、4 点の周期、not-a-knot と導関数の混在、2 列の値、間隔が極端に不均一なデータを加える。三重対角ソルバーの golden は `tridiagonal` に置く（SciPy の `solve_banded` の解。優対角のランダム行列、古典データから作った 4 種の境界条件の行列、巡回行列、条件の悪い行列、$n = 1$〜$3$、複数列の右辺）。グリッドの `cubic` / `quintic` の基準は §6.4 のとおり直接解法の値とする。
+* **golden の範囲**: 層 A の golden は、補間族ごとに `compare/goldens/` の `oned` / `cubic_spline` / `bspline1d` / `calculus` / `curve` / `grid` / `scattered` / `rbf` に置く（`cubic_spline` は `CubicSpline` の全ケース、`calculus` は `PPoly` と `BSpline` の導関数・積分で、どちらも 1 ファイルの上限に収めるため `oned` から分けてある。`bspline1d` は `make_interp_spline` の全ケースで、M1-12 で同じ理由から分ける）。入力のみの `datasets`（古典データ・節点配置・敵対的入力）と、解析関数の値の `functions` も置く。1D のケースは値に加えて、1 階・2 階導関数、原始関数、定積分、区分多項式の係数（または B-spline のノットと制御点）を持つ。`calculus` は、導関数と原始関数そのもの（`PPoly` の係数、`BSpline` のノットと制御点）、3 階以上の導関数、2 階の原始関数、領域外にまたがる定積分、周期をまたぐ定積分を持つ。SciPy と意図して変える挙動（§6.1 の「SciPy との差」）は golden に入れず、解析解と性質テストで確かめる。`oned` には M1-7 で、無限大のクエリ（`numpy.interp`）、`fill_value="extrapolate"` の `nearest` / `nearest-up`、2 列の値（`interp1d`）を加える。M1-13 では `curve` に、3 つのパラメータの決め方それぞれ（パラメータそのものも持つ）、閉じた曲線（周期の 2・3・5 次）、4 次元の点、点数が $k + 1$ ちょうどの点列、間隔が極端に不均一な点列を加える。M1-12 では `bspline1d` に、偶数次（2・4 次）と 6 次以上、点数が $k + 1$ ちょうどのデータ、周期の 1〜5 次と点数が次数以下の周期、3 次の端の導関数が 0 でないもの、3 次で片端だけ not-a-knot のもの（基準は SciPy の `CubicSpline`）、2 列の値、間隔が不均一なデータを加える。帯行列ソルバーの golden は `banded` に置く（LAPACK の `gbsv` の解で、`scipy.linalg.lapack.dgbsv` から得る。`make_interp_spline` が呼ぶものである。`scipy.linalg.solve_banded` は、帯が上下 1 本ずつのとき三重対角専用の `gtsv` を呼ぶので、基準にしない。LAPACK が行を入れ替えた列の数も持ち、ピボットの選び方まで照合する。巡回帯行列は密行列の `scipy.linalg.solve` の解。ランダムな帯行列、行の入れ替えが実際に起きる行列、条件の悪い行列、$n = 1$〜$3$、全幅の帯（密行列）、複数列の右辺）。M1-11 では `CubicHermiteSpline` に、2 点、3 点、間隔が不均一なデータ、傾きが全部 0 のデータ、直線上のデータにその直線の傾きを与えたもの、データと合わない傾き（行き過ぎる例）、2 列の値、周期の外挿（両端が合うデータと、合わないデータ）を加える。M1-10 では `Akima1D` の両方式に、2 点、3 点、4 点、直線上のデータと平らな区間（傾きが式で定まらない点）、2 列の値を加える。M1-9 では `PchipInterpolator` の、2 点、3 点、平らな区間と符号の変化を含むデータ、単調なデータ、2 列の値を加える。M1-8 では `CubicSpline` の、2 点（境界条件ごと）、3 点（not-a-knot・周期・混在）、4 点の周期、not-a-knot と導関数の混在、2 列の値、間隔が極端に不均一なデータを加える。三重対角ソルバーの golden は `tridiagonal` に置く（SciPy の `solve_banded` の解。優対角のランダム行列、古典データから作った 4 種の境界条件の行列、巡回行列、条件の悪い行列、$n = 1$〜$3$、複数列の右辺）。グリッドの `cubic` / `quintic` の基準は §6.4 のとおり直接解法の値とする。
 * **サイズの上限**: golden は 1 ファイル 1 MB、ディレクトリ合計 4 MB を上限とする（公開パッケージに含めるため）。
 
 **1D の古典データ。** 値は一次資料（原論文・原典）から転記し、出典を golden の `meta` に記録する。
