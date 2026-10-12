@@ -30,7 +30,7 @@ const MAX_DEGREE: usize = BSPLINE_MAX_DEGREE;
 
 /// The length of the basis arrays: one value per basis function that is not
 /// zero on an interval.
-const MAX_ORDER: usize = MAX_DEGREE + 1;
+pub(crate) const MAX_ORDER: usize = MAX_DEGREE + 1;
 
 /// A spline in the B-spline basis.
 ///
@@ -815,7 +815,7 @@ fn check<T: Scalar, V: Value<T>>(
 /// Every difference of knots the recurrence divides by then reaches across
 /// `span`, so it is positive even when knots repeat: SciPy's test for equal
 /// knots is not needed here.
-fn basis_derivatives<T: Scalar>(
+pub(crate) fn basis_derivatives<T: Scalar>(
     knots: &[T],
     degree: usize,
     span: usize,
@@ -870,7 +870,7 @@ fn basis_derivatives<T: Scalar>(
 ///
 /// `N` is the length of the arrays, over `degree`: [`MAX_ORDER`] for the spline
 /// itself, and one more for its antiderivative.
-fn basis_values<T: Scalar, const N: usize>(
+pub(crate) fn basis_values<T: Scalar, const N: usize>(
     knots: &[T],
     degree: usize,
     span: usize,

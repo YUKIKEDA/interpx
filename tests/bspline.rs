@@ -60,9 +60,9 @@ fn mode_of(case: &Json) -> Extrapolate {
 
 #[test]
 fn scipy_b_splines_evaluate_to_the_golden_values() {
-    let file = load::<Json>("oned").expect("golden file oned");
+    let all_cases = common::load_cases(&common::ONE_D).expect("golden files");
     let (mut cases, mut degrees, mut modes) = (0, std::collections::BTreeSet::new(), 0_u8);
-    for case in &file.cases {
+    for case in &all_cases {
         let name = case["name"].as_str().expect("name");
         let (Some(knots), Some(control_points), Some(queries), Some(expected)) = (
             case.get("knots"),
@@ -114,9 +114,13 @@ fn scipy_b_splines_evaluate_to_the_golden_values() {
         };
     }
     // Degrees 1 to 5 on five data sets, three boundary conditions on two, one
-    // without extrapolation, one periodic.
-    assert_eq!(cases, 33, "cases with a B-spline and expected values");
-    assert_eq!(degrees.into_iter().collect::<Vec<_>>(), [1, 2, 3, 4, 5]);
+    // without extrapolation, one periodic; then the 28 that M1-12 added for
+    // `BSpline1D` (`tests/bspline1d.rs`), with degrees 6 and 7 among them.
+    assert_eq!(cases, 61, "cases with a B-spline and expected values");
+    assert_eq!(
+        degrees.into_iter().collect::<Vec<_>>(),
+        [1, 2, 3, 4, 5, 6, 7]
+    );
     assert_eq!(modes, 7, "extend, forbid, and periodic");
 }
 
@@ -228,7 +232,7 @@ fn from_bspline_matches_scipy_on_the_intervals_of_positive_width() {
 
 #[test]
 fn from_ppoly_keeps_the_values_of_every_scipy_piecewise_polynomial() {
-    let all_cases = common::load_cases(&common::PIECEWISE).expect("golden files");
+    let all_cases = common::load_cases(&common::ONE_D).expect("golden files");
     let mut cases = 0;
     for case in &all_cases {
         let name = case["name"].as_str().expect("name");

@@ -116,9 +116,20 @@ pub enum ParamReason {
         max: usize,
     },
 
+    /// The value is smaller than the smallest one the method supports.
+    #[error("smaller than {min}")]
+    TooSmall {
+        /// The smallest value the method supports.
+        min: usize,
+    },
+
     /// The value is NaN or infinite.
     #[error("not finite")]
     NonFinite,
+
+    /// The value is a valid one, but not together with the other arguments.
+    #[error("not supported with the other arguments")]
+    Unsupported,
 }
 
 #[cfg(test)]
@@ -171,6 +182,20 @@ mod tests {
                     reason: super::ParamReason::NonFinite,
                 },
                 "invalid parameter `bc`: not finite",
+            ),
+            (
+                E::InvalidParameter {
+                    name: "degree",
+                    reason: super::ParamReason::TooSmall { min: 1 },
+                },
+                "invalid parameter `degree`: smaller than 1",
+            ),
+            (
+                E::InvalidParameter {
+                    name: "bc",
+                    reason: super::ParamReason::Unsupported,
+                },
+                "invalid parameter `bc`: not supported with the other arguments",
             ),
         ];
         for (err, message) in cases {

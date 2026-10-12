@@ -14,8 +14,8 @@
 //! A row that adds an interpolator adds it to `main`.
 
 use interpx::{
-    Akima1D, AkimaMethod, BSpline, BoundaryCondition, CubicHermiteSpline, CubicSpline, Extrapolate,
-    Hint, InterpolateError, Interpolator, Linear1D, Nearest1D, NearestKind, PPoly,
+    Akima1D, AkimaMethod, BSpline, BSpline1D, BoundaryCondition, CubicHermiteSpline, CubicSpline,
+    Extrapolate, Hint, InterpolateError, Interpolator, Linear1D, Nearest1D, NearestKind, PPoly,
     PchipInterpolator,
 };
 use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
@@ -308,6 +308,48 @@ fn main() -> Result<(), InterpolateError> {
                 std::hint::black_box(scalar.as_ppoly());
             });
             assert_eq!(n, 0, "Akima1D {mode:?}: eval_hinted or as_ppoly allocates");
+        }
+
+        // BSpline1D: evaluation is that of its BSpline. An even and an odd
+        // degree, and a periodic one.
+        for degree in [2, 3] {
+            let scalar = BSpline1D::new(
+                &[0.0, 0.5, 1.0, 1.5, 2.0],
+                &[1.0, -1.0, 4.0, 4.0, 1.0],
+                degree,
+                BoundaryCondition::NotAKnot,
+            )?
+            .with_extrapolate(mode);
+            check(
+                &format!("BSpline1D<f64> degree {degree} {mode:?}"),
+                &scalar,
+                &at_points,
+                f64::NAN,
+            );
+            let array = BSpline1D::new(
+                &[0.0, 1.0, 1.5, 2.0],
+                &columns,
+                degree,
+                BoundaryCondition::Periodic,
+            )?
+            .with_extrapolate(mode);
+            check(
+                &format!("BSpline1D<f64, [f64; 2]> degree {degree} {mode:?}"),
+                &array,
+                &at_points,
+                [f64::NAN; 2],
+            );
+            let n = allocations(|| {
+                let mut hint = Hint::new();
+                for x in at_points {
+                    std::hint::black_box(scalar.eval_hinted(x, &mut hint));
+                }
+                std::hint::black_box(scalar.as_bspline());
+            });
+            assert_eq!(
+                n, 0,
+                "BSpline1D degree {degree} {mode:?}: eval_hinted or as_bspline allocates"
+            );
         }
 
         // CubicHermiteSpline: evaluation is that of its PPoly as well.

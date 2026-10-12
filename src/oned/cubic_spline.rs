@@ -255,7 +255,7 @@ impl<T: Scalar, V: Value<T>> CubicSpline<T, V> {
 /// How far apart the two end values of a periodic spline may be: within
 /// `tolerance * (1 + |last|)`, column by column. SciPy uses `1e-15` for `f64`,
 /// which is about 4.5 times the rounding unit; the same multiple serves `f32`.
-fn periodic_tolerance<T: Scalar>() -> T {
+pub(super) fn periodic_tolerance<T: Scalar>() -> T {
     let two = T::one() + T::one();
     (two * two + two.recip()) * T::epsilon()
 }

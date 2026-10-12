@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M1-12.
+M1-13.
 
 ## Dependencies
 
@@ -34,7 +34,7 @@ M1-12.
 | M1-9  | Feat | `PchipInterpolator`                                                                                                                              | #45   | Done   |
 | M1-10 | Feat | `Akima1D` (including makima)                                                                                                                     | #50   | Done   |
 | M1-11 | Feat | `CubicHermiteSpline`                                                                                                                             | #55   | Done   |
-| M1-12 | Feat | `BSpline1D` (degrees 1 to 15), and the banded LU with partial pivoting it solves with                                                            |       | Todo   |
+| M1-12 | Feat | `BSpline1D` (degrees 1 to 15), and the banded LU with partial pivoting it solves with                                                            | #60   | Done   |
 | M1-13 | Feat | `BSplineCurve<T, D>`                                                                                                                             |       | Todo   |
 
 ## M2: Regular grid

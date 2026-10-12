@@ -52,7 +52,7 @@ fn mode_of(case: &Json) -> Extrapolate {
 
 #[test]
 fn scipy_piecewise_polynomials_evaluate_to_the_golden_values() {
-    let all_cases = common::load_cases(&common::PIECEWISE).expect("golden files");
+    let all_cases = common::load_cases(&common::ONE_D).expect("golden files");
     let (mut cases, mut modes) = (0, std::collections::BTreeSet::new());
     for case in &all_cases {
         let name = case["name"].as_str().expect("name");

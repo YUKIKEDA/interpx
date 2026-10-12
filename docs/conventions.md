@@ -24,6 +24,8 @@ src/
   ppoly.rs          PPoly: piecewise polynomial, Horner evaluation, derivatives and integrals
   oned/             interpolators of data in one variable (a private module; mod.rs re-exports)
     akima.rs        Akima1D and AkimaMethod: slopes from the five points around, Akima or makima
+    bspline1d.rs    BSpline1D: knots, the collocation system (banded, or cyclic for the periodic
+                    condition), then a BSpline
     cubic_hermite.rs CubicHermiteSpline: the slopes are given
     cubic_spline.rs CubicSpline: the slopes from a tridiagonal system, then a PPoly of degree 3
     hermite.rs      from values and slopes to a cubic PPoly: the end of every cubic interpolator
@@ -45,6 +47,9 @@ tests/
                     input checks, repeated knots, extrapolation, properties
   akima.rs          Akima1D: SciPy's coefficients and values for both methods, input checks, the
                     rules for the slopes, columns kept apart, properties
+  bspline1d.rs      BSpline1D: SciPy's knots, control points, and values, input checks and their
+                    order, the knots of each case, agreement with CubicSpline and Linear1D,
+                    properties
   cubic_hermite.rs  CubicHermiteSpline: SciPy's coefficients and values, input checks with the
                     slopes, what is reproduced, the slopes of a CubicSpline, properties
   cubic_spline.rs   CubicSpline: SciPy's coefficients and values, input checks, few points,
@@ -66,6 +71,8 @@ benches/
   pchip.rs          time to build a PchipInterpolator, beside CubicSpline, and to evaluate it
   akima.rs          time to build an Akima1D (both methods), beside the other two, and to evaluate it
   cubic_hermite.rs  time to build a CubicHermiteSpline, beside PchipInterpolator, and to evaluate it
+  bspline1d.rs      time to build a BSpline1D (the banded solvers), beside CubicSpline, and to
+                    evaluate it
 compare/            Python side: pinned SciPy, data sets, generators, goldens (see the golden-data skill)
 docs/               design.ja.md, roadmap.md, conventions.md, adr/
 ```
@@ -83,5 +90,5 @@ docs/               design.ja.md, roadmap.md, conventions.md, adr/
 - **Input checks.** A 1D constructor calls `validate::coordinates_and_values`; it does not write its own order of checks. Its test file has one input that breaks two adjacent steps and expects the earlier error.
 - **Properties.** Property tests (`proptest`) are in the test file of the type. A method with a faster path (a hint, a batch) is compared bit for bit with the plain one.
 - **Benchmarks.** A bench file ends with `criterion_group!` and `criterion_main!`, allows `missing_docs` for that macro, and uses no `unwrap`, `expect`, or `panic` (the lints apply to benches).
-- **Golden data.** A new golden file is added to `FILES` in `tests/goldens.rs` and to `just gen-goldens`. One file holds 1 MB at most (`tests/goldens.rs`, `compare/common/golden.py`). A row whose cases would take a file over 90% of that splits the file by family first, in the same PR, and does not drop cases to fit (`calculus.json` and `cubic_spline.json` were split from `oned.json` this way; one generator may write several files). A test over every piecewise polynomial reads the files together with `common::load_cases(&common::PIECEWISE)`; a family that gets a file of its own is added to `PIECEWISE`. The unit tests of a crate-private module read a golden file through the same loader, as `crate::common`: `src/lib.rs` includes it once with `#[cfg(test)] #[path = "../tests/common/mod.rs"] mod common;` (an integration test cannot call a crate-private function; a file included from two modules is compiled twice, which clippy rejects; and inside a `mod tests` the path would start from a directory that does not exist, which fails on Linux and macOS).
+- **Golden data.** A new golden file is added to `FILES` in `tests/goldens.rs` and to `just gen-goldens`. One file holds 1 MB at most (`tests/goldens.rs`, `compare/common/golden.py`). A row whose cases would take a file over 90% of that splits the file by family first, in the same PR, and does not drop cases to fit (`calculus.json`, `cubic_spline.json`, and `bspline1d.json` were split from `oned.json` this way; one generator may write several files). A test over every piecewise polynomial or every B-spline reads the files together with `common::load_cases(&common::ONE_D)`; a family that gets a file of its own is added to `ONE_D`. The unit tests of a crate-private module read a golden file through the same loader, as `crate::common`: `src/lib.rs` includes it once with `#[cfg(test)] #[path = "../tests/common/mod.rs"] mod common;` (an integration test cannot call a crate-private function; a file included from two modules is compiled twice, which clippy rejects; and inside a `mod tests` the path would start from a directory that does not exist, which fails on Linux and macOS).
 - **Errors.** A new `InterpolateError` variant comes with the row that first returns it, together with its line in `docs/design.ja.md` §4 and its message test in `src/error.rs`.

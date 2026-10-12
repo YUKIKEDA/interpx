@@ -1,6 +1,7 @@
 //! Interpolators of data in one variable.
 
 mod akima;
+mod bspline1d;
 mod cubic_hermite;
 mod cubic_spline;
 mod hermite;
@@ -9,6 +10,7 @@ mod nearest;
 mod pchip;
 
 pub use akima::{Akima1D, AkimaMethod};
+pub use bspline1d::BSpline1D;
 pub use cubic_hermite::CubicHermiteSpline;
 pub use cubic_spline::CubicSpline;
 pub use linear::Linear1D;
