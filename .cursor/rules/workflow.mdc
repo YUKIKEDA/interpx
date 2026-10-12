@@ -24,6 +24,7 @@ Grill (when the design branches) → Issue → branch → work → PR → human 
 - `just lint`: `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`.
 - `just test`: `cargo test`. It never runs Python. Golden data is read from `compare/goldens/`.
 - `just coverage`: line coverage of at least 90% (`cargo-llvm-cov`). Raising the threshold is a new Issue.
+  - The table counts a generic function by the one instantiation that ran the most of its lines, not by all of them together. A function whose instantiations run different lines (a branch for zero dimensions) shows a missed line though every line ran. When the table and the per-line report (`cargo llvm-cov report --lcov`) disagree, compute which line it is from the exported data (`--json`) before saying why (`.cursor/rules/open-ends.mdc`). A `?` that never runs shows up the same way, and is a finding (`.cursor/rules/types.mdc`).
 - `just bench` is not a gate. CI does not run criterion.
 
 CI (`.github/workflows/ci.yml`) runs lint, tests on three OSes with `--no-default-features` and `--all-features`, the MSRV job, and coverage. After each merge, read `main`'s CI. A red `main` gets its own Issue and PR before the next merge.
@@ -41,7 +42,14 @@ CI (`.github/workflows/ci.yml`) runs lint, tests on three OSes with `--no-defaul
 
 A command expected to take more than a minute or two is announced with its expected time before it starts, or it runs in the background.
 
-Two rows that edit the same lines (the roadmap's **Current work**, one function) are opened one after the other. A second Issue that builds on an open PR gets its own branch and PR based on the first. A stacked PR is merged only after its base has merged. When the base merges, retarget the next PR to `main` first, then delete the merged branch.
+Two rows that edit the same lines (the roadmap's **Current work**, one function) are opened one after the other. A second Issue that builds on an open PR gets its own branch and PR based on the first. A stacked PR is merged only after its base has merged. When the base merges, retarget the next PR to `main` first, then delete the merged branch. After a stack has merged, compare `main` with the head of the last branch: a PR merged into a branch that had already merged does not reach `main`.
+
+Create an Issue before its number is written anywhere: a branch name, a commit, a PR body, an ADR. Issue and pull request numbers share one sequence, and the next one is not predictable. A PR body is written after `gh issue create` has returned the number, and a file that names the PR's own number is committed after `gh pr create` has returned it. Twice a body was written with the number expected (#69 for #70, #76 for #77) and had to be corrected after the PR was open.
+
+```text
+# BAD — write `Closes #76` into the body, then create the Issue, which gets #77
+# GOOD — create the Issue, read its number from the output, then write the body
+```
 
 ## Language
 

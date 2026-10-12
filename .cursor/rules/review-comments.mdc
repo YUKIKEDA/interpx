@@ -1,0 +1,22 @@
+---
+description: A review finding is about the pull request head it was written on
+alwaysApply: true
+---
+
+# Review findings
+
+A comment on a pull request is about that pull request's head. Read it against that head before calling the pull request ready to merge.
+
+A finding that asks for a change is still open when that head does not contain the change. Say so. A later pull request stacked above the head does not resolve it, and it is not a reason to merge while the change is absent. When the change is made on a branch above, the reply on the finding names that pull request, and the pull request below is not called ready until the owner has seen the reply.
+
+A finding that is tried and not adopted is answered with the measurement or the reason, on the pull request it was written on (`.cursor/rules/bench.mdc`).
+
+In M2 four pull requests were stacked and unmerged at once, and a finding on the second (#75) was worked on in the fourth (#80). It was answered on #75 with the measurement; it could as easily have been lost.
+
+```text
+# BAD
+The tie-break sentence is missing. A later pull request sits on this head, so merge.
+
+# GOOD
+The tie-break sentence is not in this head. The finding stays open.
+```

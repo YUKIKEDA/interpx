@@ -18,6 +18,8 @@ Prefer:
 - `const D: usize` for dimension, so a wrong-length point is a compile error. There is no run-time dimension-mismatch error.
 - A value type for several outputs (`[T; M]`), so a scalar `eval` on a multi-output interpolator cannot be written.
 
+- A function that cannot fail returns its value, not a `Result`. When one function serves a case that can fail and one that cannot, split it: the caller of the second has no error to pass on. A `?` that no input can take is the sign (it shows in the region coverage as never run). In M2-2 the knots of a spline were one fallible function for even and odd degrees, and the grid, which has odd degrees only, carried an error path that could not run.
+
 Not allowed:
 
 - A public method that panics because the caller used the wrong phase of the same type.

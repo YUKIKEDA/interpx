@@ -25,6 +25,7 @@ Read the rules that match the work. `alwaysApply` rules apply to every change. A
 | `git`                       | Destructive git needs a named order; commit and push only when asked          |
 | `conventional-commits`      | `type(scope): subject`; no `perf` type                                        |
 | `pull-requests`             | Title and six-heading body from the template                                  |
+| `review-comments`           | A finding is about the head it was written on; a stacked PR does not resolve it |
 | `github-closing`            | A closing verb before `#N` closes it; `Closes #N` alone on a line             |
 | `defer`                     | Deferral only as a named roadmap row                                          |
 | `scope`                     | Requirements decide scope; no half-shipped capability; one v0.1.0 release     |
