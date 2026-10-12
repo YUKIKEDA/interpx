@@ -366,7 +366,7 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
             GridMethod::Quintic => tensor(&axes, &values, &strides, 5).map(Rule::Spline),
             GridMethod::Pchip => slopes_along_last(&axes, &values).map(Rule::Pchip),
         }
-        .map_err(|fault| as_given(fault, &axes, &strides, &descending))?;
+        .map_err(|overflow| overflow.into_given(&axes, &strides, &descending))?;
         Ok(Self {
             axes,
             values,
@@ -677,38 +677,45 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
     }
 }
 
-/// An error of a method, which names a place in the grid as it is kept, with
-/// the place in the grid as it was given: along an axis that was given in
-/// descending order, point `i` of `n` was given as point `n - 1 - i`.
-fn as_given<T, const D: usize>(
-    fault: InterpolateError,
-    axes: &[Vec<T>; D],
-    strides: &[usize; D],
-    descending: &[bool; D],
-) -> InterpolateError {
-    let along = |d: usize, i: usize| {
-        if descending[d] {
-            axes[d].len() - 1 - i
-        } else {
-            i
-        }
-    };
-    match fault {
-        InterpolateError::NonFinite { index } => InterpolateError::NonFinite {
-            index: (0..D)
-                .map(|d| along(d, index / strides[d] % axes[d].len()) * strides[d])
-                .sum(),
-        },
-        InterpolateError::GridAxis {
-            axis,
-            fault: AxisFault::NonFinite { index },
-        } => InterpolateError::GridAxis {
-            axis,
-            fault: AxisFault::NonFinite {
-                index: along(axis, index),
+/// Where the construction of a method overflowed, in the grid as it is kept.
+enum Overflow {
+    /// A number worked out for this place of the values (a coefficient, a
+    /// slope) is not finite.
+    Value(usize),
+    /// The matrix of this axis could not be set up, from this row on.
+    Axis { axis: usize, row: usize },
+}
+
+impl Overflow {
+    /// The error for the caller, with the place in the grid as it was given:
+    /// along an axis that was given in descending order, point `i` of `n` was
+    /// given as point `n - 1 - i`.
+    fn into_given<T, const D: usize>(
+        self,
+        axes: &[Vec<T>; D],
+        strides: &[usize; D],
+        descending: &[bool; D],
+    ) -> InterpolateError {
+        let along = |d: usize, i: usize| {
+            if descending[d] {
+                axes[d].len() - 1 - i
+            } else {
+                i
+            }
+        };
+        match self {
+            Self::Value(index) => InterpolateError::NonFinite {
+                index: (0..D)
+                    .map(|d| along(d, index / strides[d] % axes[d].len()) * strides[d])
+                    .sum(),
             },
-        },
-        other => other,
+            Self::Axis { axis, row } => InterpolateError::GridAxis {
+                axis,
+                fault: AxisFault::NonFinite {
+                    index: along(axis, row),
+                },
+            },
+        }
     }
 }
 
@@ -722,13 +729,12 @@ fn as_given<T, const D: usize>(
 ///
 /// # Errors
 ///
-/// Returns [`InterpolateError::NonFinite`] with its position in the grid when
-/// a secant along the last axis overflows (the later of its two points), or a
-/// slope.
+/// Returns the place in the grid where a secant along the last axis
+/// overflows (the later of its two points), or a slope.
 fn slopes_along_last<T: Scalar, const D: usize, V: Value<T>>(
     axes: &[Vec<T>; D],
     values: &[V],
-) -> Result<Vec<V>, InterpolateError> {
+) -> Result<Vec<V>, Overflow> {
     let Some(axis) = axes.last() else {
         // No axes: one value, and no line.
         return Ok(Vec::new());
@@ -739,14 +745,11 @@ fn slopes_along_last<T: Scalar, const D: usize, V: Value<T>>(
     let per_width = hermite::per_widths(axis);
     let lines = values.chunks_exact(n).zip(slopes.chunks_exact_mut(n));
     for (l, (line, slopes)) in lines.enumerate() {
-        pchip::slopes(axis, &per_width, line, slopes).map_err(|index| {
-            InterpolateError::NonFinite {
-                index: l * n + index,
-            }
-        })?;
+        pchip::slopes(axis, &per_width, line, slopes)
+            .map_err(|index| Overflow::Value(l * n + index))?;
     }
     match slopes.iter().position(|slope| !slope.all_finite()) {
-        Some(index) => Err(InterpolateError::NonFinite { index }),
+        Some(index) => Err(Overflow::Value(index)),
         None => Ok(slopes),
     }
 }
@@ -764,18 +767,16 @@ fn slopes_along_last<T: Scalar, const D: usize, V: Value<T>>(
 ///
 /// # Errors
 ///
-/// Returns [`InterpolateError::GridAxis`] with [`AxisFault::NonFinite`] for an
-/// axis whose matrix cannot be factored (the matrix of an axis that passed the
-/// checks is regular; its entries are not finite when the coordinates are so
-/// far apart that their distance overflows), and
-/// [`InterpolateError::NonFinite`] with its position when a coefficient
-/// overflows.
+/// Returns the axis whose matrix cannot be factored, with the row (the matrix
+/// of an axis that passed the checks is regular; its entries are not finite
+/// when the coordinates are so far apart that their distance overflows), or
+/// the place of a coefficient that overflows.
 fn tensor<T: Scalar, const D: usize, V: Value<T>>(
     axes: &[Vec<T>; D],
     values: &[V],
     strides: &[usize; D],
     degree: usize,
-) -> Result<Tensor<T, D, V>, InterpolateError> {
+) -> Result<Tensor<T, D, V>, Overflow> {
     let mut coefficients = values.to_vec();
     let mut knots: [Vec<T>; D] = core::array::from_fn(|_| Vec::new());
     for (d, axis) in axes.iter().enumerate() {
@@ -783,9 +784,9 @@ fn tensor<T: Scalar, const D: usize, V: Value<T>>(
         let knots_of_axis = Collocation::knots_at_points(axis, degree, false, false);
         let system =
             Collocation::factor(axis, knots_of_axis, degree, None, None).map_err(|at| {
-                InterpolateError::GridAxis {
+                Overflow::Axis {
                     axis: d,
-                    fault: AxisFault::NonFinite { index: at.row },
+                    row: at.row,
                 }
             })?;
         if strides[d] == 1 {
@@ -798,7 +799,7 @@ fn tensor<T: Scalar, const D: usize, V: Value<T>>(
         knots[d] = system.knots;
     }
     if let Some(index) = coefficients.iter().position(|c| !c.all_finite()) {
-        return Err(InterpolateError::NonFinite { index });
+        return Err(Overflow::Value(index));
     }
     Ok(Tensor {
         degree,
