@@ -409,31 +409,43 @@ impl<T: Scalar> Collocation<T> {
         left: bool,
         right: bool,
     ) -> Result<Vec<T>, InterpolateError> {
+        if degree % 2 == 1 {
+            return Ok(Self::knots_at_points(x, degree, left, right));
+        }
+        let n = x.len();
+        let skip = degree / 2;
+        let two = T::one() + T::one();
+        let mut knots = Vec::with_capacity(n + degree + 1);
+        knots.resize(degree + 1, x[0]);
+        for (i, pair) in x.windows(2).enumerate() {
+            // Halved before they are added: the sum of two large coordinates
+            // would overflow. The result is the same otherwise.
+            let middle = between(pair[0] / two + pair[1] / two, i, pair[0], pair[1])?;
+            if (skip..n - 1 - skip).contains(&i) {
+                knots.push(middle);
+            }
+        }
+        knots.resize(n + degree + 1, x[n - 1]);
+        Ok(knots)
+    }
+
+    /// [`knots`](Collocation::knots) for an odd degree, whose knots are data
+    /// points: nothing to compute, and nothing that can fail. (A grid has odd
+    /// degrees only, and no error to pass on.)
+    pub(crate) fn knots_at_points(x: &[T], degree: usize, left: bool, right: bool) -> Vec<T> {
+        debug_assert!(degree % 2 == 1, "an odd degree");
         let n = x.len();
         let before = usize::from(left);
         let unknowns = n + before + usize::from(right);
         let mut knots = Vec::with_capacity(unknowns + degree + 1);
         knots.resize(degree + 1, x[0]);
-        if degree % 2 == 1 {
-            // With a derivative at an end (degree 3) the data point next to
-            // that end stays a knot.
-            let skip = degree.div_ceil(2);
-            let (first, last) = (skip - before, n - skip + (unknowns - n - before));
-            knots.extend_from_slice(&x[first..last]);
-        } else {
-            let skip = degree / 2;
-            let two = T::one() + T::one();
-            for (i, pair) in x.windows(2).enumerate() {
-                // Halved before they are added: the sum of two large
-                // coordinates would overflow. The result is the same otherwise.
-                let middle = between(pair[0] / two + pair[1] / two, i, pair[0], pair[1])?;
-                if (skip..n - 1 - skip).contains(&i) {
-                    knots.push(middle);
-                }
-            }
-        }
+        // With a derivative at an end (degree 3) the data point next to that
+        // end stays a knot.
+        let skip = degree.div_ceil(2);
+        let (first, last) = (skip - before, n - skip + (unknowns - n - before));
+        knots.extend_from_slice(&x[first..last]);
         knots.resize(unknowns + degree + 1, x[n - 1]);
-        Ok(knots)
+        knots
     }
 
     /// Sets up and factors the system for the data points `x` and their

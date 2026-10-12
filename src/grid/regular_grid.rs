@@ -585,7 +585,7 @@ fn tensor<T: Scalar, const D: usize, V: Value<T>>(
     let mut knots: [Vec<T>; D] = core::array::from_fn(|_| Vec::new());
     for (d, axis) in axes.iter().enumerate() {
         // An odd degree has its knots at the points of the axis.
-        let knots_of_axis = Collocation::knots(axis, degree, false, false)?;
+        let knots_of_axis = Collocation::knots_at_points(axis, degree, false, false);
         let system =
             Collocation::factor(axis, knots_of_axis, degree, None, None).map_err(|at| {
                 InterpolateError::GridAxis {
