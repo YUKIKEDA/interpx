@@ -30,9 +30,9 @@ const FILES: [&str; 12] = [
     "tridiagonal",
 ];
 
-/// docs/design.ja.md section 8.4 and `compare/common/golden.py`.
+/// docs/design.ja.md section 8.4, docs/adr/0010, and `compare/common/golden.py`.
 const MAX_FILE_BYTES: u64 = 1_000_000;
-const MAX_TOTAL_BYTES: u64 = 4_000_000;
+const MAX_TOTAL_BYTES: u64 = 8_000_000;
 
 fn all() -> Result<Vec<(&'static str, GoldenFile<Value>)>, String> {
     FILES
