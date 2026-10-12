@@ -5,8 +5,8 @@
 //! [`BoundaryCondition`]) and the two spline representations the 1D
 //! interpolators evaluate through: [`PPoly`], a piecewise polynomial, and
 //! [`BSpline`]. Both can be differentiated and integrated. The first
-//! interpolators built from data are [`Linear1D`] and [`Nearest1D`]; the others
-//! follow.
+//! interpolators built from data are [`Linear1D`], [`Nearest1D`], and
+//! [`CubicSpline`]; the others follow.
 //!
 //! # Examples
 //!
@@ -58,13 +58,6 @@ mod oned;
 mod ppoly;
 mod scalar;
 mod search;
-// Nothing in the library calls the solver until `CubicSpline` is added
-// (roadmap M1-8). `expect` fails the build once something does, so that this
-// attribute goes then. The module's own tests use all of it.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "first used by CubicSpline (M1-8)")
-)]
 mod tridiagonal;
 mod validate;
 mod value;
@@ -74,7 +67,7 @@ pub use bspline::{BSpline, BSPLINE_MAX_DEGREE};
 pub use error::{InterpolateError, ParamReason};
 pub use extrapolate::Extrapolate;
 pub use interpolator::Interpolator;
-pub use oned::{Linear1D, Nearest1D, NearestKind};
+pub use oned::{CubicSpline, Linear1D, Nearest1D, NearestKind};
 pub use ppoly::PPoly;
 pub use scalar::Scalar;
 pub use search::Hint;

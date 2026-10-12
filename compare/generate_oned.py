@@ -1,4 +1,4 @@
-"""Generate `goldens/oned.json` and `goldens/calculus.json`: layer-A goldens for the 1D interpolators.
+"""Generate `goldens/oned.json`, `cubic_spline.json`, and `calculus.json`: layer-A goldens for the 1D interpolators.
 
 Reference: SciPy 1.18 (`numpy.interp`, `interp1d` for the nearest kinds,
 `CubicSpline`, `PchipInterpolator`, `Akima1DInterpolator`, `CubicHermiteSpline`,
@@ -7,7 +7,8 @@ Reference: SciPy 1.18 (`numpy.interp`, `interp1d` for the nearest kinds,
 Each case stores the values at the queries and, where the reference has them, the
 first and second derivatives, the antiderivative, a few definite integrals, and
 the piecewise-polynomial or B-spline representation itself. The `calculus/*`
-cases, which go to `calculus.json` (one file has a size budget), store the derivatives and antiderivatives as objects (their coefficients, or
+cases, which go to `calculus.json` (one file has a size budget, and the
+`cubic_spline/*` cases have a file of their own for the same reason), store the derivatives and antiderivatives as objects (their coefficients, or
 knots and control points), derivatives of every order, and integrals that leave
 the domain or run over several periods.
 
@@ -151,7 +152,43 @@ def bspline_calculus(b, q: np.ndarray, limits: list[tuple[float, float]]) -> dic
 
 
 def bc_option(bc):
-    return bc if isinstance(bc, str) else [list(bc[0]), list(bc[1])]
+    """A boundary condition as JSON: a name, or one entry per end, each a name or [order, value]."""
+    if isinstance(bc, str):
+        return bc
+    return [end if isinstance(end, str) else [end[0], np.asarray(end[1], dtype=np.float64).tolist()] for end in bc]
+
+
+def spline_case(name: str, x, y, bc) -> dict:
+    """One `CubicSpline` case with everything a piecewise polynomial has."""
+    x, y = np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
+    p = si.CubicSpline(x, y, bc_type=bc)
+    q = queries_for(x, extend=0.6 if bc == "periodic" else 0.1)
+    return golden.case(
+        f"cubic_spline/{name}",
+        "scipy.interpolate.CubicSpline",
+        {"bc_type": bc_option(bc), "extrapolate": "periodic" if bc == "periodic" else True},
+        x=x,
+        y=y,
+        **ppoly_fields(p, x, q),
+    )
+
+
+def spline_columns_case(name: str, x, y, bc) -> dict:
+    """One `CubicSpline` case with several values per point: values and derivatives only."""
+    x, y = np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
+    p = si.CubicSpline(x, y, bc_type=bc)
+    q = queries_for(x, extend=0.6 if bc == "periodic" else 0.1)
+    return golden.case(
+        f"cubic_spline/{name}",
+        "scipy.interpolate.CubicSpline",
+        {"bc_type": bc_option(bc), "extrapolate": "periodic" if bc == "periodic" else True},
+        x=x,
+        y=y,
+        queries=q,
+        expected=p(q),
+        derivative_1=p(q, 1),
+        derivative_2=p(q, 2),
+    )
 
 
 def main() -> None:
@@ -243,6 +280,7 @@ def main() -> None:
             )
         )
 
+    splines = []
     # CubicSpline.
     bcs = [
         "natural",
@@ -255,7 +293,7 @@ def main() -> None:
         x, y = ds[name]
         q = queries_for(x)
         p = si.CubicSpline(x, y, bc_type="not-a-knot")
-        cases.append(
+        splines.append(
             golden.case(
                 f"cubic_spline/not-a-knot/{name}",
                 "scipy.interpolate.CubicSpline",
@@ -271,7 +309,7 @@ def main() -> None:
         for i, bc in enumerate(bcs):
             p = si.CubicSpline(x, y, bc_type=bc)
             label = bc if isinstance(bc, str) else f"derivative_{i}"
-            cases.append(
+            splines.append(
                 golden.case(
                     f"cubic_spline/{label}/{name}",
                     "scipy.interpolate.CubicSpline",
@@ -285,7 +323,7 @@ def main() -> None:
         x, y = ds[name]
         q = queries_for(x)
         p = si.CubicSpline(x, y, bc_type="not-a-knot", extrapolate=False)
-        cases.append(
+        splines.append(
             golden.case(
                 f"cubic_spline/not-a-knot/{name}/no_extrapolate",
                 "scipy.interpolate.CubicSpline",
@@ -298,7 +336,7 @@ def main() -> None:
     x, y = ds["periodic_13"]
     q = queries_for(x, extend=0.6)
     p = si.CubicSpline(x, y, bc_type="periodic")
-    cases.append(
+    splines.append(
         golden.case(
             "cubic_spline/periodic/periodic_13",
             "scipy.interpolate.CubicSpline",
@@ -308,6 +346,59 @@ def main() -> None:
             **ppoly_fields(p, x, q),
         )
     )
+
+    # Few points, where SciPy leaves the general set-up: two points, three with
+    # not-a-knot at both ends (a parabola), three periodic, and four periodic,
+    # the smallest cyclic system.
+    two = ([0.0, 2.0], [1.0, 4.0])
+    for label, bc in (
+        ("not-a-knot", "not-a-knot"),
+        ("natural", "natural"),
+        ("clamped", "clamped"),
+        ("first_and_second", ((1, 0.5), (2, -0.25))),
+        ("not-a-knot_and_first", ("not-a-knot", (1, 0.5))),
+    ):
+        splines.append(spline_case(f"{label}/two_points", *two, bc))
+    splines.append(spline_case("periodic/two_points", [0.0, 2.0], [1.0, 1.0], "periodic"))
+    three = ([0.0, 1.0, 3.0], [1.0, -1.0, 2.0])
+    for label, bc in (
+        ("not-a-knot", "not-a-knot"),
+        ("natural", "natural"),
+        ("not-a-knot_and_second", ("not-a-knot", (2, 0.5))),
+        ("first_and_not-a-knot", ((1, 0.3), "not-a-knot")),
+    ):
+        splines.append(spline_case(f"{label}/three_points", *three, bc))
+    splines.append(spline_case("periodic/three_points", [0.0, 1.0, 3.0], [1.0, -1.0, 1.0], "periodic"))
+    splines.append(spline_case("periodic/four_points", [0.0, 1.0, 1.5, 4.0], [1.0, -1.0, 2.0, 1.0], "periodic"))
+
+    # Not-a-knot at one end and a derivative at the other.
+    x, y = ds["random_20"]
+    splines.append(spline_case("not-a-knot_and_first/random_20", x, y, ("not-a-knot", (1, 0.5))))
+    splines.append(spline_case("second_and_not-a-knot/random_20", x, y, ((2, 0.25), "not-a-knot")))
+
+    # Spacings that alternate between 1 and 1e-3, and a periodic spline on random
+    # spacings.
+    rng = np.random.default_rng(SEED + 2)
+    x = np.cumsum(np.tile([1.0, 1e-3], 8))
+    splines.append(spline_case("not-a-knot/uneven_16", x, np.cos(x), "not-a-knot"))
+    splines.append(spline_case("natural/uneven_16", x, np.cos(x), "natural"))
+    x = np.concatenate([[0.0], np.cumsum(rng.uniform(0.05, 1.0, 14))])
+    y = rng.normal(size=15)
+    y[-1] = y[0]
+    splines.append(spline_case("periodic/random_15", x, y, "periodic"))
+
+    # Two values per point: a derivative at an end has one entry per column.
+    x = ds["sine_12"][0]
+    y2 = np.stack([np.sin(x), np.cos(2.0 * x)], axis=1)
+    splines.append(spline_columns_case("not-a-knot/sine_12/columns", x, y2, "not-a-knot"))
+    splines.append(spline_columns_case("natural/sine_12/columns", x, y2, "natural"))
+    splines.append(
+        spline_columns_case("first_and_second/sine_12/columns", x, y2, ((1, [0.5, -0.5]), (2, [0.0, 0.25])))
+    )
+    t = np.linspace(0.0, 2.0 * np.pi, 9)
+    circle = np.stack([np.cos(t), np.sin(t)], axis=1)
+    circle[-1] = circle[0]
+    splines.append(spline_columns_case("periodic/circle_9/columns", t, circle, "periodic"))
 
     # PCHIP.
     for name in non_periodic:
@@ -532,6 +623,8 @@ def main() -> None:
 
     path = golden.write("oned", GENERATOR, SEED, cases)
     print(f"wrote {path.name} ({len(cases)} cases)")
+    path = golden.write("cubic_spline", GENERATOR, SEED, splines)
+    print(f"wrote {path.name} ({len(splines)} cases)")
     path = golden.write("calculus", GENERATOR, SEED, calculus)
     print(f"wrote {path.name} ({len(calculus)} cases)")
 

@@ -1,8 +1,11 @@
 //! Boundary conditions of a spline.
 
-use crate::Scalar;
+use crate::{Scalar, Value};
 
 /// The condition at one end of a spline.
+///
+/// `V` is the type of the values the spline interpolates: a derivative at an
+/// end has a value of that type, so one number per column for an array.
 ///
 /// # Examples
 ///
@@ -14,13 +17,13 @@ use crate::Scalar;
 /// assert_ne!(end, EndCondition::NotAKnot);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum EndCondition<T> {
+pub enum EndCondition<V> {
     /// The first two pieces at this end are one polynomial.
     NotAKnot,
     /// The first derivative at this end has the given value.
-    FirstDerivative(T),
+    FirstDerivative(V),
     /// The second derivative at this end has the given value.
-    SecondDerivative(T),
+    SecondDerivative(V),
 }
 
 /// The boundary conditions of a spline.
@@ -28,6 +31,9 @@ pub enum EndCondition<T> {
 /// SciPy's `bc_type`. The default is [`BoundaryCondition::NotAKnot`], as in SciPy.
 /// A periodic spline is periodic at both ends, so there is no way to ask for one
 /// periodic end.
+///
+/// `V` is the type of the values the spline interpolates, as in
+/// [`EndCondition`].
 ///
 /// # Examples
 ///
@@ -52,19 +58,26 @@ pub enum EndCondition<T> {
 /// assert_ne!(mixed, natural);
 ///
 /// assert_eq!(BoundaryCondition::<f64>::default(), BoundaryCondition::NotAKnot);
+///
+/// // For a spline of two columns, a slope for each.
+/// let slopes = BoundaryCondition::Ends(
+///     EndCondition::FirstDerivative([1.0, 0.0]),
+///     EndCondition::NotAKnot,
+/// );
+/// assert_ne!(slopes, BoundaryCondition::<[f64; 2]>::clamped());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum BoundaryCondition<T> {
+pub enum BoundaryCondition<V> {
     /// Not-a-knot at both ends.
     #[default]
     NotAKnot,
     /// The spline and its derivatives match at the two ends.
     Periodic,
     /// A condition for the left end, then one for the right end.
-    Ends(EndCondition<T>, EndCondition<T>),
+    Ends(EndCondition<V>, EndCondition<V>),
 }
 
-impl<T: Scalar> BoundaryCondition<T> {
+impl<V> BoundaryCondition<V> {
     /// Returns the natural boundary: zero second derivative at both ends.
     ///
     /// # Examples
@@ -76,8 +89,11 @@ impl<T: Scalar> BoundaryCondition<T> {
     /// assert_eq!(BoundaryCondition::natural(), BoundaryCondition::Ends(end, end));
     /// ```
     #[must_use]
-    pub fn natural() -> Self {
-        let end = EndCondition::SecondDerivative(T::zero());
+    pub fn natural<T: Scalar>() -> Self
+    where
+        V: Value<T>,
+    {
+        let end = EndCondition::SecondDerivative(V::zero());
         Self::Ends(end, end)
     }
 
@@ -92,8 +108,11 @@ impl<T: Scalar> BoundaryCondition<T> {
     /// assert_eq!(BoundaryCondition::clamped(), BoundaryCondition::Ends(end, end));
     /// ```
     #[must_use]
-    pub fn clamped() -> Self {
-        let end = EndCondition::FirstDerivative(T::zero());
+    pub fn clamped<T: Scalar>() -> Self
+    where
+        V: Value<T>,
+    {
+        let end = EndCondition::FirstDerivative(V::zero());
         Self::Ends(end, end)
     }
 }

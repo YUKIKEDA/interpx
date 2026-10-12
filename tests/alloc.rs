@@ -14,8 +14,8 @@
 //! A row that adds an interpolator adds it to `main`.
 
 use interpx::{
-    BSpline, Extrapolate, Hint, InterpolateError, Interpolator, Linear1D, Nearest1D, NearestKind,
-    PPoly,
+    BSpline, BoundaryCondition, CubicSpline, Extrapolate, Hint, InterpolateError, Interpolator,
+    Linear1D, Nearest1D, NearestKind, PPoly,
 };
 use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
 use std::alloc::System;
@@ -245,6 +245,40 @@ fn main() -> Result<(), InterpolateError> {
             std::hint::black_box(scalar.as_ppoly());
         });
         assert_eq!(n, 0, "Linear1D {mode:?}: eval_hinted or as_ppoly allocates");
+
+        // CubicSpline: evaluation is that of its PPoly, through the spline's
+        // own methods. Building it allocates; that happens before `check`.
+        for bc in [BoundaryCondition::NotAKnot, BoundaryCondition::Periodic] {
+            let x = [0.0, 0.5, 1.0, 1.5, 2.0];
+            let scalar =
+                CubicSpline::new(&x, &[1.0, -1.0, 4.0, 0.0, 1.0], bc)?.with_extrapolate(mode);
+            check(
+                &format!("CubicSpline<f64> {bc:?} {mode:?}"),
+                &scalar,
+                &at_points,
+                f64::NAN,
+            );
+            let n = allocations(|| {
+                let mut hint = Hint::new();
+                for x in at_points {
+                    std::hint::black_box(scalar.eval_hinted(x, &mut hint));
+                }
+                std::hint::black_box(scalar.as_ppoly());
+            });
+            assert_eq!(
+                n, 0,
+                "CubicSpline {mode:?}: eval_hinted or as_ppoly allocates"
+            );
+        }
+        let columns = [[1.0_f64, 2.0], [3.0, 4.0], [0.0, 0.5], [1.0, 2.0]];
+        let array = CubicSpline::new(&[0.0, 1.0, 1.5, 2.0], &columns, BoundaryCondition::Periodic)?
+            .with_extrapolate(mode);
+        check(
+            &format!("CubicSpline<f64, [f64; 2]> {mode:?}"),
+            &array,
+            &at_points,
+            [f64::NAN; 2],
+        );
 
         for kind in [
             NearestKind::Nearest,

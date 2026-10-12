@@ -3,12 +3,28 @@
 use crate::Scalar;
 use core::fmt::Debug;
 
-mod sealed {
+pub(crate) mod sealed {
     use crate::Scalar;
 
-    pub trait Sealed<T> {}
-    impl<T: Scalar> Sealed<T> for T {}
-    impl<T: Scalar, const M: usize> Sealed<T> for [T; M] {}
+    /// Seals [`Value`](super::Value), and holds what the crate needs from a
+    /// value and callers do not.
+    pub trait Sealed<T> {
+        /// Whether every column of `self` is within `tolerance * (1 + |b|)` of
+        /// the same column `b` of `other`.
+        fn within(&self, other: &Self, tolerance: T) -> bool;
+    }
+
+    impl<T: Scalar> Sealed<T> for T {
+        fn within(&self, other: &Self, tolerance: T) -> bool {
+            (*self - *other).abs() <= tolerance * (T::one() + other.abs())
+        }
+    }
+
+    impl<T: Scalar, const M: usize> Sealed<T> for [T; M] {
+        fn within(&self, other: &Self, tolerance: T) -> bool {
+            self.iter().zip(other).all(|(a, b)| a.within(b, tolerance))
+        }
+    }
 }
 
 /// A value an interpolator returns: a scalar `T`, or an array `[T; M]` of them.

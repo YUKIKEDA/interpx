@@ -68,5 +68,9 @@ name = "nearest"
 harness = false
 
 [[bench]]
+name = "cubic_spline"
+harness = false
+
+[[bench]]
 name = "bspline"
 harness = false

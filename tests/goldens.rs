@@ -15,8 +15,9 @@ use std::collections::BTreeSet;
 
 /// The files `just gen-goldens` writes. A generator that stops writing its file,
 /// or a file nobody generates, fails `every_expected_file_exists_and_no_other`.
-const FILES: [&str; 9] = [
+const FILES: [&str; 10] = [
     "calculus",
+    "cubic_spline",
     "curve",
     "datasets",
     "functions",
@@ -415,9 +416,9 @@ const AT_DATA: common::Tol = common::Tol {
 
 #[test]
 fn one_dimensional_goldens_reproduce_the_data_at_the_knots() {
-    let file = load::<Value>("oned").expect("golden file oned");
+    let all_cases = common::load_cases(&common::PIECEWISE).expect("golden files");
     let mut checked = 0;
-    for case in &file.cases {
+    for case in &all_cases {
         let name = case["name"].as_str().expect("name");
         let (Some(x), Some(y), Some(q), Some(e)) = (
             case.get("x"),
