@@ -79,23 +79,41 @@ struct Scaling<const D: usize> {
 impl<const D: usize> Scaling<D> {
     /// The mean of the points on each axis, and their range. An axis on which
     /// all points agree keeps its scale.
-    fn of(points: &[[f64; D]]) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InterpolateError::NonFinite`] when the sum of the coordinates
+    /// of an axis overflows (with the point at which it does), or their range
+    /// (with the point that has the largest coordinate). With a mean or a
+    /// range that is not finite every point would land on one place, or on
+    /// none.
+    fn of(points: &[[f64; D]]) -> Result<Self, InterpolateError> {
         let count = points.len() as f64;
         let mut offset = [0.0; D];
         let mut scale = [1.0; D];
         for d in 0..D {
             let (mut sum, mut least, mut most) = (0.0, f64::INFINITY, f64::NEG_INFINITY);
-            for point in points {
+            let mut largest = 0;
+            for (index, point) in points.iter().enumerate() {
                 sum += point[d];
+                if !sum.is_finite() {
+                    return Err(InterpolateError::NonFinite { index });
+                }
                 least = least.min(point[d]);
-                most = most.max(point[d]);
+                if point[d] > most {
+                    (most, largest) = (point[d], index);
+                }
             }
             offset[d] = sum / count;
-            if most - least > 0.0 {
-                scale[d] = most - least;
+            let range = most - least;
+            if !range.is_finite() {
+                return Err(InterpolateError::NonFinite { index: largest });
+            }
+            if range > 0.0 {
+                scale[d] = range;
             }
         }
-        Self { offset, scale }
+        Ok(Self { offset, scale })
     }
 
     fn apply(&self, point: &[f64; D]) -> [f64; D] {
@@ -155,7 +173,11 @@ impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {
     ///
     /// # Errors
     ///
-    /// Those of [`new`](NearestNDInterpolator::new).
+    /// Those of [`new`](NearestNDInterpolator::new), and then
+    /// [`InterpolateError::NonFinite`] when the mean or the range of the
+    /// coordinates of an axis overflows. Its `index` is that of a point at
+    /// which it does: the one that takes the sum of the axis past the largest
+    /// number, or the one with the largest coordinate.
     ///
     /// # Examples
     ///
@@ -204,7 +226,11 @@ impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {
         }
 
         let first = first_of_each(points);
-        let scaling = rescale.then(|| Scaling::of(points));
+        let scaling = if rescale {
+            Some(Scaling::of(points)?)
+        } else {
+            None
+        };
         let kept: Vec<[f64; D]> = first
             .iter()
             .map(|i| {
@@ -268,8 +294,10 @@ impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {
 
     /// Returns the number of points given. See [`NearestNDInterpolator`] for
     /// an example.
-    // A constructor refuses an empty set of points: there is no `is_empty`.
-    #[allow(clippy::len_without_is_empty)]
+    #[expect(
+        clippy::len_without_is_empty,
+        reason = "a constructor refuses an empty set of points"
+    )]
     pub fn len(&self) -> usize {
         self.values.len()
     }
