@@ -10,7 +10,7 @@ A PR is opened when its work is finished, not when it runs. Two sentences do not
 - "The speed was not tuned." A PR that adds a path (an evaluation, a construction) times its stages before it is opened: cut the path short stage by stage, see where the time goes, tune what stands out, and report the numbers before and after. What is left is stated with a number and the reason it stays (`.cursor/rules/bench.mdc`).
 - "The cause is not confirmed." A figure the agent cannot explain (a coverage count, a tolerance that is missed, a benchmark that disagrees with its neighbors) is traced to its cause from the data before the PR is opened. A guess is not written as an explanation, with or without "probably".
 
-What is out of the row's scope is a roadmap row that names when (`.cursor/rules/defer.mdc`), not a caveat.
+What is out of the row's scope is a roadmap row that names when (`.cursor/rules/defer.mdc`), not a caveat. This rule is about the code the row adds or changes. A finding about code the row did not change becomes its own Issue at once, and the row goes on (`.cursor/rules/pace.mdc`).
 
 On M2-2 a PR was opened with both sentences. The owner asked why. Timing the stages found that four fifths of the construction was one step done a line at a time (three times faster once fixed), and computing the coverage figure from the data found an error path that could never run.
 

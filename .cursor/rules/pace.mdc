@@ -1,0 +1,59 @@
+---
+description: One investigation does not hold the rest of the work; what is outside the row is split off, long runs go to the side
+alwaysApply: true
+---
+
+# Keep the work moving
+
+The owner's time is the scarce thing. A row is finished when its own work is done and measured. Everything else that turns up is written down and handed on, and the row goes on.
+
+## What belongs to the row, and what is split off
+
+`.cursor/rules/open-ends.mdc` asks that a PR time its stages and explain its figures. That is about the code the row adds or changes. A finding about code the row did not change is another piece of work, however it was found:
+
+1. Say what was measured, in the Issue: the numbers, what was tried, what is known and what is not.
+2. Create the Issue at once, and a roadmap row that names it (`.cursor/rules/defer.mdc`). Say whether it blocks the rows after it.
+3. Go on with the row. The PR body points to the Issue; it does not carry the investigation.
+
+The test is one question: would this be there if the row had never been written? The slow batch of the grid was there for every method since M2-1. M2-3 (`pchip`) only made it visible, and still spent an hour on it before its PR was opened.
+
+```text
+# BAD — the batch is 15 ns a point slower than a loop over eval_hinted, for every method.
+#       Four rewrites, 40 minutes, the feature PR waits.
+# GOOD — the same finding: Issue #90 with the numbers and the two probes already made,
+#        a roadmap row, one line in the PR. The feature PR is opened.
+```
+
+## A limit on an investigation
+
+An investigation inside the row has a limit too. After two attempts that change nothing, stop and decide, before a third:
+
+- The cause is known and the fix is not worth it: write the numbers and leave it.
+- The cause is not known: it needs another tool (a profile, a disassembly), not another rewrite. If the figure is the row's own, use the tool now. If not, split it off as above.
+
+Report to the owner at that point, in a line: what stands, what was tried, what happens next. Do not go on silently.
+
+A measurement that was made on one kind of input says nothing about another. Choose the inputs before measuring (for a method whose time depends on the values: values in no order and smooth values), so that the same question is not measured twice.
+
+## Long runs do not hold the working tree
+
+A benchmark, a mutation run, or a script that rewrites a source file and restores it keeps the tree busy for minutes. While it runs in the working tree, nothing else can be edited there, and the work stands still.
+
+- Run it in the background (`run_in_background`), never in the foreground with a wait loop.
+- Run it on a copy of the tree: `git worktree add` for a committed state, or a copy of `src`, `benches`, `tests`, `Cargo.toml`, and `Cargo.lock` in the scratchpad for an uncommitted one, with its own `--target-dir`. The working tree stays free.
+- While it runs, do what does not depend on its result: the tests, the documents, the PR body, the next Issue, the next grill. Name that work before starting the run.
+- Runs that need a quiet machine (benchmarks that are compared) do not overlap each other. A run that only needs to pass or fail (tests, mutation checks, lint) can overlap anything.
+
+## Work side by side
+
+Two pieces of work that share no file and need no answer from each other go on together: a rules PR and a feature, a design PR waiting for review and the code stacked on it, CI on one PR and the next row's grill. Waiting for CI or for a review is not work; start the next thing and come back when it reports.
+
+The next row's grill is presented as soon as the current row's PR is open. It does not wait for the merge.
+
+## Before a long run, a short one
+
+A script that will run for ten minutes is run for ten seconds first: parse it (`python -c "import ast, sys; ast.parse(open(sys.argv[1]).read())"`), or run it on one case. A script written by another script is written with the Write tool instead: nested quoting failed twice in M2-3, and one failure was only seen after a ten-minute wait. Look at the output of a background run within its first minute.
+
+## Before a commit, the branch
+
+`git branch --show-current` is part of the command that commits. A command chain that creates a branch can fail before it does, and the commit then lands on `main` (M2-3: the push was refused, the commit was moved).
