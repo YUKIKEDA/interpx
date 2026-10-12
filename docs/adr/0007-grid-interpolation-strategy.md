@@ -18,3 +18,10 @@ SciPy 1.18 `RegularGridInterpolator` supports `linear`, `nearest`, `slinear`, `c
 ## Consequences
 
 Evaluation is cheap for the spline methods. `pchip` keeps SciPy's results at the cost of per-evaluation work.
+
+## Amendments
+
+The decision above is kept as it was written. What later rows changed:
+
+- **M2-2 (#77), 2026-10-12.** `slinear` solves nothing. It is the same function as `linear`, and `GridMethod::Linear` stands for both (`docs/design.ja.md` §6.4).
+- **M2-3 (#85), 2026-10-12.** `pchip` keeps the slopes along the last axis, found at construction, beside the values: twice the memory of the grid, as for `cubic`. The first fold, along the last axis, is of the values themselves, so its slopes do not depend on the point. The folds along the earlier axes are of folded values and stay at evaluation, from a local stencil of four points an axis at most. Measured on a prototype, keeping the slopes makes an evaluation 1.6 times as fast in 2D and twice as fast in 3D and 4D (`docs/design.ja.md` §6.4 has the figures). The axis order is SciPy's, and the results are the same.
