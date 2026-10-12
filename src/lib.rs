@@ -52,10 +52,10 @@
 
 mod banded;
 mod boundary;
+mod bspline;
 // The golden loader of the integration tests, for the unit tests of the
 // crate-private modules (an integration test cannot call their functions).
 // Declared here once: a file included from two modules is compiled twice.
-mod bspline;
 #[cfg(test)]
 #[path = "../tests/common/mod.rs"]
 mod common;
