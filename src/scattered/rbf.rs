@@ -567,9 +567,10 @@ impl RbfOptions {
 /// # Cost
 ///
 /// Construction solves a dense system: with `n` points, a matrix of `n * n`
-/// numbers (800 MB at 10 000 points) and a time that grows with the cube of
-/// `n`. An evaluation takes one kernel for every point. This suits up to a
-/// few thousand points.
+/// numbers (800 MB at 10 000 points, 80 GB at 100 000) and a time that grows
+/// with the cube of `n`. A matrix that the machine has no memory for is not
+/// an error: as for any allocation in Rust, the process stops. An evaluation
+/// takes one kernel for every point. This suits up to a few thousand points.
 ///
 /// # Points
 ///
@@ -671,7 +672,9 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
     /// - [`InterpolateError::DuplicatePoints`] when two points have the same
     ///   coordinates.
     /// - [`InterpolateError::InvalidParameter`] for `points` when the matrix of
-    ///   the system would be larger than can be allocated.
+    ///   the system would be larger than a `Vec` can hold (`isize::MAX` bytes).
+    ///   Running out of memory under that limit is not an error: the process
+    ///   stops (see "Cost" on [`RBFInterpolator`]).
     /// - [`InterpolateError::SolverFailed`] when the system has no solution, or
     ///   not one alone: the points do not tell the monomials apart (all in a
     ///   line along an axis, with a polynomial of degree 1), or the kernel was
