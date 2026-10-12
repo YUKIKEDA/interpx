@@ -21,13 +21,64 @@ pub(crate) fn secant<T: Scalar, V: Value<T>>(
     per_width: &mut [T],
 ) -> Result<V, InterpolateError> {
     per_width[i] = (x[i + 1] - x[i]).recip();
+    finite_secant(y, i, per_width).map_err(|index| InterpolateError::NonFinite { index })
+}
+
+/// The reciprocal of the width of every interval of `x`, as [`secant`] leaves
+/// them: for a caller with many lines of values on the same coordinates, which
+/// finds them once.
+pub(crate) fn per_widths<T: Scalar>(x: &[T]) -> Vec<T> {
+    x.windows(2)
+        .map(|pair| (pair[1] - pair[0]).recip())
+        .collect()
+}
+
+/// [`secant`] from the reciprocals of the widths, for a caller that has them
+/// ([`per_widths`]) and its own way to name the place: a line of a grid is at
+/// an offset in the values of the grid.
+///
+/// # Errors
+///
+/// Returns the later of the two points when the secant overflows.
+pub(crate) fn finite_secant<T: Scalar, V: Value<T>>(
+    y: &[V],
+    i: usize,
+    per_width: &[T],
+) -> Result<V, usize> {
     let rise = y[i + 1].axpy(-T::one(), y[i]);
     let secant = V::zero().axpy(per_width[i], rise);
     if secant.all_finite() {
         Ok(secant)
     } else {
-        Err(InterpolateError::NonFinite { index: i + 1 })
+        Err(i + 1)
     }
+}
+
+/// The cubic of one interval from the values and the slopes at its two ends,
+/// highest power first, in the distance from the lower end. `per_width` is the
+/// reciprocal of the width of the interval.
+///
+/// With the secant `d` of an interval of width `h` and the slopes `s0`, `s1` at
+/// its ends, and `t = (s0 + s1 - 2 d) / h`, the piece is
+/// `(t / h) dx^3 + ((d - s0) / h - t) dx^2 + s0 dx + y0`: SciPy's
+/// `CubicHermiteSpline`.
+pub(crate) fn piece<T: Scalar, V: Value<T>>(per_width: T, y: [V; 2], slopes: [V; 2]) -> [V; 4] {
+    let two = T::one() + T::one();
+    let [left, right] = slopes;
+    let secant = V::zero().axpy(per_width, y[1].axpy(-T::one(), y[0]));
+    // (s0 + s1 - 2 secant) / h
+    let t = V::zero().axpy(per_width, left.axpy(T::one(), right).axpy(-two, secant));
+    let cubic = V::zero().axpy(per_width, t);
+    let square = V::zero()
+        .axpy(per_width, secant.axpy(-T::one(), left))
+        .axpy(-T::one(), t);
+    [cubic, square, left, y[0]]
+}
+
+/// The value of a [`piece`] at the distance `dx` from the lower end of its
+/// interval, by Horner's rule: the steps of [`PPoly`], to the same bits.
+pub(crate) fn at<T: Scalar, V: Value<T>>(piece: &[V; 4], dx: T) -> V {
+    piece.iter().fold(V::zero(), |acc, c| c.axpy(dx, acc))
 }
 
 /// Builds the cubic piecewise polynomial through `(x[i], y[i])` with the slopes
@@ -48,10 +99,7 @@ pub(crate) fn secant<T: Scalar, V: Value<T>>(
 /// secants there). The secants this function needs it computes itself, from
 /// `y` and `per_width`; it must not come to read them from `buffer`.
 ///
-/// With the secant `d` of an interval of width `h` and the slopes `s0`, `s1` at
-/// its ends, and `t = (s0 + s1 - 2 d) / h`, the piece is
-/// `(t / h) dx^3 + ((d - s0) / h - t) dx^2 + s0 dx + y0`: SciPy's
-/// `CubicHermiteSpline`.
+/// Each interval gets its [`piece`].
 ///
 /// # Errors
 ///
@@ -65,21 +113,11 @@ pub(crate) fn into_ppoly<T: Scalar, V: Value<T>>(
 ) -> Result<PPoly<T, V>, InterpolateError> {
     let n = x.len();
     debug_assert_eq!(buffer.len(), 4 * (n - 1));
-    let two = T::one() + T::one();
     // The first interval with a coefficient that is not finite: the loop goes
     // down, so the last one it finds.
     let mut overflowed = None;
     for i in (0..n - 1).rev() {
-        let per_width = per_width[i];
-        let secant = V::zero().axpy(per_width, y[i + 1].axpy(-T::one(), y[i]));
-        let (left, right) = (buffer[i], buffer[i + 1]);
-        // (s[i] + s[i + 1] - 2 secant) / h
-        let t = V::zero().axpy(per_width, left.axpy(T::one(), right).axpy(-two, secant));
-        let cubic = V::zero().axpy(per_width, t);
-        let square = V::zero()
-            .axpy(per_width, secant.axpy(-T::one(), left))
-            .axpy(-T::one(), t);
-        let piece = [cubic, square, left, y[i]];
+        let piece = piece(per_width[i], [y[i], y[i + 1]], [buffer[i], buffer[i + 1]]);
         if !piece.iter().all(V::all_finite) {
             overflowed = Some(i);
         }

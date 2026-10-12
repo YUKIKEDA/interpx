@@ -310,8 +310,8 @@ fn main() -> Result<(), InterpolateError> {
             assert_eq!(n, 0, "Akima1D {mode:?}: eval_hinted or as_ppoly allocates");
         }
 
-        // RegularGridInterpolator: both methods, scalar and array values, 2
-        // and 3 dimensions.
+        // RegularGridInterpolator: the methods that take two points an
+        // axis, scalar and array values, 2 and 3 dimensions.
         let (side, other) = ([0.0_f64, 0.5, 1.0, 2.0], [0.0_f64, 1.0, 1.5]);
         let on_grid: Vec<f64> = (0..36).map(|n| f64::from(n % 7) - 2.0).collect();
         let in_grid = [
@@ -322,7 +322,7 @@ fn main() -> Result<(), InterpolateError> {
             [9.0, 9.0, 9.0],
             [f64::NAN, 0.5, 0.5],
         ];
-        for method in [GridMethod::Linear, GridMethod::Nearest] {
+        for method in [GridMethod::Linear, GridMethod::Nearest, GridMethod::Pchip] {
             let cube = RegularGridInterpolator::new(
                 [&side[..], &other[..], &other[..]],
                 &on_grid,

@@ -24,7 +24,7 @@ Golden data is the committed record of what SciPy 1.18 returns, so that `cargo t
   | `generate_datasets.py` | `datasets.json`, `functions.json` | inputs only; values of the analytic test functions |
   | `generate_oned.py` | `oned.json`, `cubic_spline.json`, `bspline1d.json`, `calculus.json` | `numpy.interp`, `interp1d` (nearest kinds), `CubicSpline`, `PchipInterpolator`, `Akima1DInterpolator`, `CubicHermiteSpline`, `make_interp_spline` |
   | `generate_curve.py` | `curve.json` | `make_interp_spline` with several outputs |
-  | `generate_grid.py` | `grid.json` | `RegularGridInterpolator`, six methods, 2D to 4D |
+  | `generate_grid.py` | `grid.json`, `grid_pchip.json` | `RegularGridInterpolator`, six methods, 2D to 4D; the cases chosen for `pchip`, with `PchipInterpolator` applied axis by axis where an axis has fewer than four points |
   | `generate_scattered.py` | `scattered.json` | `NearestNDInterpolator`, `LinearNDInterpolator`, `CloughTocher2DInterpolator` |
   | `generate_rbf.py` | `rbf.json` | `RBFInterpolator`, eight kernels |
   | `generate_tridiagonal.py` | `tridiagonal.json` | `scipy.linalg.solve_banded` on tridiagonal systems, a dense solve for the cyclic ones |
@@ -41,7 +41,9 @@ Beyond `expected` at the `queries`, the 1D cases store `derivative_1`, `derivati
 
 ## Where SciPy's default is not the reference
 
-`RegularGridInterpolator` with `cubic` or `quintic` uses an iterative sparse solver by default. Its result is about 1e-5 away from the tensor-product spline on uniform 2D grids and up to about 1e-2 away on non-uniform and 3D grids. `expected` for these two methods is computed with `solver=scipy.sparse.linalg.spsolve` (it agrees with the `*_legacy` methods to 1e-13), and the default's result is kept as `expected_scipy_default`. interpx is compared with `expected` (`docs/design.ja.md` §6.4).
+`RegularGridInterpolator` with `cubic` or `quintic` uses an iterative sparse solver by default. Its result is about 1e-5 away from the tensor-product spline on uniform 2D grids and up to about 1e-2 away on non-uniform and 3D grids. `expected` for these two methods comes from `cubic_legacy` and `quintic_legacy`, which interpolate along one axis after the other, and the default's result is kept as `expected_scipy_default`. interpx is compared with `expected`. A direct sparse solve (`solver=scipy.sparse.linalg.spsolve`) gives the same spline less accurately, and is only checked to be close (`docs/design.ja.md` §6.4).
+
+`RegularGridInterpolator` with `pchip` refuses an axis of fewer than four points, and interpx takes two. For those cases `expected` is `PchipInterpolator` applied by hand, the last axis first (`fold` in `generate_grid.py`); on the grids SciPy takes, the generator asserts that the two are equal.
 
 When a new reference looks inexact, check the interpolation property first (the reference must return the data at a data point); `tests/goldens.rs` does this for every file.
 

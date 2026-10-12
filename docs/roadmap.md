@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M2-3.
+M3-1.
 
 ## Dependencies
 
@@ -44,7 +44,8 @@ M2-3.
 | ---- | ---- | ------------------------------------------------------------------------------------------------------ | ----- | ------ |
 | M2-1 | Feat | `RegularGridInterpolator`: shape, C-order values, `nearest`, `linear`, `Extrapolate`                   | #74   | Done   |
 | M2-2 | Feat | `RegularGridInterpolator`: `cubic`, `quintic` (tensor-product coefficients at construction)            | #79   | Done   |
-| M2-3 | Feat | `RegularGridInterpolator`: `pchip` (last-axis slopes kept, the other axes folded at evaluation)        |       | Todo   |
+| M2-3 | Feat | `RegularGridInterpolator`: `pchip` (last-axis slopes kept, the other axes folded at evaluation)        | #87   | Done   |
+| M2-4 | Task | Grid `eval_batch_into` on a path: close the gap to a loop over `eval_hinted` (does not block M3)       | #90   | Todo   |
 
 ## M3: Scattered, without `convx`
 

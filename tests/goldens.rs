@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 
 /// The files `just gen-goldens` writes. A generator that stops writing its file,
 /// or a file nobody generates, fails `every_expected_file_exists_and_no_other`.
-const FILES: [&str; 12] = [
+const FILES: [&str; 13] = [
     "banded",
     "bspline1d",
     "calculus",
@@ -24,6 +24,7 @@ const FILES: [&str; 12] = [
     "datasets",
     "functions",
     "grid",
+    "grid_pchip",
     "oned",
     "rbf",
     "scattered",
@@ -482,9 +483,9 @@ fn grid_goldens_reproduce_the_values_at_the_grid_nodes() {
     // This is the check that found SciPy's default solver for `cubic` and
     // `quintic` to be about 1e-5 away from the spline: `expected` must be the
     // interpolant, so it must return the data at a node for every method.
-    let file = load::<Value>("grid").expect("golden file grid");
+    let cases = common::load_cases(&["grid", "grid_pchip"]).expect("golden files of the grid");
     let mut checked = 0;
-    for case in &file.cases {
+    for case in &cases {
         let name = case["name"].as_str().expect("name");
         let axes = rows(&case["axes"]);
         let values = nums(&case["values"]);
