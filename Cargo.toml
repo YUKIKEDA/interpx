@@ -72,5 +72,9 @@ name = "cubic_spline"
 harness = false
 
 [[bench]]
+name = "pchip"
+harness = false
+
+[[bench]]
 name = "bspline"
 harness = false

@@ -424,6 +424,54 @@ def main() -> None:
         )
     )
 
+    # PCHIP on data chosen for its rules: few points, flat runs and turns (a zero
+    # slope), monotone data, and ends where the three-point estimate is cut to
+    # zero or to three times the secant, on the left and on the right.
+    rng = np.random.default_rng(SEED + 3)
+    shapes = {
+        "two_points": ([0.0, 2.0], [1.0, 4.0]),
+        "three_points": ([0.0, 1.0, 3.0], [1.0, -1.0, 2.0]),
+        "three_points_rising": ([0.0, 1.0, 3.0], [0.0, 1.0, 5.0]),
+        "flat_and_turns": ([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0], [0.0, 0.0, 1.0, 3.0, 3.0, 2.0, 2.0, 5.0]),
+        "end_zero": ([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 10.0, 11.0]),
+        "end_limited": ([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, -10.0, -9.0]),
+        "end_zero_right": ([0.0, 1.0, 2.0, 3.0], [11.0, 10.0, 1.0, 0.0]),
+        "end_limited_right": ([0.0, 1.0, 2.0, 3.0], [-9.0, -10.0, 1.0, 0.0]),
+    }
+    x = np.concatenate([[0.0], np.cumsum(rng.uniform(0.1, 2.0, 11))])
+    shapes["monotone_12"] = (x, np.cumsum(np.maximum(rng.normal(0.5, 1.0, 12), 0.0)))
+    for name, (x, y) in shapes.items():
+        x, y = np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
+        p = si.PchipInterpolator(x, y, extrapolate=True)
+        cases.append(
+            golden.case(
+                f"pchip/{name}",
+                "scipy.interpolate.PchipInterpolator",
+                {"extrapolate": True},
+                x=x,
+                y=y,
+                **ppoly_fields(p, x, queries_for(x)),
+            )
+        )
+    # Two values per point: each column has its own signs, and so its own slopes.
+    x, y = ds["random_20"]
+    y2 = np.stack([y, np.cos(x)], axis=1)
+    q = queries_for(x)
+    p = si.PchipInterpolator(x, y2, extrapolate=True)
+    cases.append(
+        golden.case(
+            "pchip/random_20/columns",
+            "scipy.interpolate.PchipInterpolator",
+            {"extrapolate": True},
+            x=x,
+            y=y2,
+            queries=q,
+            expected=p(q),
+            derivative_1=p(q, 1),
+            derivative_2=p(q, 2),
+        )
+    )
+
     # Akima and makima.
     for method in ("akima", "makima"):
         for name in ("fritsch_carlson", "titanium", "runge_11", "random_20", "step_11"):
