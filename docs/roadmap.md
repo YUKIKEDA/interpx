@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M1-12.
+M1-13.
 
 ## Dependencies
 
@@ -21,21 +21,22 @@ M1-12.
 
 ## M1: Core, 1D, and curve
 
-| ID    | Kind | Title                                                                                                                                            | Issue | Status |
-| ----- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----- | ------ |
-| M1-1  | Task | Golden pipeline and data sets: pinned SciPy 1.18, layer-A goldens for every family, `tests/common`                                               | #2    | Done   |
-| M1-2  | Feat | `Scalar`, `Value`, `Interpolator`, `InterpolateError`, `Extrapolate`, `BoundaryCondition`, `tests/alloc.rs` harness, restore the CI coverage job | #11   | Done   |
-| M1-3  | Feat | `PPoly` (interval-major layout, Horner evaluation, `Hint`) and the shared input checks in their fixed order                                      | #14   | Done   |
-| M1-4  | Feat | `BSpline` (de Boor) and `PPoly` ⇄ `BSpline` conversion                                                                                           | #18   | Done   |
-| M1-5  | Feat | `derivative`, `antiderivative`, `integrate`, `eval_derivative` on `PPoly` and `BSpline`                                                          | #23   | Done   |
-| M1-6  | Feat | Tridiagonal solver (Thomas, periodic via Sherman-Morrison)                                                                                       | #28   | Done   |
-| M1-7  | Feat | `Linear1D` and `Nearest1D` (nearest, nearest-up, previous, next)                                                                                 | #35   | Done   |
-| M1-8  | Feat | `CubicSpline` (NotAKnot, Periodic, first or second derivative at each end)                                                                       | #40   | Done   |
-| M1-9  | Feat | `PchipInterpolator`                                                                                                                              | #45   | Done   |
-| M1-10 | Feat | `Akima1D` (including makima)                                                                                                                     | #50   | Done   |
-| M1-11 | Feat | `CubicHermiteSpline`                                                                                                                             | #55   | Done   |
-| M1-12 | Feat | `BSpline1D` (degrees 1 to 15), and the banded LU with partial pivoting it solves with                                                            |       | Todo   |
-| M1-13 | Feat | `BSplineCurve<T, D>`                                                                                                                             |       | Todo   |
+| ID    | Kind | Title                                                                                                                                            | Issue    | Status |
+| ----- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | ------ |
+| M1-1  | Task | Golden pipeline and data sets: pinned SciPy 1.18, layer-A goldens for every family, `tests/common`                                               | #2       | Done   |
+| M1-2  | Feat | `Scalar`, `Value`, `Interpolator`, `InterpolateError`, `Extrapolate`, `BoundaryCondition`, `tests/alloc.rs` harness, restore the CI coverage job | #11      | Done   |
+| M1-3  | Feat | `PPoly` (interval-major layout, Horner evaluation, `Hint`) and the shared input checks in their fixed order                                      | #14      | Done   |
+| M1-4  | Feat | `BSpline` (de Boor) and `PPoly` ⇄ `BSpline` conversion                                                                                           | #18      | Done   |
+| M1-5  | Feat | `derivative`, `antiderivative`, `integrate`, `eval_derivative` on `PPoly` and `BSpline`                                                          | #23      | Done   |
+| M1-6  | Feat | Tridiagonal solver (Thomas, periodic via Sherman-Morrison)                                                                                       | #28      | Done   |
+| M1-7  | Feat | `Linear1D` and `Nearest1D` (nearest, nearest-up, previous, next)                                                                                 | #35      | Done   |
+| M1-8  | Feat | `CubicSpline` (NotAKnot, Periodic, first or second derivative at each end)                                                                       | #40      | Done   |
+| M1-9  | Feat | `PchipInterpolator`                                                                                                                              | #45      | Done   |
+| M1-10 | Feat | `Akima1D` (including makima)                                                                                                                     | #50      | Done   |
+| M1-11 | Feat | `CubicHermiteSpline`                                                                                                                             | #55      | Done   |
+| M1-12 | Feat | `BSpline1D` (degrees 1 to 15), and the banded LU with partial pivoting it solves with                                                            | #64, #60 | Done   |
+| M1-13 | Feat | `BSplineCurve<T, D>`                                                                                                                             |          | Todo   |
+| M1-14 | Task | Golden data budget: the directory is near its 4 MB limit; raise the limit or keep part of the goldens out of the package                         |          | Todo   |
 
 ## M2: Regular grid
 

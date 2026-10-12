@@ -51,7 +51,10 @@ pub(crate) fn coordinates_values_and_slopes<T: Scalar, V: Value<T>>(
 }
 
 /// Step 1 for one input: its length against the one the coordinates fix.
-fn length<V>(input: &[V], expected: usize) -> Result<(), InterpolateError> {
+///
+/// On its own for a constructor that checks its other arguments between this
+/// step and the next (`BSpline1D`: the fewest points depend on the degree).
+pub(crate) fn length<V>(input: &[V], expected: usize) -> Result<(), InterpolateError> {
     if input.len() == expected {
         Ok(())
     } else {

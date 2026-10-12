@@ -101,9 +101,10 @@ pub fn load_cases(names: &[&str]) -> Result<Vec<serde_json::Value>, String> {
     Ok(cases)
 }
 
-/// The golden files that hold piecewise polynomials: `breakpoints` and
-/// `coefficients` beside the values.
-pub const PIECEWISE: [&str; 2] = ["oned", "cubic_spline"];
+/// The golden files of the 1D interpolators. A test over every piecewise
+/// polynomial (`breakpoints` and `coefficients` beside the values) or over
+/// every B-spline (`knots` and `control_points`) reads them together.
+pub const ONE_D: [&str; 3] = ["oned", "cubic_spline", "bspline1d"];
 
 /// A fixed relative and absolute tolerance, written in the test that uses it
 /// (`.cursor/rules/numeric-tests.mdc`). Never derive it from the constant the

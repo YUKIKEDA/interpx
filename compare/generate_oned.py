@@ -1,4 +1,4 @@
-"""Generate `goldens/oned.json`, `cubic_spline.json`, and `calculus.json`: layer-A goldens for the 1D interpolators.
+"""Generate `goldens/oned.json`, `cubic_spline.json`, `bspline1d.json`, and `calculus.json`: layer-A goldens for the 1D interpolators.
 
 Reference: SciPy 1.18 (`numpy.interp`, `interp1d` for the nearest kinds,
 `CubicSpline`, `PchipInterpolator`, `Akima1DInterpolator`, `CubicHermiteSpline`,
@@ -8,7 +8,7 @@ Each case stores the values at the queries and, where the reference has them, th
 first and second derivatives, the antiderivative, a few definite integrals, and
 the piecewise-polynomial or B-spline representation itself. The `calculus/*`
 cases, which go to `calculus.json` (one file has a size budget, and the
-`cubic_spline/*` cases have a file of their own for the same reason), store the derivatives and antiderivatives as objects (their coefficients, or
+`cubic_spline/*` and `bspline/*` cases have files of their own for the same reason), store the derivatives and antiderivatives as objects (their coefficients, or
 knots and control points), derivatives of every order, and integrals that leave
 the domain or run over several periods.
 
@@ -740,13 +740,15 @@ def main() -> None:
         )
     )
 
+    # A file of their own: `bspline1d.json`.
+    bsplines = []
     # make_interp_spline, degrees 1 to 5.
     for name in ("fritsch_carlson", "titanium", "random_20", "sine_12", "runge_11"):
         x, y = ds[name]
         q = queries_for(x)
         for k in range(1, 6):
             b = si.make_interp_spline(x, y, k=k)
-            cases.append(
+            bsplines.append(
                 golden.case(
                     f"bspline/k{k}/{name}",
                     "scipy.interpolate.make_interp_spline",
@@ -761,7 +763,7 @@ def main() -> None:
         q = queries_for(x)
         for bc in ("not-a-knot", "natural", "clamped"):
             b = si.make_interp_spline(x, y, k=3, bc_type=bc)
-            cases.append(
+            bsplines.append(
                 golden.case(
                     f"bspline/k3/{bc}/{name}",
                     "scipy.interpolate.make_interp_spline",
@@ -774,7 +776,7 @@ def main() -> None:
     x, y = ds["fritsch_carlson"]
     q = queries_for(x)
     b = si.make_interp_spline(x, y, k=3)
-    cases.append(
+    bsplines.append(
         golden.case(
             "bspline/k3/fritsch_carlson/no_extrapolate",
             "scipy.interpolate.make_interp_spline",
@@ -792,7 +794,7 @@ def main() -> None:
     x, y = ds["periodic_13"]
     q = queries_for(x, extend=0.6)
     b = si.make_interp_spline(x, y, k=3, bc_type="periodic")
-    cases.append(
+    bsplines.append(
         golden.case(
             "bspline/k3/periodic/periodic_13",
             "scipy.interpolate.make_interp_spline",
@@ -802,6 +804,121 @@ def main() -> None:
             **bspline_fields(b, x, q, periodic=True),
         )
     )
+
+    # Chosen for `BSpline1D`. Fewer queries than above: the file has a size budget.
+    def interp_case(name: str, x, y, k: int, bc=None) -> dict:
+        x, y = np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
+        periodic = bc == "periodic"
+        # A derivative at an end is (order, value), as for `CubicSpline`;
+        # `make_interp_spline` takes a list of such pairs per end.
+        lists = bc if bc is None or isinstance(bc, str) else ([bc[0]], [bc[1]])
+        b = si.make_interp_spline(x, y, k=k, bc_type=lists)
+        q = queries_for(x, n=15, extend=0.6 if periodic else 0.1)
+        return golden.case(
+            f"bspline/{name}",
+            "scipy.interpolate.make_interp_spline",
+            {"k": k, "bc_type": None if bc is None else bc_option(bc), "extrapolate": "periodic" if periodic else True},
+            x=x,
+            y=y,
+            **bspline_fields(b, x, q, periodic=periodic),
+        )
+
+    def interp_columns_case(name: str, x, y, k: int, bc=None) -> dict:
+        """Several values per point: values and derivatives only."""
+        x, y = np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
+        periodic = bc == "periodic"
+        b = si.make_interp_spline(x, y, k=k, bc_type=bc)
+        q = queries_for(x, n=15, extend=0.6 if periodic else 0.1)
+        return golden.case(
+            f"bspline/{name}",
+            "scipy.interpolate.make_interp_spline",
+            {"k": k, "bc_type": None if bc is None else bc_option(bc), "extrapolate": "periodic" if periodic else True},
+            x=x,
+            y=y,
+            queries=q,
+            expected=b(q),
+            derivative_1=b(q, 1),
+            derivative_2=b(q, 2),
+        )
+
+    def one_sided_case(name: str, x, y, bc) -> dict:
+        """Degree 3 with not-a-knot at one end and a derivative at the other.
+        `make_interp_spline` does not take it; `CubicSpline` gives the curve."""
+        x, y = np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
+        p = si.CubicSpline(x, y, bc_type=bc)
+        q = queries_for(x, n=15)
+        return golden.case(
+            f"bspline/{name}",
+            "scipy.interpolate.CubicSpline",
+            {"k": 3, "bc_type": bc_option(bc), "extrapolate": True},
+            x=x,
+            y=y,
+            queries=q,
+            expected=p(q),
+            derivative_1=p(q, 1),
+            derivative_2=p(q, 2),
+        )
+
+    # Degrees over 5.
+    for name in ("sine_12", "random_20"):
+        for k in (6, 7):
+            bsplines.append(interp_case(f"k{k}/{name}", *ds[name], k))
+    # As many points as one polynomial of the degree takes.
+    rng = np.random.default_rng(SEED + 4)
+    for k in (2, 3, 4, 5):
+        x = np.cumsum(rng.uniform(0.3, 1.2, k + 1))
+        bsplines.append(interp_case(f"k{k}/fewest_points", x, rng.normal(size=k + 1), k))
+    # Widths that alternate between 1 and 1e-2.
+    x = np.cumsum(np.concatenate([[0.0], np.tile([1.0, 1e-2], 8)]))
+    for k in (2, 3, 5):
+        bsplines.append(interp_case(f"k{k}/uneven_17", x, np.sin(x), k))
+
+    # Periodic, the other degrees (degree 1 is left out: SciPy does not make it
+    # periodic, see the design).
+    x, y = ds["periodic_13"]
+    for k in (2, 4, 5):
+        bsplines.append(interp_case(f"k{k}/periodic/periodic_13", x, y, k, "periodic"))
+    x = np.concatenate([[0.0], np.cumsum(rng.uniform(0.05, 1.0, 14))])
+    y = rng.normal(size=15)
+    y[-1] = y[0]
+    for k in (2, 3, 5):
+        bsplines.append(interp_case(f"k{k}/periodic/random_15", x, y, k, "periodic"))
+    # Few points: as many unknowns as the degree or fewer, so that the band of
+    # the cyclic matrix wraps onto itself; one more; and a constant.
+    four = ([0.0, 1.0, 1.5, 4.0], [1.0, -1.0, 2.0, 1.0])
+    for k in (2, 3, 4, 5):
+        bsplines.append(interp_case(f"k{k}/periodic/four_points", *four, k, "periodic"))
+    bsplines.append(interp_case("k2/periodic/three_points", [0.0, 1.0, 3.0], [1.0, -1.0, 1.0], 2, "periodic"))
+    for k in (2, 3):
+        bsplines.append(interp_case(f"k{k}/periodic/two_points", [0.0, 2.0], [1.5, 1.5], k, "periodic"))
+
+    # Degree 3 with derivatives at the ends that are not zero, and with the
+    # fewest points.
+    x, y = ds["random_20"]
+    bsplines.append(interp_case("k3/first_and_second/random_20", x, y, 3, ((1, 0.5), (2, -0.25))))
+    x, y = ds["sine_12"]
+    bsplines.append(interp_case("k3/second_and_first/sine_12", x, y, 3, ((2, 1.0), (1, -2.0))))
+    bsplines.append(interp_case("k3/first_and_first/two_points", [0.0, 2.0], [1.0, 3.0], 3, ((1, -1.0), (1, 0.5))))
+    bsplines.append(
+        interp_case("k3/second_and_second/three_points", [0.0, 1.0, 3.0], [1.0, -1.0, 2.0], 3, ((2, 0.5), (2, -1.0)))
+    )
+    # Not-a-knot at one end.
+    x, y = ds["random_20"]
+    bsplines.append(one_sided_case("k3/not-a-knot_and_first/random_20", x, y, ("not-a-knot", (1, 0.5))))
+    bsplines.append(one_sided_case("k3/second_and_not-a-knot/random_20", x, y, ((2, 0.25), "not-a-knot")))
+    bsplines.append(
+        one_sided_case("k3/first_and_not-a-knot/three_points", [0.0, 1.0, 3.0], [1.0, -1.0, 2.0], ((1, 0.5), "not-a-knot"))
+    )
+
+    # Two columns.
+    x = ds["sine_12"][0]
+    y2 = np.stack([np.sin(x), np.cos(2.0 * x)], axis=1)
+    bsplines.append(interp_columns_case("k3/sine_12/columns", x, y2, 3))
+    bsplines.append(interp_columns_case("k4/sine_12/columns", x, y2, 4))
+    t = np.linspace(0.0, 2.0 * np.pi, 9)
+    circle = np.stack([np.cos(t), np.sin(t)], axis=1)
+    circle[-1] = circle[0]
+    bsplines.append(interp_columns_case("k5/periodic/circle_9/columns", t, circle, 5, "periodic"))
 
     # Conversion between the two representations.
     for name in ("sine_12", "random_20"):
@@ -881,6 +998,8 @@ def main() -> None:
 
     path = golden.write("oned", GENERATOR, SEED, cases)
     print(f"wrote {path.name} ({len(cases)} cases)")
+    path = golden.write("bspline1d", GENERATOR, SEED, bsplines)
+    print(f"wrote {path.name} ({len(bsplines)} cases)")
     path = golden.write("cubic_spline", GENERATOR, SEED, splines)
     print(f"wrote {path.name} ({len(splines)} cases)")
     path = golden.write("calculus", GENERATOR, SEED, calculus)

@@ -22,11 +22,13 @@ Golden data is the committed record of what SciPy 1.18 returns, so that `cargo t
   | Generator | File | Reference |
   | --- | --- | --- |
   | `generate_datasets.py` | `datasets.json`, `functions.json` | inputs only; values of the analytic test functions |
-  | `generate_oned.py` | `oned.json` | `numpy.interp`, `interp1d` (nearest kinds), `CubicSpline`, `PchipInterpolator`, `Akima1DInterpolator`, `CubicHermiteSpline`, `make_interp_spline` |
+  | `generate_oned.py` | `oned.json`, `cubic_spline.json`, `bspline1d.json`, `calculus.json` | `numpy.interp`, `interp1d` (nearest kinds), `CubicSpline`, `PchipInterpolator`, `Akima1DInterpolator`, `CubicHermiteSpline`, `make_interp_spline` |
   | `generate_curve.py` | `curve.json` | `make_interp_spline` with several outputs |
   | `generate_grid.py` | `grid.json` | `RegularGridInterpolator`, six methods, 2D to 4D |
   | `generate_scattered.py` | `scattered.json` | `NearestNDInterpolator`, `LinearNDInterpolator`, `CloughTocher2DInterpolator` |
   | `generate_rbf.py` | `rbf.json` | `RBFInterpolator`, eight kernels |
+  | `generate_tridiagonal.py` | `tridiagonal.json` | `scipy.linalg.solve_banded` on tridiagonal systems, a dense solve for the cyclic ones |
+  | `generate_banded.py` | `banded.json` | LAPACK `dgbsv` on banded systems, a dense solve for the cyclic ones |
 
 - `compare/check_goldens.py`: run last; checks the 4 MB total and that every file has a generator.
 - `tests/common/mod.rs`: `load::<Case>(name)` (returns `Result`; tests `.expect` it), `golden_dir`, `Real` (a number or `"NaN"`, `"Infinity"`, `"-Infinity"`), `reals`, `Tol`, `DIRECT_F64`, `close`, `assert_close`. `tests/common/functions.rs` holds Rust copies of the analytic functions.

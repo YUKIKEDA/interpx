@@ -126,7 +126,7 @@ fn check_integrals(v: &Json, what: &str, f: impl Fn(f64, f64) -> Option<f64>) ->
 
 #[test]
 fn scipy_piecewise_polynomials_differentiate_and_integrate_to_the_golden_values() {
-    let all_cases = common::load_cases(&common::PIECEWISE).expect("golden files");
+    let all_cases = common::load_cases(&common::ONE_D).expect("golden files");
     let (mut cases, mut integrals, mut modes) = (0, 0, std::collections::BTreeSet::new());
     for case in &all_cases {
         let name = case["name"].as_str().expect("name");
@@ -174,9 +174,9 @@ fn scipy_piecewise_polynomials_differentiate_and_integrate_to_the_golden_values(
 
 #[test]
 fn scipy_b_splines_differentiate_and_integrate_to_the_golden_values() {
-    let file = load::<Json>("oned").expect("golden file oned");
+    let all_cases = common::load_cases(&common::ONE_D).expect("golden files");
     let (mut cases, mut second, mut integrals) = (0, 0, 0);
-    for case in &file.cases {
+    for case in &all_cases {
         let name = case["name"].as_str().expect("name");
         if case.get("knots").is_none() || case.get("expected").is_none() {
             continue;
@@ -221,11 +221,11 @@ fn scipy_b_splines_differentiate_and_integrate_to_the_golden_values() {
         }
         cases += 1;
     }
-    assert_eq!(cases, 33, "the cases tests/bspline.rs evaluates");
+    assert_eq!(cases, 61, "the cases tests/bspline.rs evaluates");
     // Degree 1 has no second derivative in the file, nor has the case without
-    // extrapolation; the periodic case and that one have no integrals.
-    assert_eq!(second, 27);
-    assert_eq!(integrals, 31 * 4);
+    // extrapolation; the 14 periodic cases and that one have no integrals.
+    assert_eq!(second, 55);
+    assert_eq!(integrals, 46 * 4);
 }
 
 /// The derivatives of one curve case with `D` outputs per point.
