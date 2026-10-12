@@ -9,12 +9,20 @@
 //! The spline methods read 4 or 6 coefficients an axis: 16 to 256 for the
 //! cubic in 2 to 4 dimensions, 36 to 1296 for the quintic.
 //!
+//! `pchip` evaluates a cubic on 4, 16, or 64 lines along the last axis, and
+//! folds the results along each earlier axis: 1, 5, or 21 folds, each with two
+//! slopes to find. A slope is zero where the values turn, and a division
+//! otherwise, so the time depends on the values: `pchip` is on values in no
+//! order, where about half the slopes are zero and the test for it cannot be
+//! predicted, and `pchip_smooth` on a smooth function of the coordinates.
+//!
 //! Construction of the linear method copies the axes and the values and
 //! solves nothing; it is timed once per dimension, with one axis given in
 //! descending order (its values are reordered). The spline methods solve for
 //! their coefficients, one banded system an axis for every line of the grid:
 //! `grid_new_2d` times that for 10 to 400 points an axis (the cubic) and 10
-//! and 40 (the quintic), and the three-dimensional grid once.
+//! and 40 (the quintic), and the three-dimensional grid once. `pchip` finds
+//! the slopes along the last axis, and is timed on the same grids.
 //!
 //! Run with `just bench`. Not a gate; CI does not run it.
 
@@ -74,13 +82,27 @@ fn dimension<const D: usize>(c: &mut Criterion, points_per_axis: usize) {
     let mut group = c.benchmark_group(format!("grid_{D}d"));
     group.throughput(Throughput::Elements(n as u64));
     let mut out = vec![0.0; n];
-    for (label, method) in [
-        ("linear", GridMethod::Linear),
-        ("nearest", GridMethod::Nearest),
-        ("cubic", GridMethod::Cubic),
-        ("quintic", GridMethod::Quintic),
+    // A smooth function of the coordinates on the same grid.
+    let smooth: Vec<f64> = (0..count)
+        .map(|flat| {
+            let mut rest = flat;
+            let mut sum = 0.0;
+            for axis in axes.iter().rev() {
+                sum += (0.05 * axis[rest % points_per_axis]).sin();
+                rest /= points_per_axis;
+            }
+            sum
+        })
+        .collect();
+    for (label, method, values) in [
+        ("linear", GridMethod::Linear, &values),
+        ("nearest", GridMethod::Nearest, &values),
+        ("cubic", GridMethod::Cubic, &values),
+        ("quintic", GridMethod::Quintic, &values),
+        ("pchip", GridMethod::Pchip, &values),
+        ("pchip_smooth", GridMethod::Pchip, &smooth),
     ] {
-        let Ok(grid) = RegularGridInterpolator::new(slices, &values, method) else {
+        let Ok(grid) = RegularGridInterpolator::new(slices, values, method) else {
             return;
         };
         for (order, points) in [("path", &path), ("shuffled", &shuffled)] {
@@ -138,6 +160,7 @@ fn spline_construction(c: &mut Criterion) {
     for (label, method, sizes) in [
         ("cubic", GridMethod::Cubic, &[10, 40, 100, 200, 400][..]),
         ("quintic", GridMethod::Quintic, &[10, 40][..]),
+        ("pchip", GridMethod::Pchip, &[10, 40, 100, 200, 400][..]),
         ("linear", GridMethod::Linear, &[400][..]),
     ] {
         for n in sizes {
@@ -165,6 +188,7 @@ fn spline_construction(c: &mut Criterion) {
     for (label, method) in [
         ("cubic", GridMethod::Cubic),
         ("quintic", GridMethod::Quintic),
+        ("pchip", GridMethod::Pchip),
     ] {
         group.bench_function(format!("{label}/40"), |b| {
             b.iter(|| {

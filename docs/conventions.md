@@ -32,7 +32,8 @@ src/
                     here (crate-private)
     linear.rs       Linear1D: numpy.interp; holds a PPoly of degree 1
     nearest.rs      Nearest1D and NearestKind: nearest, nearest-up, previous, next
-    pchip.rs        PchipInterpolator: shape-preserving slopes, column by column
+    pchip.rs        PchipInterpolator: shape-preserving slopes, column by column; the same
+                    from a window of four points, for the grid (crate-private)
   curve/            parametric curves through points (a private module; mod.rs re-exports)
     bspline_curve.rs BSplineCurve and Parametrization: the parameters from the points, then a
                     BSpline1D with points for values
@@ -40,7 +41,9 @@ src/
                     re-exports)
     regular_grid.rs RegularGridInterpolator and GridMethod: axes kept ascending, values in C
                     order, the interval of each axis from `search`; the spline methods solve
-                    their coefficients axis by axis with the collocation system of BSpline1D
+                    their coefficients axis by axis with the collocation system of BSpline1D;
+                    pchip keeps the slopes of the last axis and folds the earlier axes at
+                    evaluation with the window of `oned::pchip`
   bspline.rs        BSpline: basis functions on the stack, derivatives and integrals;
                     PPoly::from_bspline and BSpline::from_ppoly
 tests/
@@ -59,7 +62,8 @@ tests/
                     chooses, input checks and their order, motions and reversal, properties
   grid.rs           RegularGridInterpolator: SciPy's values for every method, input checks and
                     their order, the layout of the values, the modes outside the grid, the
-                    spline methods against BSpline1D, properties
+                    spline methods against BSpline1D, pchip against PchipInterpolator applied
+                    axis by axis, properties
   bspline1d.rs      BSpline1D: SciPy's knots, control points, and values, input checks and their
                     order, the knots of each case, agreement with CubicSpline and Linear1D,
                     properties

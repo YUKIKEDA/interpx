@@ -1,6 +1,6 @@
 //! Shape-preserving cubic interpolation of data in one variable.
 
-use super::hermite::{self, secant};
+use super::hermite::{self, finite_secant};
 use crate::{Extrapolate, Hint, InterpolateError, Interpolator, PPoly, Scalar, Value};
 
 /// The shape-preserving cubic interpolant through data points: piecewise cubic
@@ -91,35 +91,12 @@ impl<T: Scalar, V: Value<T>> PchipInterpolator<T, V> {
     /// ```
     pub fn new(x: &[T], y: &[V]) -> Result<Self, InterpolateError> {
         crate::validate::coordinates_and_values(x, y, x.len(), 2)?;
-        let n = x.len();
-        let last = n - 1;
+        let last = x.len() - 1;
         // The slopes go where the coefficients will be (`hermite::into_ppoly`).
         let mut buffer = vec![V::zero(); 4 * last];
-        let mut per_width = vec![T::zero(); last];
-        let width = |i: usize| x[i + 1] - x[i];
-
-        // The inner points. The secants of the first two and the last two
-        // intervals are kept for the ends.
-        let mut before = secant(x, y, 0, &mut per_width)?;
-        let mut first = [before; 2];
-        let mut tail = [before; 2];
-        for (i, slope) in buffer.iter_mut().enumerate().take(last).skip(1) {
-            let after = secant(x, y, i, &mut per_width)?;
-            *slope = inner_slope(width(i - 1), width(i), before, after);
-            if i == 1 {
-                first[1] = after;
-            }
-            tail = [before, after];
-            before = after;
-        }
-        if n == 2 {
-            // The line through the two points.
-            buffer[0] = first[0];
-            buffer[1] = first[0];
-        } else {
-            buffer[0] = end_slope(width(0), width(1), first[0], first[1]);
-            buffer[last] = end_slope(width(last - 1), width(last - 2), tail[1], tail[0]);
-        }
+        let per_width = hermite::per_widths(x);
+        slopes(x, &per_width, y, &mut buffer)
+            .map_err(|index| InterpolateError::NonFinite { index })?;
         Ok(Self {
             poly: hermite::into_ppoly(x, y, buffer, &per_width)?,
         })
@@ -212,6 +189,131 @@ impl<T: Scalar, V: Value<T>> PchipInterpolator<T, V> {
     /// ```
     pub fn eval_hinted(&self, x: T, hint: &mut Hint) -> Option<V> {
         self.poly.eval_hinted(x, hint)
+    }
+}
+
+/// Writes the slope at every point of `(x[i], y[i])` to the first `x.len()`
+/// entries of `slopes`. `per_width` has the reciprocal of the width of every
+/// interval ([`hermite::per_widths`]).
+///
+/// `x` and `y` have passed the input checks, with two points at least.
+///
+/// # Errors
+///
+/// Returns the later point of the first interval whose secant overflows.
+pub(crate) fn slopes<T: Scalar, V: Value<T>>(
+    x: &[T],
+    per_width: &[T],
+    y: &[V],
+    slopes: &mut [V],
+) -> Result<(), usize> {
+    let n = x.len();
+    let last = n - 1;
+    let width = |i: usize| x[i + 1] - x[i];
+
+    // The inner points. The secants of the first two and the last two
+    // intervals are kept for the ends.
+    let mut before = finite_secant(y, 0, per_width)?;
+    let mut first = [before; 2];
+    let mut tail = [before; 2];
+    for (i, slope) in slopes.iter_mut().enumerate().take(last).skip(1) {
+        let after = finite_secant(y, i, per_width)?;
+        *slope = inner_slope(width(i - 1), width(i), before, after);
+        if i == 1 {
+            first[1] = after;
+        }
+        tail = [before, after];
+        before = after;
+    }
+    if n == 2 {
+        // The line through the two points.
+        slopes[0] = first[0];
+        slopes[1] = first[0];
+    } else {
+        slopes[0] = end_slope(width(0), width(1), first[0], first[1]);
+        slopes[last] = end_slope(width(last - 1), width(last - 2), tail[1], tail[0]);
+    }
+    Ok(())
+}
+
+/// What an evaluation in one interval takes of the coordinates of a line.
+///
+/// The interpolant in an interval depends on the two points of the interval
+/// and on one more on each side, where there is one: the slope at a point
+/// looks no farther than its neighbors. So the values at a window of four
+/// points at most give what a [`PchipInterpolator`] through the whole line
+/// would, to the same bits, without building it. A grid folds the values of
+/// one axis this way at each evaluation.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Local<T> {
+    /// The first point of the window.
+    pub(crate) first: usize,
+    /// How many points the window has: 2 to 4.
+    pub(crate) len: usize,
+    /// Where in the window the lower point of the interval is: 0 or 1.
+    at: usize,
+    /// The widths of the intervals of the window, and their reciprocals.
+    widths: [T; 3],
+    per_width: [T; 3],
+    /// Whether the upper point of the interval is the last of the line.
+    ends: bool,
+    /// How far the coordinate is from the lower point of the interval.
+    dx: T,
+}
+
+impl<T: Scalar> Local<T> {
+    /// The window for the coordinate `at` in interval `i` of `x`, which has
+    /// two points at least.
+    pub(crate) fn new(x: &[T], i: usize, at: T) -> Self {
+        let first = i.saturating_sub(1);
+        let len = (i + 3).min(x.len()) - first;
+        let mut widths = [T::one(); 3];
+        let mut per_width = [T::one(); 3];
+        for (j, pair) in x[first..first + len].windows(2).enumerate() {
+            widths[j] = pair[1] - pair[0];
+            per_width[j] = widths[j].recip();
+        }
+        Self {
+            first,
+            len,
+            at: i - first,
+            widths,
+            per_width,
+            ends: i + 2 == x.len(),
+            dx: at - x[i],
+        }
+    }
+
+    /// The value at the coordinate, from the values at the points of the
+    /// window. The entries past its length are not read.
+    pub(crate) fn eval<V: Value<T>>(&self, y: &[V; 4]) -> V {
+        let secant = |j: usize| V::zero().axpy(self.per_width[j], y[j + 1].axpy(-T::one(), y[j]));
+        let (at, h) = (self.at, &self.widths);
+        let here = secant(at);
+        let slopes = if self.len == 2 {
+            // The line through the two points.
+            [here, here]
+        } else {
+            let left = if at == 0 {
+                end_slope(h[0], h[1], here, secant(1))
+            } else {
+                inner_slope(h[at - 1], h[at], secant(at - 1), here)
+            };
+            let right = if self.ends {
+                end_slope(h[at], h[at - 1], here, secant(at - 1))
+            } else {
+                inner_slope(h[at], h[at + 1], here, secant(at + 1))
+            };
+            [left, right]
+        };
+        self.eval_between([y[at], y[at + 1]], slopes)
+    }
+
+    /// The value at the coordinate, from the values and the slopes at the two
+    /// points of the interval: for a line whose slopes are known already.
+    pub(crate) fn eval_between<V: Value<T>>(&self, y: [V; 2], slopes: [V; 2]) -> V {
+        let piece = hermite::piece(self.per_width[self.at], y, slopes);
+        hermite::at(&piece, self.dx)
     }
 }
 

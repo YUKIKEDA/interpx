@@ -4,10 +4,10 @@ mod akima;
 mod bspline1d;
 mod cubic_hermite;
 mod cubic_spline;
-mod hermite;
+pub(crate) mod hermite;
 mod linear;
 mod nearest;
-mod pchip;
+pub(crate) mod pchip;
 
 pub use akima::{Akima1D, AkimaMethod};
 pub use bspline1d::BSpline1D;

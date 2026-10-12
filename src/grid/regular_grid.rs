@@ -2,7 +2,7 @@
 
 use crate::bspline::basis_values;
 use crate::error::AxisFault;
-use crate::oned::Collocation;
+use crate::oned::{hermite, pchip, Collocation};
 use crate::{search, Extrapolate, Hint, InterpolateError, Interpolator, Scalar, Value};
 
 /// How a [`RegularGridInterpolator`] interpolates between the points of its
@@ -53,13 +53,51 @@ pub enum GridMethod {
     /// derivatives. Needs six points an axis. As for
     /// [`Cubic`](GridMethod::Cubic), the spline of SciPy's `quintic_legacy`.
     Quintic,
+    /// The shape-preserving cubic of
+    /// [`PchipInterpolator`](crate::PchipInterpolator) in each coordinate:
+    /// SciPy's `pchip`. One continuous derivative. Inside the grid no value
+    /// goes past the values at the corners of its cell, and where the data is
+    /// flat the interpolant is; the spline methods overshoot there. Needs two
+    /// points an axis, where SciPy asks for four.
+    ///
+    /// The axes are taken in SciPy's order, the last one first: the lines
+    /// along the last axis are interpolated at the last coordinate, then those
+    /// results along the axis before it, and so on down to the first. The
+    /// order matters, because the slopes of this cubic are not linear in the
+    /// values: the same values with two axes exchanged give another
+    /// interpolant.
+    ///
+    /// Only the slopes along the last axis are found, and checked, at
+    /// construction. With values so far apart that a slope along an earlier
+    /// axis overflows, an evaluation returns a value that is not finite.
+    ///
+    /// ```
+    /// use interpx::{GridMethod, InterpolateError, Interpolator, RegularGridInterpolator};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// // A step along x from 0 to 1, the same for every y.
+    /// let (x, y) = ([0.0, 1.0, 2.0, 3.0, 4.0, 5.0], [0.0, 1.0, 2.0, 3.0]);
+    /// let step = |x: &f64| if *x < 2.5 { 0.0 } else { 1.0 };
+    /// let values: Vec<f64> = x.iter().flat_map(|x| y.map(|_| step(x))).collect();
+    /// let at = |method| {
+    ///     RegularGridInterpolator::new([&x[..], &y[..]], &values, method)
+    ///         .map(|grid| grid.eval(&[1.5, 0.5]))
+    /// };
+    /// // Flat where the data is flat.
+    /// assert_eq!(at(GridMethod::Pchip)?, Some(0.0));
+    /// // The cubic spline swings below the data before the step.
+    /// assert!(at(GridMethod::Cubic)?.is_some_and(|v| v < -0.05));
+    /// # Ok(())
+    /// # }
+    /// ```
+    Pchip,
 }
 
 impl GridMethod {
     /// The degree of the spline of a spline method.
     fn degree(self) -> Option<usize> {
         match self {
-            Self::Nearest | Self::Linear => None,
+            Self::Nearest | Self::Linear | Self::Pchip => None,
             Self::Cubic => Some(3),
             Self::Quintic => Some(5),
         }
@@ -75,6 +113,9 @@ enum Rule<T, const D: usize, V> {
     Nearest,
     Linear,
     Spline(Tensor<T, D, V>),
+    /// The slopes of the shape-preserving cubic along the last axis at every
+    /// point of the grid, in the order of its values.
+    Pchip(Vec<V>),
 }
 
 #[cfg(test)]
@@ -83,7 +124,7 @@ impl<T, const D: usize, V> Rule<T, D, V> {
     fn spline(&self) -> Option<&Tensor<T, D, V>> {
         match self {
             Self::Spline(spline) => Some(spline),
-            Self::Nearest | Self::Linear => None,
+            Self::Nearest | Self::Linear | Self::Pchip(_) => None,
         }
     }
 }
@@ -125,7 +166,9 @@ struct Tensor<T, const D: usize, V> {
 /// The spline methods ([`GridMethod::Cubic`], [`GridMethod::Quintic`]) solve
 /// for the coefficients of their spline once, at construction, and keep them
 /// beside the values: twice the memory of the grid. An evaluation reads the
-/// coefficients around the point only.
+/// coefficients around the point only. [`GridMethod::Pchip`] keeps its slopes
+/// along the last axis beside the values, twice the memory as well, and works
+/// out the rest at each evaluation, from four points an axis at most.
 ///
 /// Values that are NaN or infinite are refused at construction, where SciPy
 /// takes them and returns NaN near them: fill the gaps of a grid before it is
@@ -215,8 +258,9 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
     ///   value for every point of the grid: the product of the lengths of the
     ///   axes.
     /// - [`InterpolateError::GridAxis`] with [`AxisFault::InsufficientPoints`]
-    ///   for the first axis with fewer points than the method needs: two, four
-    ///   for [`GridMethod::Cubic`], six for [`GridMethod::Quintic`].
+    ///   for the first axis with fewer points than the method needs: four for
+    ///   [`GridMethod::Cubic`], six for [`GridMethod::Quintic`], two for the
+    ///   others.
     /// - [`InterpolateError::GridAxis`] with [`AxisFault::NonFinite`] for the
     ///   first axis with a coordinate that is NaN or infinite.
     /// - [`InterpolateError::NonFinite`] when a value is NaN or infinite. Its
@@ -229,6 +273,8 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
     ///   (coordinates so far apart that their distance overflows), and
     ///   [`InterpolateError::NonFinite`] with a position in the grid when a
     ///   coefficient of the spline overflows.
+    /// - For [`GridMethod::Pchip`], [`InterpolateError::NonFinite`] with a
+    ///   position in the grid when a slope along the last axis overflows.
     ///
     /// Positions in an axis are those in the axis as it was given.
     ///
@@ -316,6 +362,7 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
             GridMethod::Linear => Rule::Linear,
             GridMethod::Cubic => Rule::Spline(tensor(&axes, &values, &strides, 3)?),
             GridMethod::Quintic => Rule::Spline(tensor(&axes, &values, &strides, 5)?),
+            GridMethod::Pchip => Rule::Pchip(slopes_along_last(&axes, &values)?),
         };
         Ok(Self {
             axes,
@@ -380,6 +427,7 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
             Rule::Linear => GridMethod::Linear,
             Rule::Spline(spline) if spline.degree == 3 => GridMethod::Cubic,
             Rule::Spline(_) => GridMethod::Quintic,
+            Rule::Pchip(_) => GridMethod::Pchip,
         }
     }
 
@@ -496,6 +544,7 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
                 value
             }
             Rule::Spline(spline) => self.spline_at(spline, cell),
+            Rule::Pchip(slopes) => self.pchip_at(slopes, cell),
         }
     }
 
@@ -574,6 +623,93 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
                 chosen[d] = 0;
             }
         }
+    }
+
+    /// The value of the shape-preserving cubic applied along the last axis,
+    /// then along each axis before it.
+    ///
+    /// The cubic along an axis depends, in an interval, on a window of four
+    /// points at most ([`pchip::Local`]). So the lines along the last axis
+    /// that matter are those through the windows of the earlier axes:
+    /// `4^(D - 1)` at most. Each is evaluated from its values and its slopes,
+    /// which are kept. `folded[d]` collects the results along the window of
+    /// axis `d`, for the points chosen on the axes before it. A window that is
+    /// full is folded into one value, which goes into the window of the axis
+    /// before: the levels of [`spline_sum`](Self::spline_sum), with a cubic
+    /// through the values of a level where that has a sum.
+    fn pchip_at(&self, slopes: &[V], cell: &[(usize, T); D]) -> V {
+        let Some(last) = D.checked_sub(1) else {
+            // No axes: the one value.
+            return self.values[0];
+        };
+        let windows: [pchip::Local<T>; D] =
+            core::array::from_fn(|d| pchip::Local::new(&self.axes[d], cell[d].0, cell[d].1));
+        let mut folded = [[V::zero(); 4]; D];
+        let mut chosen = [0; D];
+        loop {
+            // The lower point of the interval on the line chosen.
+            let mut offset = cell[last].0;
+            for d in 0..last {
+                offset += (windows[d].first + chosen[d]) * self.strides[d];
+            }
+            let mut done = windows[last].eval_between(
+                [self.values[offset], self.values[offset + 1]],
+                [slopes[offset], slopes[offset + 1]],
+            );
+            let mut d = last;
+            loop {
+                if d == 0 {
+                    return done;
+                }
+                d -= 1;
+                folded[d][chosen[d]] = done;
+                chosen[d] += 1;
+                if chosen[d] < windows[d].len {
+                    break;
+                }
+                done = windows[d].eval(&folded[d]);
+                chosen[d] = 0;
+            }
+        }
+    }
+}
+
+/// The slopes of the shape-preserving cubic along every line of the last
+/// axis, in the order of the values.
+///
+/// They are those of a [`PchipInterpolator`](crate::PchipInterpolator) through
+/// the line. The slopes along the other axes are those of values folded
+/// along the later axes, which differ from one point of evaluation to the
+/// next: they are found at evaluation.
+///
+/// # Errors
+///
+/// Returns [`InterpolateError::NonFinite`] with its position in the grid when
+/// a secant along the last axis overflows (the later of its two points), or a
+/// slope.
+fn slopes_along_last<T: Scalar, const D: usize, V: Value<T>>(
+    axes: &[Vec<T>; D],
+    values: &[V],
+) -> Result<Vec<V>, InterpolateError> {
+    let Some(axis) = axes.last() else {
+        // No axes: one value, and no line.
+        return Ok(Vec::new());
+    };
+    let n = axis.len();
+    let mut slopes = vec![V::zero(); values.len()];
+    // The same for every line.
+    let per_width = hermite::per_widths(axis);
+    let lines = values.chunks_exact(n).zip(slopes.chunks_exact_mut(n));
+    for (l, (line, slopes)) in lines.enumerate() {
+        pchip::slopes(axis, &per_width, line, slopes).map_err(|index| {
+            InterpolateError::NonFinite {
+                index: l * n + index,
+            }
+        })?;
+    }
+    match slopes.iter().position(|slope| !slope.all_finite()) {
+        Some(index) => Err(InterpolateError::NonFinite { index }),
+        None => Ok(slopes),
     }
 }
 
