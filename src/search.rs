@@ -57,12 +57,12 @@ impl Hint {
 /// The number of points `eval_batch_into` decides on at a time: long enough that
 /// the two extra searches of the decision are a small share, short enough that
 /// a batch which is in order only in places still uses its hint there.
-const BATCH_RUN: usize = 64;
+pub(crate) const BATCH_RUN: usize = 64;
 
 /// The shortest run worth the decision. On a run shorter than this the decision
 /// costs more than a hint can save (about 20 ns on a 10-point batch, measured in
 /// `benches/ppoly.rs`), so the points are searched plainly.
-const MIN_HINT_RUN: usize = 16;
+pub(crate) const MIN_HINT_RUN: usize = 16;
 
 /// The index of the last interval of `grid`.
 fn last<T>(grid: &[T]) -> usize {
@@ -107,23 +107,34 @@ fn locate_near<T: Scalar>(grid: &[T], x: T, start: usize) -> usize {
 /// binary search, and plain searches, which do not wait for each other, are
 /// about twice as fast (measured in `benches/ppoly.rs`).
 fn hint_pays<T: Scalar>(grid: &[T], points: &[T]) -> bool {
+    hint_pays_along(grid, points.iter().copied())
+}
+
+/// [`hint_pays`] for coordinates that are not a slice of their own: one
+/// coordinate of each point of a run of points in several dimensions.
+pub(crate) fn hint_pays_along<T: Scalar>(
+    grid: &[T],
+    coordinates: impl ExactSizeIterator<Item = T> + Clone,
+) -> bool {
+    let pairs = || coordinates.clone().zip(coordinates.clone().skip(1));
     // A NaN fails every comparison, so a run with one is not in order.
-    let ascending = points.windows(2).all(|w| w[0] <= w[1]);
-    let ordered = ascending || points.windows(2).all(|w| w[0] >= w[1]);
+    let ascending = pairs().all(|(a, b)| a <= b);
+    let ordered = ascending || pairs().all(|(a, b)| a >= b);
     // An empty run has no ends and nothing to speed up.
     ordered
-        && points
-            .first()
-            .zip(points.last())
+        && coordinates
+            .clone()
+            .next()
+            .zip(coordinates.clone().last())
             .is_some_and(|(first, last)| {
                 let (low, high) = if ascending {
-                    (*first, *last)
+                    (first, last)
                 } else {
-                    (*last, *first)
+                    (last, first)
                 };
                 let crossed =
                     grid.partition_point(|b| *b <= high) - grid.partition_point(|b| *b <= low);
-                crossed <= points.len()
+                crossed <= coordinates.len()
             })
 }
 

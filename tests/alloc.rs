@@ -15,8 +15,8 @@
 
 use interpx::{
     Akima1D, AkimaMethod, BSpline, BSpline1D, BSplineCurve, BoundaryCondition, CubicHermiteSpline,
-    CubicSpline, Extrapolate, Hint, InterpolateError, Interpolator, Linear1D, Nearest1D,
-    NearestKind, PPoly, Parametrization, PchipInterpolator,
+    CubicSpline, Extrapolate, GridMethod, Hint, InterpolateError, Interpolator, Linear1D,
+    Nearest1D, NearestKind, PPoly, Parametrization, PchipInterpolator, RegularGridInterpolator,
 };
 use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
 use std::alloc::System;
@@ -308,6 +308,57 @@ fn main() -> Result<(), InterpolateError> {
                 std::hint::black_box(scalar.as_ppoly());
             });
             assert_eq!(n, 0, "Akima1D {mode:?}: eval_hinted or as_ppoly allocates");
+        }
+
+        // RegularGridInterpolator: both methods, scalar and array values, 2
+        // and 3 dimensions.
+        let (side, other) = ([0.0_f64, 0.5, 1.0, 2.0], [0.0_f64, 1.0, 1.5]);
+        let on_grid: Vec<f64> = (0..36).map(|n| f64::from(n % 7) - 2.0).collect();
+        let in_grid = [
+            [0.5, 1.0, 0.25],
+            [1.75, 0.2, 1.5],
+            [2.0, 1.5, 0.0],
+            [-3.0, 0.5, 0.5],
+            [9.0, 9.0, 9.0],
+            [f64::NAN, 0.5, 0.5],
+        ];
+        for method in [GridMethod::Linear, GridMethod::Nearest] {
+            let cube = RegularGridInterpolator::new(
+                [&side[..], &other[..], &other[..]],
+                &on_grid,
+                method,
+            )?
+            .with_extrapolate(mode);
+            check(
+                &format!("RegularGridInterpolator<f64, 3> {method:?} {mode:?}"),
+                &cube,
+                &in_grid,
+                f64::NAN,
+            );
+            let plane = RegularGridInterpolator::new(
+                [&side[..], &other[..]],
+                &[[1.0_f64, -1.0]; 12],
+                method,
+            )?
+            .with_extrapolate(mode);
+            let in_plane = in_grid.map(|p| [p[0], p[1]]);
+            check(
+                &format!("RegularGridInterpolator<f64, 2, [f64; 2]> {method:?} {mode:?}"),
+                &plane,
+                &in_plane,
+                [f64::NAN; 2],
+            );
+            let n = allocations(|| {
+                let mut hints = [Hint::new(); 3];
+                for point in &in_grid {
+                    std::hint::black_box(cube.eval_hinted(point, &mut hints));
+                }
+                std::hint::black_box((cube.axes(), cube.values(), cube.shape(), cube.domain()));
+            });
+            assert_eq!(
+                n, 0,
+                "RegularGridInterpolator {method:?} {mode:?}: eval_hinted or an accessor allocates"
+            );
         }
 
         // BSplineCurve: evaluation is that of its BSpline. Parameters chosen

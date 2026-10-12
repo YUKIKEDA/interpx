@@ -92,5 +92,9 @@ name = "curve"
 harness = false
 
 [[bench]]
+name = "grid"
+harness = false
+
+[[bench]]
 name = "bspline"
 harness = false

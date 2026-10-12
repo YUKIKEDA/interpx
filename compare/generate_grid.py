@@ -101,6 +101,47 @@ def main() -> None:
     for method in METHODS:
         cases.append(run(f"grid4d/product_peak/{method}", axes4, vals, method, q4, False, "genz_product_peak"))
 
+    # Chosen for `nearest` and `linear` (M2-1).
+    # Queries halfway between two points of an axis, of one axis and of both:
+    # `nearest` takes the lower point.
+    small = (np.array([0.0, 1.0, 3.0, 4.0]), np.array([-1.0, 0.0, 2.0]))
+    pts = mesh(small)
+    vals = 1.0 + pts[:, 0] + 10.0 * pts[:, 1]
+    halfway = np.array([[0.5, -0.5], [2.0, 1.0], [3.5, 0.0], [1.0, -0.5], [2.0, 0.25], [0.25, 1.0], [0.5, 1.0000001]])
+    cases.append(run("grid2d/halfway/nearest", small, vals, "nearest", halfway, False, "plane"))
+    # A descending axis among ascending ones, in 3D: the middle axis.
+    mixed = (axes3[0], axes3[1][::-1].copy(), axes3[2])
+    vals = datasets.genz("gaussian_peak", mesh(mixed))
+    for method in ("linear", "nearest"):
+        cases.append(run(f"grid3d/descending_middle/{method}", mixed, vals, method, q3, False, "genz_gaussian_peak"))
+    # Halfway on a descending axis: the lower point after the axis is put in
+    # ascending order, which is the later of the two as given.
+    falling = (small[0][::-1].copy(), small[1])
+    pts = mesh(falling)
+    vals = 1.0 + pts[:, 0] + 10.0 * pts[:, 1]
+    cases.append(run("grid2d/halfway/descending/nearest", falling, vals, "nearest", halfway, False, "plane"))
+    # Outside the grid, continued: a non-uniform grid in 2D, and 3D.
+    pts = mesh(nonuniform)
+    vals = datasets.franke(3, pts[:, 0], pts[:, 1])
+    far2 = np.vstack([q2[:12], [[-0.5, 0.5], [1.5, 1.5], [0.5, -0.25], [-0.2, 1.3]]])
+    for method in ("linear", "nearest"):
+        cases.append(run(f"grid2d/nonuniform/f3/{method}/extrapolate", nonuniform, vals, method, far2, True, "franke_f3"))
+    vals = datasets.genz("oscillatory", mesh(axes3))
+    far3 = np.vstack([q3[:10], [[-0.3, 0.5, 0.5], [0.5, 1.4, -0.2], [1.2, 1.2, 1.2]]])
+    for method in ("linear", "nearest"):
+        cases.append(run(f"grid3d/oscillatory/{method}/extrapolate", axes3, vals, method, far3, True, "genz_oscillatory"))
+    # Two values at every point. `values` and `expected` hold the first column,
+    # as in every other case; `values_columns` and `expected_columns` hold both.
+    pts = mesh(nonuniform)
+    both = np.column_stack([datasets.franke(1, pts[:, 0], pts[:, 1]), datasets.franke(4, pts[:, 0], pts[:, 1])])
+    shape2 = [len(a) for a in nonuniform]
+    for method in ("linear", "nearest"):
+        case = run(f"grid2d/nonuniform/columns/{method}", nonuniform, both[:, 0], method, q2[:16], False, "franke_f1_f4")
+        f = RegularGridInterpolator(nonuniform, both.reshape(shape2 + [2]), method=method, bounds_error=False)
+        case["values_columns"] = golden.encode(both)
+        case["expected_columns"] = golden.encode(f(q2[:16]))
+        cases.append(case)
+
     path = golden.write("grid", GENERATOR, SEED, cases)
     print(f"wrote {path.name} ({len(cases)} cases)")
 

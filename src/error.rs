@@ -84,6 +84,74 @@ pub enum InterpolateError {
         /// What is wrong with its value.
         reason: ParamReason,
     },
+
+    /// One axis of a grid cannot be used.
+    #[error("axis {axis} of the grid: {fault}")]
+    GridAxis {
+        /// The axis, counted from 0.
+        axis: usize,
+        /// What is wrong with it.
+        fault: AxisFault,
+    },
+}
+
+/// What is wrong with the axis named by [`InterpolateError::GridAxis`].
+///
+/// Positions are those in the axis as it was given.
+///
+/// The enum is `#[non_exhaustive]`: later versions add faults.
+///
+/// # Examples
+///
+/// ```
+/// use interpx::{AxisFault, GridMethod, InterpolateError, RegularGridInterpolator};
+///
+/// // The second axis has the same coordinate twice.
+/// let (x, y) = ([0.0, 1.0], [0.0, 0.5, 0.5]);
+/// let err = RegularGridInterpolator::new([&x[..], &y[..]], &[0.0; 6], GridMethod::Linear).err();
+/// assert_eq!(
+///     err,
+///     Some(InterpolateError::GridAxis {
+///         axis: 1,
+///         fault: AxisFault::DuplicatePoints { first: 1, second: 2 },
+///     }),
+/// );
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[non_exhaustive]
+pub enum AxisFault {
+    /// The axis has fewer points than the method needs.
+    #[error("insufficient points: required {required}, got {actual}")]
+    InsufficientPoints {
+        /// The fewest points the method takes on an axis.
+        required: usize,
+        /// The number of points of the axis.
+        actual: usize,
+    },
+
+    /// A coordinate is NaN or infinite.
+    #[error("non-finite coordinate at index {index}")]
+    NonFinite {
+        /// The position of the first such coordinate.
+        index: usize,
+    },
+
+    /// The axis neither increases all the way nor decreases all the way.
+    #[error("the coordinates turn around at index {index}")]
+    NotMonotonic {
+        /// The position of the first coordinate that goes against the
+        /// direction of the first two.
+        index: usize,
+    },
+
+    /// Two neighboring coordinates are equal.
+    #[error("equal coordinates at indices {first} and {second}")]
+    DuplicatePoints {
+        /// The position of the first of the two.
+        first: usize,
+        /// The position of the second of the two.
+        second: usize,
+    },
 }
 
 /// What is wrong with the argument named by
@@ -196,6 +264,40 @@ mod tests {
                     reason: super::ParamReason::Unsupported,
                 },
                 "invalid parameter `bc`: not supported with the other arguments",
+            ),
+            (
+                E::GridAxis {
+                    axis: 2,
+                    fault: super::AxisFault::InsufficientPoints {
+                        required: 2,
+                        actual: 1,
+                    },
+                },
+                "axis 2 of the grid: insufficient points: required 2, got 1",
+            ),
+            (
+                E::GridAxis {
+                    axis: 0,
+                    fault: super::AxisFault::NonFinite { index: 3 },
+                },
+                "axis 0 of the grid: non-finite coordinate at index 3",
+            ),
+            (
+                E::GridAxis {
+                    axis: 1,
+                    fault: super::AxisFault::NotMonotonic { index: 4 },
+                },
+                "axis 1 of the grid: the coordinates turn around at index 4",
+            ),
+            (
+                E::GridAxis {
+                    axis: 1,
+                    fault: super::AxisFault::DuplicatePoints {
+                        first: 0,
+                        second: 1,
+                    },
+                },
+                "axis 1 of the grid: equal coordinates at indices 0 and 1",
             ),
         ];
         for (err, message) in cases {
