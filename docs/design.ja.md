@@ -592,6 +592,7 @@ interpx/
     2. `InsufficientPoints { required: 1, actual: 0 }`（1 点から作れる。SciPy と同じ）
     3. 点の数が `u32::MAX` を超えれば `InvalidParameter { name: "points", reason: TooLarge { max } }`（木が点の番号を `u32` で持つ。入力だけで決まる上限なので、エラーで返す。数えるだけで分かるので、全部の点を見る次の検査より先に置く）
     4. `NonFinite { index }`（座標を先に、次に値。`index` は点の番号）
+    5. `rescaled` だけ: 軸の座標の和（平均のため）か範囲が桁あふれすれば `NonFinite { index }`（`index` は、和があふれた点か、その軸でいちばん大きい座標の点）。そのまま進むと、変換した座標が全部の点で同じ値か無限大になり、どの問い合わせにも値がなくなる。SciPy は、平均があふれた場合に木の構築が例外を出す
   * **SciPy との差**:
 
     | 項目 | SciPy 1.18 | `interpx` |
@@ -604,6 +605,7 @@ interpx/
     | 距離の上限 | 問い合わせのたびに渡す | 構築のあとに `with_distance_bound` で決める |
     | 並列（`workers`） | ある | M5-1（`rayon`） |
     | 座標の型 | `float64` | `f64` |
+    | `rescale` の平均の足し方 | 対ごとに足す（NumPy の `mean`） | 順に足す。平均の最後の数ビットが違いうる。距離の大小は変わらないので、返る点は同じ。上限つきで、ちょうど上限の距離の問い合わせでは、判定が分かれうる |
   * golden で値を照合するのは、最近傍が 1 点に決まる問い合わせだけである。等距離の点がある問い合わせは、返した値が「等距離の点のどれかの値」であることを検査する。
 
 ### 6.3 `CloughTocher2DInterpolator` と `RBFInterpolator`
