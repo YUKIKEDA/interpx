@@ -4,3 +4,4 @@
 __pycache__/
 /compare/.venv/
 /compare/perf/out/
+*.proptest-regressions
