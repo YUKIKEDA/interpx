@@ -26,4 +26,5 @@ gen-goldens:
     uv run --directory compare python -X utf8 -W error generate_scattered.py
     uv run --directory compare python -X utf8 -W error generate_rbf.py
     uv run --directory compare python -X utf8 -W error generate_tridiagonal.py
+    uv run --directory compare python -X utf8 -W error generate_banded.py
     uv run --directory compare python -X utf8 check_goldens.py
