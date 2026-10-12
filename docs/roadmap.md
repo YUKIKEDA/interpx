@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M5-1 next: M4 waits for `convx` (see Dependencies), so the rows of M5 that do not need it come first. M2-4 changes nothing for a user (it explains a figure): it is closed with what was measured, beside the other rows and without holding them.
+M5-5 next: what it finds can change how the types that exist are built, so it comes before the features that go on top of them (M5-1 to M5-3). M4 waits for `convx` (see Dependencies). M2-4 changes nothing for a user: it is closed with what was measured, beside this row.
 
 ## Dependencies
 

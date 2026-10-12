@@ -35,6 +35,28 @@ Report to the owner at that point, in a line: what stands, what was tried, what 
 
 A measurement that was made on one kind of input says nothing about another. Choose the inputs before measuring (for a method whose time depends on the values: values in no order and smooth values), so that the same question is not measured twice.
 
+## What comes next is decided, not read off a list
+
+Before starting a piece of work (a row, an investigation, one more attempt at either), write one line for it: what a user of the library has after it that they do not have now. Write the same line for everything else that is open: the rows under Current work, open review findings, open Issues. Start the one with the strongest line. The classes, strongest first:
+
+1. A wrong result, a red `main`, an open review finding.
+2. A capability the requirements name that is missing or half done.
+3. Speed a user can see, with the case and the ratio named.
+4. An explanation of a figure, with nothing to fix.
+
+- A line that reads "nothing changes for a user" is class 4. It is done when nothing above it is open, or beside other work without holding it (below).
+- The order under Current work in `docs/roadmap.md` is written with its reason. It is asked again at the moment of starting: an order written earlier is a note, not a decision made now.
+- The work stops when the question of its Issue is answered. A question that turns up on the way gets a line of its own and its own place in the order. It does not inherit the place of the work that turned it up.
+- While waiting for CI or a review, the thing to pick up is the top of this order, not the next ID.
+
+In #109 the agent wrote "M2-4, then M3-5" under Current work, in the order of the Issue numbers, without comparing them. M2-4 (#90) explains a gap between two ways of calling the same code and changes nothing for a user (class 4). M3-5 (#108) is a part of the neighbors mode that SciPy has and this crate lacks (class 2). The agent started M2-4 because it was first in the list. Its first measurement answered the Issue (the batch costs what its decision costs); the agent then went on to a question the Issue did not ask, for most of a session, while the answer to a review waited. The owner stopped it.
+
+```text
+# BAD — Current work says "M2-4, then M3-5", so M2-4 is started.
+# GOOD — M2-4: explains a figure, a user gains nothing (4). M3-5: finishes a capability (2).
+#        M3-5 is started. M2-4 is closed with what is known when nothing above it is open.
+```
+
 ## Long runs do not hold the working tree
 
 A benchmark, a mutation run, or a script that rewrites a source file and restores it keeps the tree busy for minutes. While it runs in the working tree, nothing else can be edited there, and the work stands still.
@@ -53,6 +75,10 @@ The next row's grill is presented as soon as the current row's PR is open. It do
 ## Before a long run, a short one
 
 A script that will run for ten minutes is run for ten seconds first: parse it (`python -c "import ast, sys; ast.parse(open(sys.argv[1]).read())"`), or run it on one case. A script written by another script is written with the Write tool instead: nested quoting failed twice in M2-3, and one failure was only seen after a ten-minute wait. Look at the output of a background run within its first minute.
+
+## Before a push, the pull request
+
+`gh pr view N --json state` is read before a push to a branch that has a pull request. A push to the branch of a merged pull request makes the deleted branch again on the remote and reaches nothing (after #92 merged, a commit for it was pushed and had to be moved to a new Issue and branch). When a stack is waiting for the owner, read its state at the start of each turn of work.
 
 ## Before a commit, the branch
 
