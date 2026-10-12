@@ -11,7 +11,9 @@
 //! With neighbors (`rbf_neighbors`), construction sorts the points into a
 //! tree: 10 000 and 100 000 of them. An evaluation finds the 10, 20, or 50
 //! nearest points and solves their system; its time does not depend on the
-//! number of points beyond the search.
+//! number of points beyond the search. A batch keeps the factored system of a
+//! point for the next one with the same neighbors: measured for points in no
+//! order (nothing is kept) and for a row of an image (`row`).
 //!
 //! Run with `just bench`. Not a gate; CI does not run it.
 
@@ -88,6 +90,12 @@ fn neighbors(c: &mut Criterion) {
         let points: Vec<[f64; 2]> = (0..n).map(|_| [rng.next(), rng.next()]).collect();
         let values: Vec<f64> = (0..n).map(|_| 2.0 * rng.next() - 1.0).collect();
         let queries: Vec<[f64; 2]> = (0..1000).map(|_| [rng.next(), rng.next()]).collect();
+        // A row of an image across the points: 1000 pixels, so 10 of them to
+        // the distance between two of 10 000 points and 3 to that of 100 000.
+        // Pixels next to each other mostly have the same neighbors.
+        let row: Vec<[f64; 2]> = (0..1000)
+            .map(|i| [(f64::from(i) + 0.5) / 1000.0, 0.5])
+            .collect();
         let mut out = vec![0.0; queries.len()];
         let twenty = RbfOptions::new().with_neighbors(20);
         group.throughput(Throughput::Elements(n as u64));
@@ -118,6 +126,33 @@ fn neighbors(c: &mut Criterion) {
                         black_box(&out);
                     });
                 });
+                // The batch keeps the factored system while the neighbors
+                // stay: nothing to keep for points in no order, most of the
+                // work for the row.
+                for (order, at) in [("scattered", &queries), ("row", &row)] {
+                    if label != "thin_plate_spline" {
+                        continue;
+                    }
+                    if order == "row" {
+                        group.bench_function(format!("eval/row/{label}/k{k}/{n}"), |b| {
+                            b.iter(|| {
+                                for (query, slot) in at.iter().zip(out.iter_mut()) {
+                                    *slot = built.eval_or(black_box(query), f64::NAN);
+                                }
+                                black_box(&out);
+                            });
+                        });
+                    }
+                    group.bench_function(
+                        format!("eval_batch_into/{order}/{label}/k{k}/{n}"),
+                        |b| {
+                            b.iter(|| {
+                                let done = built.eval_batch_into(black_box(at), &mut out, f64::NAN);
+                                black_box((&out, done.is_ok()));
+                            });
+                        },
+                    );
+                }
             }
         }
     }

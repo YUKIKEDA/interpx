@@ -811,6 +811,79 @@ fn evaluations_from_several_threads_and_from_clones_agree() {
     }
 }
 
+#[test]
+fn a_batch_of_points_with_the_same_neighbors_is_a_loop_over_eval() {
+    // 40 points and a row of 2000 queries across them: far more queries than
+    // points, so the neighbors of a query are mostly those of the one before.
+    let points: Vec<[f64; 2]> = (0..40_u32)
+        .map(|n| [f64::from(n * 17 % 41) * 0.25, f64::from(n * 29 % 37) * 0.3])
+        .collect();
+    let values: Vec<f64> = (0..40).map(|n| f64::from(n % 7) - 3.0).collect();
+    let other: Vec<f64> = values.iter().map(|v| v * v + 1.0).collect();
+    let mut queries: Vec<[f64; 2]> = (0..2000_u32)
+        .map(|n| [f64::from(n) * 0.005, 5.0 + f64::from(n % 3) * 0.001])
+        .collect();
+    // Points without a value in the middle of a run, and the run goes on.
+    queries[700][0] = f64::NAN;
+    queries[701][1] = f64::INFINITY;
+    let options = RbfOptions::new().with_neighbors(8);
+    let thin = Rbf::with_options(&points, &values, RbfKernel::ThinPlateSpline, &options);
+    let thin = thin.expect("valid");
+    // The same points, so the same neighbors, and another system.
+    let cubic = Rbf::with_options(&points, &other, RbfKernel::Cubic, &options).expect("valid");
+
+    let looped = |rbf: &Rbf<2>| -> Vec<u64> {
+        let each = queries.iter().map(|q| rbf.eval_or(q, -1.0).to_bits());
+        each.collect()
+    };
+    let (thin_looped, cubic_looped) = (looped(&thin), looped(&cubic));
+    // The runs are there: most queries have the value of a system that the
+    // query before had too. (Neighbors change about once for every point
+    // the row passes, and it passes 40 at most.)
+    assert_eq!(thin_looped[700], (-1.0_f64).to_bits());
+    assert_eq!(thin_looped[701], (-1.0_f64).to_bits());
+    assert_ne!(thin_looped, cubic_looped);
+
+    let mut out = vec![0.0; queries.len()];
+    // By turns: what one interpolant factored is not used by the other.
+    for _ in 0..2 {
+        thin.eval_batch_into(&queries, &mut out, -1.0)
+            .expect("same length");
+        assert_eq!(
+            out.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            thin_looped
+        );
+        cubic
+            .eval_batch_into(&queries, &mut out, -1.0)
+            .expect("same length");
+        assert_eq!(
+            out.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            cubic_looped
+        );
+        // Nor by an `eval` that comes after a batch.
+        assert_eq!(
+            thin.eval(&queries[1999]).map(f64::to_bits),
+            Some(thin_looped[1999])
+        );
+    }
+    // Backward, the runs are the same and are entered from the other end.
+    let backward: Vec<[f64; 2]> = queries.iter().rev().copied().collect();
+    thin.eval_batch_into(&backward, &mut out, -1.0)
+        .expect("same length");
+    out.reverse();
+    assert_eq!(
+        out.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+        thin_looped
+    );
+    assert_eq!(
+        thin.eval_batch_into(&queries, &mut out[..5], -1.0),
+        Err(E::LengthMismatch {
+            expected: 2000,
+            actual: 5
+        })
+    );
+}
+
 // --- Properties ----------------------------------------------------------------
 
 /// Points in the unit square that are no closer than a twentieth to one

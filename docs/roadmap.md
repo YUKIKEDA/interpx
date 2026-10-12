@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M2-4, then M3-5. M4 waits for `convx` (see Dependencies), so the rows of M5 that do not need it come after them: M5-1 first.
+M5-1 next: M4 waits for `convx` (see Dependencies), so the rows of M5 that do not need it come first. M2-4 changes nothing for a user (it explains a figure): it is closed with what was measured, beside the other rows and without holding them.
 
 ## Dependencies
 
@@ -55,7 +55,7 @@ M2-4, then M3-5. M4 waits for `convx` (see Dependencies), so the rows of M5 that
 | M3-2 | Feat | `RBFInterpolator<D>`: 8 kernels, polynomial terms, shift and scale                 | #99   | Done   |
 | M3-3 | Feat | `RBFInterpolator<D>`: global solve (`faer` partial-pivot LU, singular is an error) | #103  | Done   |
 | M3-4 | Feat | `RBFInterpolator<D>`: local `neighbors` mode                                       | #107  | Done   |
-| M3-5 | Task | RBF neighbors: one factorization for queries of a batch with the same neighbors    | #108  | Todo   |
+| M3-5 | Task | RBF neighbors: one factorization for queries of a batch with the same neighbors    | #108  | Done   |
 
 ## M4: Scattered, with `convx`
 
