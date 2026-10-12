@@ -8,7 +8,9 @@
 //! interpolators built from data are [`Linear1D`], [`Nearest1D`],
 //! [`CubicSpline`], [`PchipInterpolator`], [`Akima1D`],
 //! [`CubicHermiteSpline`], and [`BSpline1D`] for data in one variable, and
-//! [`BSplineCurve`] for a curve through points; the others follow.
+//! [`BSplineCurve`] for a curve through points, and
+//! [`RegularGridInterpolator`] (nearest and linear) for values on a grid in
+//! several dimensions; the others follow.
 //!
 //! # Examples
 //!
@@ -63,6 +65,7 @@ mod common;
 mod curve;
 mod error;
 mod extrapolate;
+mod grid;
 mod interpolator;
 mod oned;
 mod ppoly;
@@ -75,8 +78,9 @@ mod value;
 pub use boundary::{BoundaryCondition, EndCondition};
 pub use bspline::{BSpline, BSPLINE_MAX_DEGREE};
 pub use curve::{BSplineCurve, Parametrization};
-pub use error::{InterpolateError, ParamReason};
+pub use error::{AxisFault, InterpolateError, ParamReason};
 pub use extrapolate::Extrapolate;
+pub use grid::{GridMethod, RegularGridInterpolator};
 pub use interpolator::Interpolator;
 pub use oned::{
     Akima1D, AkimaMethod, BSpline1D, CubicHermiteSpline, CubicSpline, Linear1D, Nearest1D,

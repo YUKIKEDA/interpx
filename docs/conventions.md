@@ -36,6 +36,10 @@ src/
   curve/            parametric curves through points (a private module; mod.rs re-exports)
     bspline_curve.rs BSplineCurve and Parametrization: the parameters from the points, then a
                     BSpline1D with points for values
+  grid/             interpolators of values on a rectilinear grid (a private module; mod.rs
+                    re-exports)
+    regular_grid.rs RegularGridInterpolator and GridMethod: axes kept ascending, values in C
+                    order, the interval of each axis from `search`
   bspline.rs        BSpline: basis functions on the stack, derivatives and integrals;
                     PPoly::from_bspline and BSpline::from_ppoly
 tests/
@@ -52,6 +56,8 @@ tests/
                     rules for the slopes, columns kept apart, properties
   curve.rs          BSplineCurve: SciPy's control points and values, the parameters each way
                     chooses, input checks and their order, motions and reversal, properties
+  grid.rs           RegularGridInterpolator (nearest, linear): SciPy's values, input checks and
+                    their order, the layout of the values, the modes outside the grid, properties
   bspline1d.rs      BSpline1D: SciPy's knots, control points, and values, input checks and their
                     order, the knots of each case, agreement with CubicSpline and Linear1D,
                     properties
@@ -80,6 +86,8 @@ benches/
                     evaluate it
   curve.rs          time to build a BSplineCurve (each parametrization), beside BSpline1D, and to
                     evaluate it
+  grid.rs           time to evaluate a RegularGridInterpolator in 2, 3, and 4 dimensions, and to
+                    build it
 compare/            Python side: pinned SciPy, data sets, generators, goldens (see the golden-data skill)
 docs/               design.ja.md, roadmap.md, conventions.md, adr/
 ```

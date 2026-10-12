@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M2-1.
+M2-2.
 
 ## Dependencies
 
@@ -42,7 +42,7 @@ M2-1.
 
 | ID   | Kind | Title                                                                                                  | Issue | Status |
 | ---- | ---- | ------------------------------------------------------------------------------------------------------ | ----- | ------ |
-| M2-1 | Feat | `RegularGridInterpolator`: shape, C-order values, `nearest`, `linear`, `Extrapolate`                   |       | Todo   |
+| M2-1 | Feat | `RegularGridInterpolator`: shape, C-order values, `nearest`, `linear`, `Extrapolate`                   | #74   | Done   |
 | M2-2 | Feat | `RegularGridInterpolator`: `slinear`, `cubic`, `quintic` (tensor-product coefficients at construction) |       | Todo   |
 | M2-3 | Feat | `RegularGridInterpolator`: `pchip` (lazy per-axis convolution)                                         |       | Todo   |
 
