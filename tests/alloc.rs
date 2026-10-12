@@ -15,7 +15,7 @@
 
 use interpx::{
     BSpline, BoundaryCondition, CubicSpline, Extrapolate, Hint, InterpolateError, Interpolator,
-    Linear1D, Nearest1D, NearestKind, PPoly,
+    Linear1D, Nearest1D, NearestKind, PPoly, PchipInterpolator,
 };
 use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
 use std::alloc::System;
@@ -278,6 +278,35 @@ fn main() -> Result<(), InterpolateError> {
             &array,
             &at_points,
             [f64::NAN; 2],
+        );
+
+        // PchipInterpolator: evaluation is that of its PPoly as well.
+        let scalar =
+            PchipInterpolator::new(&[0.0, 0.5, 1.0, 1.5, 2.0], &[1.0, -1.0, 4.0, 4.0, 1.0])?
+                .with_extrapolate(mode);
+        check(
+            &format!("PchipInterpolator<f64> {mode:?}"),
+            &scalar,
+            &at_points,
+            f64::NAN,
+        );
+        let array = PchipInterpolator::new(&[0.0, 1.0, 1.5, 2.0], &columns)?.with_extrapolate(mode);
+        check(
+            &format!("PchipInterpolator<f64, [f64; 2]> {mode:?}"),
+            &array,
+            &at_points,
+            [f64::NAN; 2],
+        );
+        let n = allocations(|| {
+            let mut hint = Hint::new();
+            for x in at_points {
+                std::hint::black_box(scalar.eval_hinted(x, &mut hint));
+            }
+            std::hint::black_box(scalar.as_ppoly());
+        });
+        assert_eq!(
+            n, 0,
+            "PchipInterpolator {mode:?}: eval_hinted or as_ppoly allocates"
         );
 
         for kind in [

@@ -1,5 +1,6 @@
 //! The cubic spline through data in one variable.
 
+use super::hermite::{self, secant};
 use crate::tridiagonal::{self, Breakdown};
 use crate::{
     validate, BoundaryCondition, EndCondition, Extrapolate, Hint, InterpolateError, Interpolator,
@@ -130,14 +131,11 @@ impl<T: Scalar, V: Value<T>> CubicSpline<T, V> {
             return Err(InterpolateError::NotPeriodic);
         }
 
-        // One buffer holds the slopes, one per point, and then the coefficients,
-        // four per interval, which are written over them from the last interval
-        // to the first: interval `i` needs the slopes at `i` and `i + 1`, and
-        // writes at `4 i` and above, where no slope it or an earlier interval
-        // needs is kept. The secants are computed where they are used, so the
-        // system takes one more allocation: its three diagonals, the reciprocal
-        // of every width (a division made once, for the secants and again for
-        // the coefficients), and the work space of the cyclic solver.
+        // The slopes are solved into the buffer the coefficients will be in
+        // (`hermite::into_ppoly`). The secants are computed where they are used,
+        // so the system takes one more allocation: its three diagonals, the
+        // reciprocal of every width (a division made once, for the secants and
+        // again for the coefficients), and the work space of the cyclic solver.
         let mut buffer = vec![V::zero(); 4 * (n - 1)];
         let mut scratch = vec![T::zero(); if periodic { 5 * n } else { 4 * n }];
         match bc {
@@ -151,32 +149,8 @@ impl<T: Scalar, V: Value<T>> CubicSpline<T, V> {
             }
         }
 
-        let two = T::one() + T::one();
-        // The first interval with a coefficient that is not finite: the loop
-        // goes down, so the last one it finds.
-        let mut overflowed = None;
-        for i in (0..n - 1).rev() {
-            let per_width = scratch[PER_WIDTH * n + i];
-            let secant = V::zero().axpy(per_width, y[i + 1].axpy(-T::one(), y[i]));
-            let (left, right) = (buffer[i], buffer[i + 1]);
-            // (s[i] + s[i + 1] - 2 secant) / h
-            let t = V::zero().axpy(per_width, left.axpy(T::one(), right).axpy(-two, secant));
-            let cubic = V::zero().axpy(per_width, t);
-            let square = V::zero()
-                .axpy(per_width, secant.axpy(-T::one(), left))
-                .axpy(-T::one(), t);
-            let piece = [cubic, square, left, y[i]];
-            if !piece.iter().all(V::all_finite) {
-                overflowed = Some(i);
-            }
-            buffer[4 * i..4 * i + 4].copy_from_slice(&piece);
-        }
-        if let Some(index) = overflowed {
-            return Err(InterpolateError::NonFinite { index });
-        }
-        // The coordinates passed the checks above, and every coefficient is
-        // finite.
-        let poly = PPoly::from_checked(x.to_vec(), buffer, 3);
+        let per_width = &scratch[PER_WIDTH * n..PER_WIDTH * n + n - 1];
+        let poly = hermite::into_ppoly(x, y, buffer, per_width)?;
         Ok(Self {
             poly: if periodic {
                 poly.with_extrapolate(Extrapolate::Periodic)
@@ -302,29 +276,6 @@ fn overflow(breakdown: Breakdown, points: usize) -> InterpolateError {
 /// Which part of the scratch space holds the reciprocal widths: after the three
 /// diagonals, each as long as the data.
 const PER_WIDTH: usize = 3;
-
-/// The secant of interval `i`: the rise of the data over its width. The
-/// reciprocal of the width is left in `per_width[i]`.
-///
-/// # Errors
-///
-/// Returns [`InterpolateError::NonFinite`] with the later of the two points when
-/// the secant overflows.
-fn secant<T: Scalar, V: Value<T>>(
-    x: &[T],
-    y: &[V],
-    i: usize,
-    per_width: &mut [T],
-) -> Result<V, InterpolateError> {
-    per_width[i] = (x[i + 1] - x[i]).recip();
-    let rise = y[i + 1].axpy(-T::one(), y[i]);
-    let secant = V::zero().axpy(per_width[i], rise);
-    if secant.all_finite() {
-        Ok(secant)
-    } else {
-        Err(InterpolateError::NonFinite { index: i + 1 })
-    }
-}
 
 /// Writes the slopes at the data points of a periodic spline to `slopes`. The
 /// last one repeats the first.

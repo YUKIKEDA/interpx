@@ -12,17 +12,34 @@ pub(crate) mod sealed {
         /// Whether every column of `self` is within `tolerance * (1 + |b|)` of
         /// the same column `b` of `other`.
         fn within(&self, other: &Self, tolerance: T) -> bool;
+
+        /// The value whose every column is `f` of the same column of `self`
+        /// and of `other`: what a rule that is not linear in the data needs
+        /// (a comparison of signs, a harmonic mean).
+        #[must_use]
+        fn zip_with(self, other: Self, f: impl Fn(T, T) -> T) -> Self;
     }
 
     impl<T: Scalar> Sealed<T> for T {
         fn within(&self, other: &Self, tolerance: T) -> bool {
             (*self - *other).abs() <= tolerance * (T::one() + other.abs())
         }
+
+        fn zip_with(self, other: Self, f: impl Fn(T, T) -> T) -> Self {
+            f(self, other)
+        }
     }
 
     impl<T: Scalar, const M: usize> Sealed<T> for [T; M] {
         fn within(&self, other: &Self, tolerance: T) -> bool {
             self.iter().zip(other).all(|(a, b)| a.within(b, tolerance))
+        }
+
+        fn zip_with(mut self, other: Self, f: impl Fn(T, T) -> T) -> Self {
+            for (a, b) in self.iter_mut().zip(other) {
+                *a = f(*a, b);
+            }
+            self
         }
     }
 }
