@@ -28,10 +28,11 @@ import scipy
 SCIPY_BASELINE = "1.18"
 GOLDENS = Path(__file__).resolve().parent.parent / "goldens"
 
-# docs/design.ja.md section 8.4 and the packaging budget: each file at most 1 MB,
-# the whole directory at most 4 MB (crates.io accepts 10 MB).
+# docs/design.ja.md section 8.4 and docs/adr/0010: each file at most 1 MB, the
+# whole directory at most 8 MB, both as the files are. crates.io accepts a
+# package of 10 MB compressed, and the goldens compress to about a fifth.
 MAX_FILE_BYTES = 1_000_000
-MAX_TOTAL_BYTES = 4_000_000
+MAX_TOTAL_BYTES = 8_000_000
 
 
 def check_baseline() -> None:

@@ -30,7 +30,7 @@ Golden data is the committed record of what SciPy 1.18 returns, so that `cargo t
   | `generate_tridiagonal.py` | `tridiagonal.json` | `scipy.linalg.solve_banded` on tridiagonal systems, a dense solve for the cyclic ones |
   | `generate_banded.py` | `banded.json` | LAPACK `dgbsv` on banded systems, a dense solve for the cyclic ones |
 
-- `compare/check_goldens.py`: run last; checks the 4 MB total and that every file has a generator.
+- `compare/check_goldens.py`: run last; checks the 8 MB total and that every file has a generator.
 - `tests/common/mod.rs`: `load::<Case>(name)` (returns `Result`; tests `.expect` it), `golden_dir`, `Real` (a number or `"NaN"`, `"Infinity"`, `"-Infinity"`), `reals`, `Tol`, `DIRECT_F64`, `close`, `assert_close`. `tests/common/functions.rs` holds Rust copies of the analytic functions.
 - `tests/goldens.rs`: checks the files themselves (shape, size, baseline, the interpolation property at data points, the Rust functions against the Python values). A new file is added to its `FILES` list.
 - `just gen-goldens`: runs every generator with warnings as errors, then the check. Add one line per new generator.

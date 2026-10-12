@@ -47,13 +47,10 @@ def parameters(points: np.ndarray, way: str) -> np.ndarray:
 
 
 def parametrized(name: str, points: np.ndarray, k: int, way: str, bc=None) -> dict:
-    """One case whose parameters come from the points. Fewer queries than the
-    cases above: the goldens have a size budget."""
+    """One case whose parameters come from the points."""
     t = parameters(points, way)
     periodic = bc == "periodic"
-    # The parameters of the points and a coarse grid, without the midpoints.
-    extend = 0.5 if periodic else 0.05
-    q = np.unique(np.concatenate([t, np.linspace(-extend, 1.0 + extend, 9)]))
+    q = queries_for(t, extend=0.5 if periodic else 0.05)
     b = si.make_interp_spline(t, points, k=k, bc_type=bc)
     return golden.case(
         f"curve/parametrized/{way}/k{k}/{name}",
@@ -125,12 +122,11 @@ def main() -> None:
         )
     )
 
-    # Parameters chosen from the points: each way on an open curve in 2D (the
-    # Lissajous points are unevenly spaced, so the three ways differ), and one
-    # in 3D.
+    # Parameters chosen from the points: each way on an open curve in 2D and in
+    # 3D. The Lissajous points are unevenly spaced, so the three ways differ.
     for way in ("uniform", "chord_length", "centripetal"):
         cases.append(parametrized("lissajous_2d", lissajous, 3, way))
-    cases.append(parametrized("helix_3d", helix, 2, "chord_length"))
+        cases.append(parametrized("helix_3d", helix, 2, way))
     # Closed curves.
     closed = ellipse[::2].copy()
     closed[-1] = closed[0]

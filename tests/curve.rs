@@ -123,6 +123,15 @@ fn check<const D: usize>(case: &Json) -> bool {
             continue;
         };
         for (k, (q, want)) in queries.iter().zip(points_of::<D>(want)).enumerate() {
+            // The derivative of the order of the degree is constant between
+            // the knots and jumps at them. With chosen parameters a knot is a
+            // rounding away from SciPy's (the distances are summed
+            // differently), so a query that SciPy has on a knot may lie on
+            // the other side of it here: nothing to compare.
+            let on_a_knot = knots.iter().any(|knot| (knot - q).abs() <= 1e-12);
+            if way.is_some() && nu == degree && on_a_knot {
+                continue;
+            }
             let got = b.eval_derivative(*q, nu).expect("the cases extrapolate");
             for column in 0..D {
                 let what = format!("{name} {field} query {k} column {column}");
@@ -158,9 +167,9 @@ fn scipy_curves_are_rebuilt_from_their_points() {
         }
     }
     // With parameters given: 5 in 2D, 6 in 3D. With parameters chosen from
-    // the points: 10 in 2D, 2 in 3D, 1 in 4D.
+    // the points: 10 in 2D, 4 in 3D, 1 in 4D.
     assert_eq!(given, [0, 0, 5, 6, 0]);
-    assert_eq!(chosen, [0, 0, 10, 2, 1]);
+    assert_eq!(chosen, [0, 0, 10, 4, 1]);
 }
 
 // --- The parameters ---------------------------------------------------------------
