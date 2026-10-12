@@ -429,12 +429,22 @@ fn one_dimensional_goldens_reproduce_the_data_at_the_knots() {
             continue;
         };
         let (x, y, q, e) = (nums(x), nums(y), nums(q), nums(e));
-        for (xi, yi) in x.iter().zip(&y) {
+        // Under periodic extrapolation the last knot is the first one of the
+        // next period: SciPy returns the first value there. For most periodic
+        // cases the two values are equal; for `hermite/periodic/open_ends` they
+        // are not.
+        let periodic = case["options"]["extrapolate"] == "periodic";
+        for (i, (xi, yi)) in x.iter().zip(&y).enumerate() {
             let k = q
                 .iter()
                 .position(|v| v.to_bits() == xi.to_bits())
                 .unwrap_or_else(|| panic!("{name}: knot {xi} is not among the queries"));
-            assert_close(e[k], *yi, AT_DATA, &format!("{name} at knot {xi}"));
+            let want = if periodic && i + 1 == x.len() {
+                y[0]
+            } else {
+                *yi
+            };
+            assert_close(e[k], want, AT_DATA, &format!("{name} at knot {xi}"));
             checked += 1;
         }
     }

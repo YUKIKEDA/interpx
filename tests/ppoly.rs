@@ -90,8 +90,8 @@ fn scipy_piecewise_polynomials_evaluate_to_the_golden_values() {
         cases += 1;
         modes.insert(format!("{mode:?}"));
     }
-    // CubicSpline 49, PCHIP 19, Akima 24, Hermite 4.
-    assert_eq!(cases, 96, "cases with a piecewise polynomial");
+    // CubicSpline 49, PCHIP 19, Akima 24, Hermite 12.
+    assert_eq!(cases, 104, "cases with a piecewise polynomial");
     assert_eq!(modes.len(), 3, "extend, forbid, and periodic: {modes:?}");
 }
 

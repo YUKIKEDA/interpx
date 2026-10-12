@@ -7,6 +7,9 @@
 //! 2. `InsufficientPoints`.
 //! 3. `NonFinite`: the coordinates first, then the values.
 //! 4. `DuplicatePoints` or `NotSorted`, whichever comes first.
+//!
+//! A second input per point (the slopes of `CubicHermiteSpline`) is checked
+//! after the values within each step. The order of the steps stays.
 
 use crate::{InterpolateError, Scalar, Value};
 
@@ -21,25 +24,62 @@ pub(crate) fn coordinates_and_values<T: Scalar, V: Value<T>>(
     expected_values: usize,
     required: usize,
 ) -> Result<(), InterpolateError> {
-    if values.len() != expected_values {
-        return Err(InterpolateError::LengthMismatch {
-            expected: expected_values,
-            actual: values.len(),
-        });
+    length(values, expected_values)?;
+    enough(coordinates, required)?;
+    finite(coordinates.iter().map(|c| c.is_finite()))?;
+    finite(values.iter().map(V::all_finite))?;
+    strictly_increasing(coordinates)
+}
+
+/// Checks coordinates with the values and the slopes at them, one of each per
+/// point.
+///
+/// `required` is the smallest number of coordinates the caller accepts.
+pub(crate) fn coordinates_values_and_slopes<T: Scalar, V: Value<T>>(
+    coordinates: &[T],
+    values: &[V],
+    slopes: &[V],
+    required: usize,
+) -> Result<(), InterpolateError> {
+    length(values, coordinates.len())?;
+    length(slopes, coordinates.len())?;
+    enough(coordinates, required)?;
+    finite(coordinates.iter().map(|c| c.is_finite()))?;
+    finite(values.iter().map(V::all_finite))?;
+    finite(slopes.iter().map(V::all_finite))?;
+    strictly_increasing(coordinates)
+}
+
+/// Step 1 for one input: its length against the one the coordinates fix.
+fn length<V>(input: &[V], expected: usize) -> Result<(), InterpolateError> {
+    if input.len() == expected {
+        Ok(())
+    } else {
+        Err(InterpolateError::LengthMismatch {
+            expected,
+            actual: input.len(),
+        })
     }
+}
+
+/// Step 2: the number of coordinates.
+fn enough<T>(coordinates: &[T], required: usize) -> Result<(), InterpolateError> {
     if coordinates.len() < required {
-        return Err(InterpolateError::InsufficientPoints {
+        Err(InterpolateError::InsufficientPoints {
             required,
             actual: coordinates.len(),
-        });
+        })
+    } else {
+        Ok(())
     }
-    if let Some(index) = coordinates.iter().position(|c| !c.is_finite()) {
-        return Err(InterpolateError::NonFinite { index });
+}
+
+/// Step 3 for one input, given as whether each entry is finite.
+fn finite(mut entries: impl Iterator<Item = bool>) -> Result<(), InterpolateError> {
+    match entries.position(|is_finite| !is_finite) {
+        Some(index) => Err(InterpolateError::NonFinite { index }),
+        None => Ok(()),
     }
-    if let Some(index) = values.iter().position(|v| !v.all_finite()) {
-        return Err(InterpolateError::NonFinite { index });
-    }
-    strictly_increasing(coordinates)
 }
 
 /// Checks that finite coordinates increase strictly.
@@ -65,6 +105,7 @@ fn strictly_increasing<T: Scalar>(coordinates: &[T]) -> Result<(), InterpolateEr
 #[cfg(test)]
 mod tests {
     use super::coordinates_and_values as check;
+    use super::coordinates_values_and_slopes as with_slopes;
     use crate::InterpolateError as E;
 
     #[test]
@@ -148,6 +189,98 @@ mod tests {
         assert_eq!(
             check(&[1.0, 0.0], &[1.0, f64::NAN], 2, 2),
             Err(E::NonFinite { index: 1 })
+        );
+    }
+
+    #[test]
+    fn slopes_are_checked_after_the_values_within_each_step() {
+        let ok = [1.0; 3];
+        assert_eq!(
+            with_slopes(&[0.0, 1.0, 2.5], &ok, &[0.5, -1.0, 0.0], 2),
+            Ok(())
+        );
+        assert_eq!(
+            with_slopes(&[0.0_f32, 1.0], &[[1.0_f32, 2.0]; 2], &[[0.0_f32; 2]; 2], 2),
+            Ok(())
+        );
+        // Step 1: the length of the slopes, after that of the values.
+        assert_eq!(
+            with_slopes(&[0.0, 1.0, 2.0], &ok, &[1.0; 2], 2),
+            Err(E::LengthMismatch {
+                expected: 3,
+                actual: 2
+            })
+        );
+        assert_eq!(
+            with_slopes(&[0.0, 1.0, 2.0], &[1.0; 4], &[1.0; 2], 2),
+            Err(E::LengthMismatch {
+                expected: 3,
+                actual: 4
+            })
+        );
+        // Step 1 before step 2, for the slopes as well.
+        assert_eq!(
+            with_slopes(&[0.0], &[1.0], &[1.0, 2.0], 2),
+            Err(E::LengthMismatch {
+                expected: 1,
+                actual: 2
+            })
+        );
+        assert_eq!(
+            with_slopes(&[0.0], &[1.0], &[1.0], 2),
+            Err(E::InsufficientPoints {
+                required: 2,
+                actual: 1
+            })
+        );
+        // Step 3: coordinates, values, slopes, whatever the positions.
+        assert_eq!(
+            with_slopes(&[0.0, 1.0, 2.0], &ok, &[0.0, f64::NAN, f64::INFINITY], 2),
+            Err(E::NonFinite { index: 1 })
+        );
+        assert_eq!(
+            with_slopes(
+                &[0.0, 1.0],
+                &[[1.0, 2.0]; 2],
+                &[[0.0, 0.0], [0.0, f64::NEG_INFINITY]],
+                2
+            ),
+            Err(E::NonFinite { index: 1 })
+        );
+        assert_eq!(
+            with_slopes(
+                &[0.0, 1.0, 2.0],
+                &[1.0, 1.0, f64::NAN],
+                &[f64::NAN, 0.0, 0.0],
+                2
+            ),
+            Err(E::NonFinite { index: 2 })
+        );
+        assert_eq!(
+            with_slopes(
+                &[0.0, f64::NAN, 2.0],
+                &[1.0, 1.0, f64::NAN],
+                &[f64::NAN, 0.0, 0.0],
+                2
+            ),
+            Err(E::NonFinite { index: 1 })
+        );
+        // Step 3 before step 4: unsorted coordinates and a slope that is NaN.
+        assert_eq!(
+            with_slopes(&[1.0, 0.0, 2.0], &ok, &[0.0, 0.0, f64::NAN], 2),
+            Err(E::NonFinite { index: 2 })
+        );
+        // Step 4.
+        assert_eq!(
+            with_slopes(&[1.0, 0.0, 2.0], &ok, &ok, 2),
+            Err(E::NotSorted { index: 1 })
+        );
+        assert_eq!(
+            with_slopes(&[0.0, 0.0, 2.0], &ok, &ok, 2),
+            Err(E::DuplicatePoints {
+                first: 0,
+                second: 1
+            })
         );
     }
 

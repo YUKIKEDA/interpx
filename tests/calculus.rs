@@ -167,8 +167,8 @@ fn scipy_piecewise_polynomials_differentiate_and_integrate_to_the_golden_values(
         cases += 1;
         modes.insert(format!("{:?}", p.extrapolate()));
     }
-    assert_eq!(cases, 96, "the cases tests/ppoly.rs evaluates");
-    assert_eq!(integrals, 96 * 4);
+    assert_eq!(cases, 104, "the cases tests/ppoly.rs evaluates");
+    assert_eq!(integrals, 104 * 4);
     assert_eq!(modes.len(), 3, "extend, forbid, and periodic: {modes:?}");
 }
 

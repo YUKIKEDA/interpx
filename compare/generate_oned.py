@@ -677,6 +677,69 @@ def main() -> None:
                 )
             )
 
+    # Chosen for the type: two and three points, widths that alternate between 1
+    # and 1e-2, slopes that are all zero, a line with its slope, slopes that
+    # disagree with the data (the interpolant overshoots), and periodic
+    # extrapolation of data whose ends agree and of data whose ends do not.
+    def hermite_case(name: str, x, y, dydx, extrapolate=True) -> dict:
+        x, y, dydx = (np.asarray(a, dtype=np.float64) for a in (x, y, dydx))
+        p = si.CubicHermiteSpline(x, y, dydx, extrapolate=extrapolate)
+        q = queries_for(x, extend=0.6 if extrapolate == "periodic" else 0.1)
+        return golden.case(
+            f"hermite/{name}",
+            "scipy.interpolate.CubicHermiteSpline",
+            {"extrapolate": extrapolate},
+            x=x,
+            y=y,
+            dydx=dydx,
+            **ppoly_fields(p, x, q),
+        )
+
+    cases.append(hermite_case("two_points", [0.0, 2.0], [1.0, 3.0], [-1.0, 0.5]))
+    cases.append(hermite_case("three_points", [0.0, 1.0, 3.0], [1.0, -1.0, 2.0], [0.5, -2.0, 1.0]))
+    x = np.cumsum(np.concatenate([[0.0], np.tile([1.0, 1e-2], 8)]))
+    cases.append(hermite_case("uneven", x, np.sin(x), np.cos(x)))
+    x, y = ds["random_20"]
+    cases.append(hermite_case("zero_slopes", x, y, np.zeros_like(x)))
+    cases.append(hermite_case("line", x, 2.0 * x - 1.0, np.full_like(x, 2.0)))
+    cases.append(
+        hermite_case(
+            "against_the_data",
+            np.arange(6.0),
+            [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            [5.0, -5.0, 5.0, -5.0, 5.0, -5.0],
+        )
+    )
+    x = np.linspace(0.0, 2.0 * np.pi, 9)
+    y = np.sin(x)
+    y[-1] = y[0]
+    dydx = np.cos(x)
+    dydx[-1] = dydx[0]
+    cases.append(hermite_case("periodic/sine_9", x, y, dydx, extrapolate="periodic"))
+    x, y = ds["sine_12"]
+    cases.append(hermite_case("periodic/open_ends", x, y, np.cos(x), extrapolate="periodic"))
+
+    # Two columns, each with its own slopes: values and derivatives only.
+    x = ds["random_20"][0]
+    p = si.CubicHermiteSpline(
+        x, np.stack([np.sin(x), np.exp(-x)], axis=1), np.stack([np.cos(x), -np.exp(-x)], axis=1)
+    )
+    q = queries_for(x)
+    cases.append(
+        golden.case(
+            "hermite/random_20/columns",
+            "scipy.interpolate.CubicHermiteSpline",
+            {"extrapolate": True},
+            x=x,
+            y=np.stack([np.sin(x), np.exp(-x)], axis=1),
+            dydx=np.stack([np.cos(x), -np.exp(-x)], axis=1),
+            queries=q,
+            expected=p(q),
+            derivative_1=p(q, 1),
+            derivative_2=p(q, 2),
+        )
+    )
+
     # make_interp_spline, degrees 1 to 5.
     for name in ("fritsch_carlson", "titanium", "random_20", "sine_12", "runge_11"):
         x, y = ds[name]
