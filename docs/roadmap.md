@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M3-5 first: it finishes a part of the neighbors mode that SciPy has (a capability, `.cursor/rules/pace.mdc`). M4 waits for `convx` (see Dependencies), so the rows of M5 that do not need it come next: M5-1 first. M2-4 changes nothing for a user (it explains a figure): it is closed with what was measured, beside the other rows and without holding them.
+M5-5 next: what it finds can change how the types that exist are built, so it comes before the features that go on top of them (M5-1 to M5-3). M4 waits for `convx` (see Dependencies). M2-4 changes nothing for a user: it is closed with what was measured, beside this row.
 
 ## Dependencies
 
@@ -55,7 +55,7 @@ M3-5 first: it finishes a part of the neighbors mode that SciPy has (a capabilit
 | M3-2 | Feat | `RBFInterpolator<D>`: 8 kernels, polynomial terms, shift and scale                 | #99   | Done   |
 | M3-3 | Feat | `RBFInterpolator<D>`: global solve (`faer` partial-pivot LU, singular is an error) | #103  | Done   |
 | M3-4 | Feat | `RBFInterpolator<D>`: local `neighbors` mode                                       | #107  | Done   |
-| M3-5 | Task | RBF neighbors: one factorization for queries of a batch with the same neighbors    | #108  | Todo   |
+| M3-5 | Task | RBF neighbors: one factorization for queries of a batch with the same neighbors    | #108  | Done   |
 
 ## M4: Scattered, with `convx`
 
