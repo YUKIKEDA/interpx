@@ -80,5 +80,9 @@ name = "akima"
 harness = false
 
 [[bench]]
+name = "cubic_hermite"
+harness = false
+
+[[bench]]
 name = "bspline"
 harness = false

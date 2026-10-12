@@ -6,7 +6,8 @@
 //! interpolators evaluate through: [`PPoly`], a piecewise polynomial, and
 //! [`BSpline`]. Both can be differentiated and integrated. The first
 //! interpolators built from data are [`Linear1D`], [`Nearest1D`],
-//! [`CubicSpline`], [`PchipInterpolator`], and [`Akima1D`]; the others follow.
+//! [`CubicSpline`], [`PchipInterpolator`], [`Akima1D`], and
+//! [`CubicHermiteSpline`]; the others follow.
 //!
 //! # Examples
 //!
@@ -68,7 +69,8 @@ pub use error::{InterpolateError, ParamReason};
 pub use extrapolate::Extrapolate;
 pub use interpolator::Interpolator;
 pub use oned::{
-    Akima1D, AkimaMethod, CubicSpline, Linear1D, Nearest1D, NearestKind, PchipInterpolator,
+    Akima1D, AkimaMethod, CubicHermiteSpline, CubicSpline, Linear1D, Nearest1D, NearestKind,
+    PchipInterpolator,
 };
 pub use ppoly::PPoly;
 pub use scalar::Scalar;

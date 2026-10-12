@@ -22,6 +22,7 @@ src/
   ppoly.rs          PPoly: piecewise polynomial, Horner evaluation, derivatives and integrals
   oned/             interpolators of data in one variable (a private module; mod.rs re-exports)
     akima.rs        Akima1D and AkimaMethod: slopes from the five points around, Akima or makima
+    cubic_hermite.rs CubicHermiteSpline: the slopes are given
     cubic_spline.rs CubicSpline: the slopes from a tridiagonal system, then a PPoly of degree 3
     hermite.rs      from values and slopes to a cubic PPoly: the end of every cubic interpolator
                     here (crate-private)
@@ -42,6 +43,8 @@ tests/
                     input checks, repeated knots, extrapolation, properties
   akima.rs          Akima1D: SciPy's coefficients and values for both methods, input checks, the
                     rules for the slopes, columns kept apart, properties
+  cubic_hermite.rs  CubicHermiteSpline: SciPy's coefficients and values, input checks with the
+                    slopes, what is reproduced, the slopes of a CubicSpline, properties
   cubic_spline.rs   CubicSpline: SciPy's coefficients and values, input checks, few points,
                     the periodic check, end conditions, properties
   linear.rs         Linear1D: golden values, input checks, exact values at the data points,
@@ -60,6 +63,7 @@ benches/
   cubic_spline.rs   time to build a CubicSpline (the tridiagonal solvers) and to evaluate it
   pchip.rs          time to build a PchipInterpolator, beside CubicSpline, and to evaluate it
   akima.rs          time to build an Akima1D (both methods), beside the other two, and to evaluate it
+  cubic_hermite.rs  time to build a CubicHermiteSpline, beside PchipInterpolator, and to evaluate it
 compare/            Python side: pinned SciPy, data sets, generators, goldens (see the golden-data skill)
 docs/               design.ja.md, roadmap.md, conventions.md, adr/
 ```
