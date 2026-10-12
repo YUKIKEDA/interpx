@@ -626,9 +626,7 @@ interpx/
   （$\lambda$ は `smoothing`。対角に足す。SciPy 1.18 と同じ符号である。M3-2 で確かめた）
 * **カーネル 8 種**（`RbfKernel` enum）: `linear`、`thin_plate_spline`、`cubic`、`quintic`、`gaussian`、`multiquadric`、`inverse_multiquadric`、`inverse_quadratic`。
 * `epsilon` と `degree` の持ち方、多項式の項、座標の変換は、下の「部品（M3-2）」のとおり。
-* 既定値: `kernel = thin_plate_spline`、`smoothing = 0`、`neighbors = None`。
-* **ソルバー**: 係数行列は鞍点系で正定値ではないため、コレスキーは使わず `faer` の `partial_piv_lu` を用いる。特異なら `Err(SolverFailed(Singular))`。疑似逆行列フォールバックはロードマップ。
-* **メモリ**: 全域モードは O(N²)（N = 1万点で約 800 MB）。doc に明記し、大きい N では `neighbors` 指定を推奨する。上限は設けないが、確保サイズの `usize` オーバーフローは検査して `Err`。
+* 公開の型、検査、解法、評価、メモリは、下の「公開と全域の求解（M3-3）」のとおり。
 * `neighbors` 指定時はクエリごとに `kiddo` で近傍 $k$ 点を抽出し、局所問題を解く。
 
 **RBF の部品（M3-2）**
@@ -666,6 +664,58 @@ M3-2 は、連立方程式を組み立てるところまでの部品を crate �
   * カーネルの値は、点の対ごとに 1 回だけ求めて、行列の 2 か所に書く（対称）。64 点四方のタイルごとに進め、書く 2 か所がキャッシュに入るようにする。全部の要素を求める形と比べた（M3-2 の実測。2 次元、1 要素あたり。前が採った形）: 対数のある `ThinPlateSpline` は 100 点で 3.4 ns と 6.3 ns、3000 点で 5.3 ns と 7.2 ns。指数のある `Gaussian` は 3.2 ns と 6.1 ns、5.0 ns と 6.8 ns。計算の軽い `Linear`・`Cubic`・`Quintic` は 100 点で 1.0〜1.5 ns と 1.6〜2.1 ns、3000 点では 2.7〜3.1 ns と 2.2〜2.3 ns で、大きい行列では遅くなる（2 か所めに書く費用が計算より高い）。組み立ては点数の 2 乗、そのあとの求解は 3 乗で増えるので、大きい行列ほど組み立ての比重は下がる。小さい行列と既定のカーネルで速い形を採る（構築全体での比は、求解の入る M3-3 で測る）。下半分をあとから 1 回で写す形は、軽いカーネルでさらに遅かった（3000 点で 3.1〜3.5 ns）。
 * **評価の行**: 問い合わせの点 $x$ に対して、$\phi(\varepsilon \lVert x - y_i \rVert)$ が $N$ 個、そのあとに $\hat{x}$ での単項式の値が $R$ 個。これと係数の内積が補間の値である（M3-3）。呼び出し側の渡した領域に書き、確保しない。
 * **照合**: SciPy の内部関数 `_rbfinterp_pythran` の `_build_system`（行列・右辺・変換）、`_kernel_matrix`、`_polynomial_matrix`、`_build_evaluation_coefficients`（評価の行）と、`_monomial_powers`（単項式の並び）の出力を golden にする。
+
+**RBF の公開と全域の求解（M3-3）**
+
+* **型**: `RBFInterpolator<const D: usize, V: Value<f64> = f64>`。`Point = [f64; D]`、`Output = V`。全部のデータ点を 1 つの連立方程式で解く（SciPy の `neighbors=None`）。近傍だけで解く形は M3-4。
+* **構築**: `new(points: &[[f64; D]], values: &[V], kernel: RbfKernel)` と `with_options(points, values, kernel, &RbfOptions)`。
+  * `RbfKernel`（`#[non_exhaustive]`）: M3-2 の表の 8 つ。`epsilon` は、要る 4 つの variant が持つ。既定のカーネルは持たない（SciPy の既定は `thin_plate_spline`。`new` の引数で必ず選ぶ）。
+  * `RbfOptions`: `RbfOptions::new()` で既定値（平滑化 0、次数はカーネルの既定）を作り、`with_smoothing(f64)` と `with_degree(RbfDegree)` で変える。フィールドは公開しない（オプションを足しても壊れないようにする）。
+  * `RbfDegree`: `Default`（カーネルの既定の次数）、`None`（多項式の項なし）、`Degree(usize)`。M3-2 の `Option<usize>` に当たる。
+* **平滑化**: スカラー $\lambda \ge 0$。0 なら補間（データ点を通る）、正なら平滑化（通らない）。SciPy は点ごとの配列も受け付ける。それは v0.1.0 に入れない（ロードマップ A-11）。負の値は SciPy では通るが、ここでは拒む（系が何を表すか定まらない）。
+* **検査の順**（§3.5 の順に、この型のものを続ける）:
+  1. `LengthMismatch`（点と値の数）
+  2. `InsufficientPoints { required: 1, actual: 0 }`
+  3. `NonFinite { index }`（座標、次に値）
+  4. `InvalidParameter { name: "epsilon", reason }`: 有限でなければ `NonFinite`、0 以下なら `NotPositive`
+  5. `InvalidParameter { name: "smoothing", reason }`: 有限でなければ `NonFinite`、負なら `Negative`
+  6. `InvalidParameter { name: "degree", reason }`（最小次数未満、数えきれない単項式。M3-2）
+  7. `InsufficientPoints { required, actual }`（点が単項式より少ない。M3-2）
+  8. `DuplicatePoints { first, second }`（同じ座標の点。`first` は先に渡した点。座標は数として比べ、`0.0` と `-0.0` は同じ）
+  9. `InvalidParameter { name: "points", reason: TooLarge { max } }`（行列が `Vec` に収まらない。M3-2）
+  10. `SolverFailed(SolverError::Singular)`（下の「特異な系」）
+* **重複点**: 平滑化の有無によらずエラーにする。平滑化があれば重複があっても系は解ける（SciPy は受け付ける）が、規則を 1 つにする。見つけ方は `NearestNDInterpolator` と同じハッシュ集合で、部品を共用する。
+* **解法**: `faer` 0.24 の部分ピボットつき LU 分解で行列を分解し、前進・後退代入は自前で行う。値が `[f64; M]` のとき、右辺は $M$ 列になる。`Value` は列を取り出す操作を持たないので、`faer` の $L$・$U$・置換を取り出し、値の線形結合（`axpy`）で代入する（M1-12 の帯行列 LU と同じ形）。代入は $O(N^2)$ で、分解の $O(N^3)$ に比べて小さい。
+  * **LU を採る根拠**（設計時の試作の実測）: SciPy は対称不定値の分解（LAPACK `dsysv`）で解く。`faer` にも同じ種類の分解（`lblt`）がある。両方で `rbf.json` の全域の 72 ケースを解き、SciPy の値と比べた（差は、値の最大の絶対値に対する比）。
+
+    | | LU（部分ピボット） | 対称不定値（`lblt`） |
+    | :--- | :--- | :--- |
+    | SciPy との差の最大 | $9.0 \times 10^{-13}$ | $5.5 \times 10^{-13}$ |
+    | 時間、100 点 | 0.138 ms | 0.135 ms |
+    | 時間、1000 点 | 20.1 ms | 18.0 ms |
+    | 時間、3000 点 | 448 ms | 358 ms |
+
+    精度は同程度で、対称の分解が 2〜20% 速い。それでも LU にするのは、特異な系を確実に拒めるからである。同じ点を 2 回含む系（特異）で、LU はピボットが 0 になり、対称の分解は有限の解（誤り）を返した。対称の分解はピボットを外から確かめる手段がない。完全ピボットの LU は 1000 点で 111 ms と 5 倍遅く、精度は変わらなかったので採らない。
+  * `faer` は `default-features = false, features = ["std"]`（並列は M5-1）。
+* **特異な系**: 分解のピボットが 0 のとき、または解に有限でない値があるとき、`SolverFailed(SolverError::Singular)`。それ以外は解いて返す。特異に近いだけの系（傾いた直線の上に並んだ点に、1 次の多項式の項を足した場合など）は、意味のない大きさの値を返しうる。SciPy も同じで、同じ入力で $10^{13}$ の値を返した。座標軸に平行な直線の上の点は、ピボットがちょうど 0 になり、どちらもエラーになる。ピボットの大きさにしきい値を置いて拒む形は採らない（`epsilon` の小さい `Gaussian` のように、条件が悪くても SciPy と同じ値を返す系まで拒むことになる）。
+  * 疑似逆行列で解き直す形は、ロードマップ A-5。
+* **保持するもの**: 点（$N \times D$）、係数（$N + R$ 個の値）、カーネル、多項式の項（指数、移動と尺度）。行列と分解は持たない。構築の途中では $(N + R)^2$ の行列を 1 つ確保する（$N = 10^4$ で約 800 MB）。上限は設けない（`Vec` に収まらない大きさだけを拒む）。大きい $N$ には M3-4 の近傍モードを使う。rustdoc に書く。
+* **評価**: $f(x) = \sum_i w_i\,\phi(\varepsilon \lVert x - y_i \rVert) + \sum_j c_j\,p_j(\hat{x})$ を、項を 1 つずつ足して求める。確保しない（評価の行を配列として作らない。M3-2 の `evaluation_row` は、この足し方に合わせて直す）。費用はデータ点の数に比例する（1000 点、`ThinPlateSpline` で 1 回およそ 6 µs。M3-2 の実測から）。
+  * 定義域はない。どの点でも値を返す（データから離れると、多項式の項とカーネルの形で決まる値になる）。`None` を返すのは、座標が有限でないときと、結果が有限でないときだけである。
+  * バッチは `eval` の繰り返しである。SciPy は評価をメモリに合わせて分けて行列で求めるが、値は同じである。
+* **取得**: `len()`、`kernel()`、`degree()`（`Option<usize>`。実際に使った次数）、`smoothing()`。
+* **SciPy との差**:
+
+  | 項目 | SciPy 1.18 | `interpx` |
+  | :--- | :--- | :--- |
+  | 解法 | 対称不定値の分解（`dsysv`） | 部分ピボットつき LU。値の差は $10^{-12}$ 未満（上の表） |
+  | 既定のカーネル | `thin_plate_spline` | なし（必ず選ぶ） |
+  | `epsilon` | どのカーネルにも渡せる。負も通る | 要る 4 つだけが持つ。有限で正。尺度によらない 4 つでの `epsilon` は、平滑化の読み替えで再現できる（M3-2） |
+  | 最小次数未満の `degree` | 警告 | エラー |
+  | 平滑化 | 点ごとの配列も。負も通る | スカラー、0 以上（A-11） |
+  | 重複点 | 平滑化があれば解ける。なければ「Singular matrix」 | いつもエラー（`DuplicatePoints`） |
+  | 値の型 | 複素数も | 実数（`f64`、`[f64; M]`） |
+  | 有限でない問い合わせ | NaN を返す | `None` |
 
 ### 6.4 `RegularGridInterpolator`
 * **型**: `RegularGridInterpolator<T: Scalar, const D: usize, V: Value<T> = T>`。$D$ 次元の直交グリッド（軸ごとの座標の直積）の上の値を補間する。`Point = [T; D]`、`Output = V`。
@@ -778,7 +828,7 @@ ndarray = ["dep:ndarray"]
 serde   = ["dep:serde"]
 ```
 * `std` feature は設けない（常に `std`）。`convx` / `faer` / `kiddo` を個別の公開 feature としては出さない。
-* `scattered` の中身は、依存を使う行が足していく（上は v0.1.0 の形）。M3-1 では `scattered = ["dep:kiddo"]` で、`faer` は M3-3、`convx` は M4 が足す。
+* `scattered` の中身は、依存を使う行が足していく（上は v0.1.0 の形）。M3-1 では `scattered = ["dep:kiddo"]` で、`faer` は M3-3（`["dep:kiddo", "dep:faer"]`）、`convx` は M4 が足す。
 * `kiddo` は `default-features = false`（既定の `fixed`（固定小数点の座標）と `multi-threaded`（`rayon`）を外す。並列は M5-1 で `interpx` の `rayon` feature から入れる）。推移的な依存は、この形で 29 クレートである（M3-1 の設計時）。
 * `faer` は `default-features = false, features = ["std"]`。
 
@@ -795,8 +845,11 @@ serde   = ["dep:serde"]
 | 対象                             | `rtol` / `atol`   |
 | :------------------------------- | :---------------- |
 | 直接法（f64）                    | `1e-12` / `1e-12` |
-| 反復法（CloughTocher 勾配）・RBF | `1e-6` 程度       |
+| 反復法（CloughTocher 勾配）      | `1e-6` 程度       |
+| RBF（全域の求解）                | テストの定数（下）|
 | f32                              | `1e-5`            |
+
+* RBF の値は連立方程式の解で、SciPy とは解法が違う（§6.3）。差は系の条件数に比例するので、`1e-12` を一律には当てない。設計時の試作で、`rbf.json` の全域の 72 ケースの差は、値の最大の絶対値に対して最大 $9 \times 10^{-13}$ だった（`Gaussian`、64 点）。M3-3 のテストは、値の大きさに対する比で比べ、許容誤差を測定値つきの名前のある定数にする。届かないケースが出たら、厳密な有理数計算でどちらが正しいかを確かめる（M2-2 の係数と同じやり方）。
 
 ### 8.3 ベンチマーク
 * ルート crate は単一 crate（workspace なし）。比較用の資材はルート直下の `compare/`（`pyproject.toml`、`uv.lock`、`generate_*.py`、`goldens/`、`perf/`）に置く。`compare/perf/` の Rust ランナーは、他クレートに依存する独立した Cargo パッケージ（自前の `[workspace]`）とし、`interpx` 本体の依存に比較対象を混ぜない。
