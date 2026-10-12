@@ -35,6 +35,16 @@ Report to the owner at that point, in a line: what stands, what was tried, what 
 
 A measurement that was made on one kind of input says nothing about another. Choose the inputs before measuring (for a method whose time depends on the values: values in no order and smooth values), so that the same question is not measured twice.
 
+## What is worth measuring at all
+
+A difference is chased only when it is large against the thing itself and against what the measurement can tell apart. A few nanoseconds a point, between two forms of the same code, is neither: where the loop sits in the caller moves the figure by as much (M2-4: the same loop calling the same function took 12 ns a point in one place and 17 ns in another), so the question cannot be answered and its answer would change nothing for a user.
+
+- Before a speed investigation, say what a user would gain: a ratio (`1.5x`), not an absolute figure of nanoseconds.
+- Under about 10% of the path, or under the spread between runs: write the figure and the sentence "not chased", and close the row.
+- Work is ordered by what it gives the release: an open review finding, a missing capability, and a wrong result all come before a speed question of this size.
+
+M2-4 (#90) took most of a session on a gap of 1 to 5 ns a point, while the owner waited for the answer to a review. The owner stopped it.
+
 ## Long runs do not hold the working tree
 
 A benchmark, a mutation run, or a script that rewrites a source file and restores it keeps the tree busy for minutes. While it runs in the working tree, nothing else can be edited there, and the work stands still.
