@@ -73,6 +73,7 @@ Rust の科学計算エコシステムにおける最大の課題は「断片化
   }
   ```
 
+  * **crate 内の列ごとの演算**: 公開する演算は上の 3 つ（線形結合に要るもの）だけである。補間器の中には、列ごとの非線形な演算が要るものがある（PCHIP と Akima の傾きは、列ごとの符号の比較や調和平均で決まる。`CubicSpline` の周期性の検査は列ごとの差の大きさを見る）。これらは、封印に使っている crate 内のトレイトに持たせ、公開しない。持つのは「2 つの値を列ごとに関数で合成する」「列ごとの近さの判定」である。利用者が新しい値の型を足すことはないので、公開の `Value` を広げる必要がない。
   * 多出力（SciPy の `values` が `(N, m)`）は、値の型を `[T; M]` にして表す。例: `LinearNDInterpolator<const D: usize, V = f64>`、`RegularGridInterpolator<T, const D: usize, V = T>`、`BSplineCurve<T, D>`（値の型は `[T; D]`）。
   * `[T; M]` は連続領域なので、`PPoly` の係数レイアウト `[区間][次数][出力列]`（§6.1）と一致する。
   * 出力列数 `m` を実行時に決める形は v0.1.0 の対象外（ロードマップ A-4。動的次元と同じ扱い）。
@@ -432,6 +433,22 @@ interpx/
   * **領域外**: 既定は `Extend`、境界条件が `Periodic` なら `Periodic`（§3.3、SciPy と同じ）。`with_extrapolate` で 4 モードのどれにも変えられる。
   * **エラー**: 検査の順は、§3.5 の共通の検査 → 境界条件の導関数の値（NaN・無限大なら `InvalidParameter { name: "bc", reason: ParamReason::NonFinite }`）→ 周期性（`NotPeriodic`）→ 求解。三重対角ソルバーの破綻と、傾き・係数の桁あふれは `NonFinite { index }` で返す（`index` は該当するデータ点）。有効な入力に対して行列は正則なので、破綻は桁あふれでしか起きない。専用の variant は足さない（`Linear1D` の傾きの桁あふれと同じ扱い）。
   * **SciPy との差**: 共通の検査による差（重複・未ソートの $x$、非有限の値）だけである。点数の下限（2 点）、少ない点の扱い、周期性の許容誤差は SciPy と同じ。
+* **値と傾きから 3 次の `PPoly` を作る（3 次エルミート形。M1-9 で切り出す）**: `CubicSpline`・`PchipInterpolator`・`Akima1D`・`CubicHermiteSpline` は、各データ点の値 $y_i$ と傾き $s_i$ が決まれば、同じ手順で 3 次の `PPoly` になる。違うのは傾きの決め方だけである。この手順を crate 内の関数 1 つにし、4 つの型が共用する。
+  * 区間 $i$ の係数は、$\delta_i = (y_{i+1} - y_i)/h_i$、$t = (s_i + s_{i+1} - 2\delta_i)/h_i$ として、$\dfrac{t}{h_i}(x - x_i)^3 + \Bigl(\dfrac{\delta_i - s_i}{h_i} - t\Bigr)(x - x_i)^2 + s_i\,(x - x_i) + y_i$（SciPy の `CubicHermiteSpline` と同じ式）。
+  * 係数の配列（区間あたり 4 個）の先頭に傾きを置いて呼び、最後の区間から前へ向かって係数で上書きする（M1-8 で `CubicSpline` に入れた形）。確保は増えない。入力検査は呼び出し側が済ませてあり、`PPoly::from_checked` で作る。
+  * 係数が有限でなければ `NonFinite { index }`（`index` は最初にあふれた区間）。
+* **`PchipInterpolator<T: Scalar, V: Value<T> = T>`（M1-9、SciPy の `PchipInterpolator`）**: 形を保つ $C^1$ の 3 次補間。データが単調な区間では補間も単調で、データの値の範囲を行き過ぎない。
+  * **構築**: `PchipInterpolator::new(&[T], &[V])`。検査は §3.5 の順で、点は 2 個以上。
+  * **保持するもの**: 3 次の `PPoly`。`as_ppoly()` で貸し出す。評価・`eval_hinted`・バッチは `PPoly` のものである。
+  * **傾き**（SciPy と同じ。$h_i = x_{i+1} - x_i$、$m_i = (y_{i+1} - y_i)/h_i$）:
+    * **内側の点** $x_i$: $m_{i-1}$ と $m_i$ の符号が違うか、どちらかが 0 なら $s_i = 0$。そうでなければ、重みつきの調和平均 $\dfrac{1}{s_i} = \dfrac{1}{w_1 + w_2}\Bigl(\dfrac{w_1}{m_{i-1}} + \dfrac{w_2}{m_i}\Bigr)$、$w_1 = 2h_i + h_{i-1}$、$w_2 = h_i + 2h_{i-1}$（Fritsch–Butland）。
+    * **端**（左端。右端は対称）: 3 点の片側の式 $d = \dfrac{(2h_0 + h_1)\,m_0 - h_0\,m_1}{h_0 + h_1}$ を求め、形を保つように制限する。$d$ の符号が $m_0$ と違えば $s_0 = 0$。そうでなく、$m_0$ と $m_1$ の符号が違い、かつ $|d| > 3|m_0|$ なら $s_0 = 3m_0$。それ以外は $s_0 = d$（Moler の `pchiptx`）。
+    * **2 点**: $s_0 = s_1 = m_0$（直線）。
+    * 符号は SciPy の `sign` と同じく、正・負・0 の 3 値で比べる。
+  * **値が `[T; M]` のとき**: 上の規則を列ごとに独立に当てる（列ごとに符号が違いうる）。§3.1 の「crate 内の列ごとの演算」を使う。
+  * **領域外**: 既定は `Extend`（§3.3、SciPy と同じ）。`with_extrapolate` で 4 モードのどれにも変えられる。単調性と「行き過ぎない」性質は領域内のもので、端の 3 次式を延ばした先には及ばない。
+  * **エラー**: §3.5 の共通の検査。割線・傾き・係数の桁あふれは `NonFinite { index }`。
+  * **SciPy との差**: 共通の検査による差（重複・未ソートの $x$、非有限の値）だけである。
 
 ### 6.2 散乱データ幾何探索（`convx` 連携）
 * **Delaunay 分割**: `[[f64; D]]` をコピーなしで `&[f64]`（row-major）にフラット化して `convx` に渡す。
@@ -548,7 +565,7 @@ serde   = ["dep:serde"]
 
 * **照合の記録**: F1〜F5 は 2 つの独立した実装（UQTestFuns、および Burkardt の `test_interp_2d`（MIT））で式が一致した（F4 の係数 $\tfrac{81}{16}$ = 5.0625、F5 の $\tfrac{81}{4}$ = 20.25、いずれも因子 $\tfrac13$ を持つ）。F6 は UQTestFuns が $\tfrac19$ を欠くが、半径 $\tfrac89$ の球という記述と整合するのは $\tfrac19$ を持つ式であり、Burkardt の実装もこれと一致する。F1 の第 2 項は Burkardt の抜粋で二乗が見えないため、UQTestFuns の式を採る。Franke (1979) 原典は取得できていないため、golden を作る最初の行で原典または Renka–Brown の公開コードと再照合し、結果をこの節に追記する。
 * **散乱点の配置**: Franke の 100 点・33 点と、Lawson の 25 点の節点配置を使う（25 点は Franke ではなく Lawson の配置である）。座標は Burkardt の `test_interp_2d`（MIT）から機械的に転記する。Franke の 100 点には単位正方形の外に出る点があるため、単位正方形上のクエリの一部は凸包の外になる。
-* **golden の範囲**: 層 A の golden は、補間族ごとに `compare/goldens/` の `oned` / `cubic_spline` / `calculus` / `curve` / `grid` / `scattered` / `rbf` に置く（`cubic_spline` は `CubicSpline` の全ケース、`calculus` は `PPoly` と `BSpline` の導関数・積分で、どちらも 1 ファイルの上限に収めるため `oned` から分けてある）。入力のみの `datasets`（古典データ・節点配置・敵対的入力）と、解析関数の値の `functions` も置く。1D のケースは値に加えて、1 階・2 階導関数、原始関数、定積分、区分多項式の係数（または B-spline のノットと制御点）を持つ。`calculus` は、導関数と原始関数そのもの（`PPoly` の係数、`BSpline` のノットと制御点）、3 階以上の導関数、2 階の原始関数、領域外にまたがる定積分、周期をまたぐ定積分を持つ。SciPy と意図して変える挙動（§6.1 の「SciPy との差」）は golden に入れず、解析解と性質テストで確かめる。`oned` には M1-7 で、無限大のクエリ（`numpy.interp`）、`fill_value="extrapolate"` の `nearest` / `nearest-up`、2 列の値（`interp1d`）を加える。M1-8 では `CubicSpline` の、2 点（境界条件ごと）、3 点（not-a-knot・周期・混在）、4 点の周期、not-a-knot と導関数の混在、2 列の値、間隔が極端に不均一なデータを加える。三重対角ソルバーの golden は `tridiagonal` に置く（SciPy の `solve_banded` の解。優対角のランダム行列、古典データから作った 4 種の境界条件の行列、巡回行列、条件の悪い行列、$n = 1$〜$3$、複数列の右辺）。グリッドの `cubic` / `quintic` の基準は §6.4 のとおり直接解法の値とする。
+* **golden の範囲**: 層 A の golden は、補間族ごとに `compare/goldens/` の `oned` / `cubic_spline` / `calculus` / `curve` / `grid` / `scattered` / `rbf` に置く（`cubic_spline` は `CubicSpline` の全ケース、`calculus` は `PPoly` と `BSpline` の導関数・積分で、どちらも 1 ファイルの上限に収めるため `oned` から分けてある）。入力のみの `datasets`（古典データ・節点配置・敵対的入力）と、解析関数の値の `functions` も置く。1D のケースは値に加えて、1 階・2 階導関数、原始関数、定積分、区分多項式の係数（または B-spline のノットと制御点）を持つ。`calculus` は、導関数と原始関数そのもの（`PPoly` の係数、`BSpline` のノットと制御点）、3 階以上の導関数、2 階の原始関数、領域外にまたがる定積分、周期をまたぐ定積分を持つ。SciPy と意図して変える挙動（§6.1 の「SciPy との差」）は golden に入れず、解析解と性質テストで確かめる。`oned` には M1-7 で、無限大のクエリ（`numpy.interp`）、`fill_value="extrapolate"` の `nearest` / `nearest-up`、2 列の値（`interp1d`）を加える。M1-9 では `PchipInterpolator` の、2 点、3 点、平らな区間と符号の変化を含むデータ、単調なデータ、2 列の値を加える。M1-8 では `CubicSpline` の、2 点（境界条件ごと）、3 点（not-a-knot・周期・混在）、4 点の周期、not-a-knot と導関数の混在、2 列の値、間隔が極端に不均一なデータを加える。三重対角ソルバーの golden は `tridiagonal` に置く（SciPy の `solve_banded` の解。優対角のランダム行列、古典データから作った 4 種の境界条件の行列、巡回行列、条件の悪い行列、$n = 1$〜$3$、複数列の右辺）。グリッドの `cubic` / `quintic` の基準は §6.4 のとおり直接解法の値とする。
 * **サイズの上限**: golden は 1 ファイル 1 MB、ディレクトリ合計 4 MB を上限とする（公開パッケージに含めるため）。
 
 **1D の古典データ。** 値は一次資料（原論文・原典）から転記し、出典を golden の `meta` に記録する。
