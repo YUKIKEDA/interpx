@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M5-5 next: what it finds can change how the types that exist are built, so it comes before the features that go on top of them (M5-1 to M5-3). M4 waits for `convx` (see Dependencies). M2-4 changes nothing for a user: it is closed with what was measured, beside this row.
+P-1 to P-5 (below), in that order: where the comparison of M5-5 found interpx slower than a library that computes the same thing, or unable to build what SciPy builds. They come before M5-1 to M5-3, which are put on top of the types these rows may change (`.cursor/rules/pace.mdc`, `.cursor/rules/bench.mdc`). P-1 and P-4 start with a Grill. M4 waits for `convx` (see Dependencies).
 
 ## Dependencies
 
@@ -64,6 +64,18 @@ M5-5 next: what it finds can change how the types that exist are built, so it co
 | M4-1 | Feat | `LinearNDInterpolator<D>`: Delaunay, Jump-and-Walk, tolerances, brute-force fallback |       | Todo   |
 | M4-2 | Feat | `CloughTocher2DInterpolator`: global gradient estimate, Bernstein-Bézier patch       |       | Todo   |
 
+## P: What the comparison found (before M5-1)
+
+The comparison (`docs/performance.md`) is run again for the cases of a row when the row is done. A row that M4 adds to the comparison and that loses is added here.
+
+| ID  | Kind   | Title                                                                                    | Issue | Status |
+| --- | ------ | ---------------------------------------------------------------------------------------- | ----- | ------ |
+| P-1 | Design | Construction: what it copies and what it checks (grid 180x and more, 1-D 1.3x to 5x)     | #122  | Todo   |
+| P-2 | Task   | 1-D evaluation of queries in no order on 10 000 points (2.4x against `ndarray-interp`)   | #123  | Todo   |
+| P-3 | Task   | Grid `linear` and `nearest` evaluation (1.1x to 1.6x against `interpn`)                  | #124  | Todo   |
+| P-4 | Design | Grid: an axis with one point (SciPy builds it; eight cases of SciPy's suite do not run)  | #125  | Todo   |
+| P-5 | Task   | RBF `quintic` at 10 points (1.12x against SciPy, one case)                               | #126  | Todo   |
+
 ## M5: Integration and quality
 
 | ID    | Kind | Title                                                                       | Issue | Status |
@@ -72,7 +84,7 @@ M5-5 next: what it finds can change how the types that exist are built, so it co
 | M5-2  | Feat | `ndarray` interoperability                                                  |       | Todo   |
 | M5-3  | Feat | `serde` for all interpolators (topology stored, format version, validation) |       | Todo   |
 | M5-4  | Test | Property tests (`proptest`) and the SciPy 1.18 golden suite for every type  |       | Todo   |
-| M5-5  | Task | `compare/perf`: SciPy and other pure-Rust crates, time and memory           |       | Todo   |
+| M5-5  | Task | `compare/perf`: SciPy and other pure-Rust crates, time and memory           | #120  | Done   |
 | M5-6  | Task | `README.md`, `README.ja.md`, and `examples/`                                |       | Todo   |
 | M5-7  | Task | English `docs/design.md`                                                    |       | Todo   |
 | M5-8  | Task | Run `publish-review`, fix rustdoc and README failures                       |       | Todo   |

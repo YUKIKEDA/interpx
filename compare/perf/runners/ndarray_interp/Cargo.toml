@@ -1,0 +1,13 @@
+# The `ndarray-interp` side of the comparison (one variable). Not published.
+[package]
+name = "perf-ndarray_interp"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+ndarray-interp = "0.6.0"
+ndarray = "0.17"
+perf-harness = { path = "../harness" }
+
+[workspace]

@@ -16,6 +16,16 @@ coverage:
 bench *args:
     cargo bench -- {{args}}
 
+# The comparison with SciPy and other Rust crates (not a gate; about an hour;
+# `.agents/skills/perf-compare/SKILL.md`). Extra arguments go to the driver,
+# for example `just compare-perf --filter "^grid/"`.
+compare-perf *args:
+    uv run --directory compare python -X utf8 perf/run.py {{args}}
+
+# `docs/performance.md` from the last run of `compare-perf`.
+compare-report:
+    uv run --directory compare python -X utf8 perf/report.py
+
 # Regenerate golden data with the pinned SciPy. `cargo test` only reads the files.
 # Each family adds a line here when its generator exists. The last line checks the set.
 gen-goldens:

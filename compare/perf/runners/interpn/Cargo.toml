@@ -1,0 +1,13 @@
+# The `interpn` side of the comparison (regular and rectilinear grids). Not published.
+[package]
+name = "perf-interpn"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# Without the default features: no rayon (the comparison is serial).
+interpn = { version = "0.11.2", default-features = false, features = ["std"] }
+perf-harness = { path = "../harness" }
+
+[workspace]

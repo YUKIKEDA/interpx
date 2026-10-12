@@ -1,0 +1,15 @@
+# The interpx side of the comparison. Not published.
+[package]
+name = "perf-interpx"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+interpx = { path = "../../../.." }
+perf-harness = { path = "../harness" }
+
+[profile.release]
+debug = 1
+
+[workspace]

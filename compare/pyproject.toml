@@ -5,6 +5,8 @@ description = "Golden-data generators and comparison runners for interpx. Not pu
 requires-python = ">=3.12"
 dependencies = [
     "numpy",
+    # Samples the memory of a runner from outside (`perf/run.py`).
+    "psutil",
     "scipy==1.18.*",
 ]
 
