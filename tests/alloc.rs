@@ -14,8 +14,8 @@
 //! A row that adds an interpolator adds it to `main`.
 
 use interpx::{
-    BSpline, BoundaryCondition, CubicSpline, Extrapolate, Hint, InterpolateError, Interpolator,
-    Linear1D, Nearest1D, NearestKind, PPoly, PchipInterpolator,
+    Akima1D, AkimaMethod, BSpline, BoundaryCondition, CubicSpline, Extrapolate, Hint,
+    InterpolateError, Interpolator, Linear1D, Nearest1D, NearestKind, PPoly, PchipInterpolator,
 };
 use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
 use std::alloc::System;
@@ -279,6 +279,35 @@ fn main() -> Result<(), InterpolateError> {
             &at_points,
             [f64::NAN; 2],
         );
+
+        // Akima1D, both methods: evaluation is that of its PPoly as well.
+        for method in [AkimaMethod::Akima, AkimaMethod::Makima] {
+            let x = [0.0, 0.5, 1.0, 1.5, 2.0];
+            let scalar =
+                Akima1D::new(&x, &[1.0, -1.0, 4.0, 4.0, 1.0], method)?.with_extrapolate(mode);
+            check(
+                &format!("Akima1D<f64> {method:?} {mode:?}"),
+                &scalar,
+                &at_points,
+                f64::NAN,
+            );
+            let array =
+                Akima1D::new(&[0.0, 1.0, 1.5, 2.0], &columns, method)?.with_extrapolate(mode);
+            check(
+                &format!("Akima1D<f64, [f64; 2]> {method:?} {mode:?}"),
+                &array,
+                &at_points,
+                [f64::NAN; 2],
+            );
+            let n = allocations(|| {
+                let mut hint = Hint::new();
+                for x in at_points {
+                    std::hint::black_box(scalar.eval_hinted(x, &mut hint));
+                }
+                std::hint::black_box(scalar.as_ppoly());
+            });
+            assert_eq!(n, 0, "Akima1D {mode:?}: eval_hinted or as_ppoly allocates");
+        }
 
         // PchipInterpolator: evaluation is that of its PPoly as well.
         let scalar =

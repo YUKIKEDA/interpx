@@ -21,6 +21,7 @@ src/
   tridiagonal.rs    tridiagonal and cyclic systems: Thomas, Sherman-Morrison (crate-private)
   ppoly.rs          PPoly: piecewise polynomial, Horner evaluation, derivatives and integrals
   oned/             interpolators of data in one variable (a private module; mod.rs re-exports)
+    akima.rs        Akima1D and AkimaMethod: slopes from the five points around, Akima or makima
     cubic_spline.rs CubicSpline: the slopes from a tridiagonal system, then a PPoly of degree 3
     hermite.rs      from values and slopes to a cubic PPoly: the end of every cubic interpolator
                     here (crate-private)
@@ -39,6 +40,8 @@ tests/
   ppoly.rs          PPoly: golden values, input checks, intervals, extrapolation, properties
   bspline.rs        BSpline and the conversions: golden values (1D, curves, SciPy's coefficients),
                     input checks, repeated knots, extrapolation, properties
+  akima.rs          Akima1D: SciPy's coefficients and values for both methods, input checks, the
+                    rules for the slopes, columns kept apart, properties
   cubic_spline.rs   CubicSpline: SciPy's coefficients and values, input checks, few points,
                     the periodic check, end conditions, properties
   linear.rs         Linear1D: golden values, input checks, exact values at the data points,
@@ -56,6 +59,7 @@ benches/
   nearest.rs        time to evaluate a Nearest1D
   cubic_spline.rs   time to build a CubicSpline (the tridiagonal solvers) and to evaluate it
   pchip.rs          time to build a PchipInterpolator, beside CubicSpline, and to evaluate it
+  akima.rs          time to build an Akima1D (both methods), beside the other two, and to evaluate it
 compare/            Python side: pinned SciPy, data sets, generators, goldens (see the golden-data skill)
 docs/               design.ja.md, roadmap.md, conventions.md, adr/
 ```
@@ -65,7 +69,7 @@ docs/               design.ja.md, roadmap.md, conventions.md, adr/
 - **Public surface.** Every public item is re-exported from `lib.rs`. Modules are private (`mod`, not `pub mod`), so the path of an item is `interpx::Name`.
 - **Dependencies between modules.** `scalar` depends on nothing. `value` depends on `scalar`. `error`, `extrapolate` depend on nothing. `interpolator` depends on `error`. `validate` depends on `error`, `scalar`, and `value`. `search` depends on `error`, `extrapolate`, `scalar`, and `value`. `tridiagonal` depends on `scalar` and `value`. `boundary` depends on `scalar` and `value` (an end derivative has the type of a value). An interpolator module depends on these, never the other way round. `bspline` depends on `ppoly` (it holds both conversions), and `ppoly` does not depend on `bspline`.
 - **Interpolators.** An interpolator built from data is a file under `src/oned/` (later `curve/`, `grid/`, `scattered/`, as in `docs/design.ja.md` §5.1). These modules are private; `lib.rs` re-exports the types. What several interpolators share (`ppoly`, `bspline`, `search`, `validate`, `tridiagonal`) stays directly under `src/`. An interpolator that is a piecewise polynomial holds a `PPoly` and lends it with `as_ppoly()`; it does not repeat `derivative`, `antiderivative`, `integrate`, or `eval_derivative`. A cubic interpolator chooses the slope at each data point and ends with `hermite::into_ppoly`: it writes the slopes to the front of the buffer the coefficients will be in, and does not write the step from slopes to coefficients again.
-- **Operations on values.** `Value` has what a linear combination needs and no more. A rule that is not linear in the data, column by column (a comparison of signs, a harmonic mean, a tolerance), uses the crate-private trait behind it (`value::sealed::Sealed`: `zip_with`, `within`). A new operation of this kind goes there, not on `Value`.
+- **Operations on values.** `Value` has what a linear combination needs and no more. A rule that is not linear in the data, column by column (a comparison of signs, a harmonic mean, a tolerance), uses the crate-private trait behind it (`value::sealed::Sealed`: `zip_with` for two values, `combine` for any number, `within`). An interpolator of array values treats each column on its own: building several columns gives, bit for bit, what each column gives alone, and its test file checks that. A new operation of this kind goes there, not on `Value`.
 - **Interval search.** A type that evaluates on a grid of break points or knots calls `search::eval`, `search::eval_hinted`, and `search::eval_batch_into` with a closure for the interval. It does not write its own search, extrapolation, or batch loop. Its `eval_derivative` and `integrate` call `search::eval_derivative` and `search::integrate` in the same way, so that both follow the extrapolation mode as `eval` does. A property of the two types that both must have is tested on both in `tests/calculus.rs`.
 - **Unit tests** are `#[cfg(test)] mod tests` at the end of the module they test. **Integration tests** in `tests/` use only the public API.
 - **Allocation.** A new interpolator is added to `tests/alloc.rs` in the PR that adds it. The counter is global to the process, so the file is built with `harness = false` and all checks are in its `main`: the test harness has threads of its own, and an allocation on one of them during a measured region is counted (it failed a CI job once). The lints treat this file as library code, so it uses `?`, not `expect`.

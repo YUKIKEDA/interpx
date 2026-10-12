@@ -76,5 +76,9 @@ name = "pchip"
 harness = false
 
 [[bench]]
+name = "akima"
+harness = false
+
+[[bench]]
 name = "bspline"
 harness = false

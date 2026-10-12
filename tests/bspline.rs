@@ -279,7 +279,7 @@ fn from_ppoly_keeps_the_values_of_every_scipy_piecewise_polynomial() {
         }
         cases += 1;
     }
-    assert_eq!(cases, 84, "the cases tests/ppoly.rs evaluates");
+    assert_eq!(cases, 96, "the cases tests/ppoly.rs evaluates");
 }
 
 // --- Input checks through the constructor --------------------------------------

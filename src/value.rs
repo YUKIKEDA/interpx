@@ -18,6 +18,13 @@ pub(crate) mod sealed {
         /// (a comparison of signs, a harmonic mean).
         #[must_use]
         fn zip_with(self, other: Self, f: impl Fn(T, T) -> T) -> Self;
+
+        /// The same for any number of values: every column of the result is
+        /// `f` of that column of each of `inputs`.
+        #[must_use]
+        fn combine<const N: usize>(inputs: [Self; N], f: impl Fn([T; N]) -> T) -> Self
+        where
+            Self: Sized;
     }
 
     impl<T: Scalar> Sealed<T> for T {
@@ -27,6 +34,10 @@ pub(crate) mod sealed {
 
         fn zip_with(self, other: Self, f: impl Fn(T, T) -> T) -> Self {
             f(self, other)
+        }
+
+        fn combine<const N: usize>(inputs: [Self; N], f: impl Fn([T; N]) -> T) -> Self {
+            f(inputs)
         }
     }
 
@@ -40,6 +51,14 @@ pub(crate) mod sealed {
                 *a = f(*a, b);
             }
             self
+        }
+
+        fn combine<const N: usize>(inputs: [Self; N], f: impl Fn([T; N]) -> T) -> Self {
+            let mut out = [T::zero(); M];
+            for (column, slot) in out.iter_mut().enumerate() {
+                *slot = f(inputs.map(|value| value[column]));
+            }
+            out
         }
     }
 }
