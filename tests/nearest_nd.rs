@@ -247,6 +247,30 @@ fn the_constructors_report_each_fault_in_the_order_of_the_design() {
         let one = build(&points[..1], &[4.0]).expect("one point");
         assert_eq!(bits(one.eval(&[100.0, -100.0])), bits(Some(4.0)));
     }
+    // Rescaled: a mean or a range that overflows is refused, and not left to
+    // put every point at one place. The sum passes the largest number at the
+    // second point; the range of the second axis is too wide, and the point
+    // with its largest coordinate is named.
+    let huge = 1.7e308;
+    let same = [[huge, 0.0], [huge, 1.0], [huge, 2.0]];
+    assert_eq!(
+        Nearest::rescaled(&same, &[1.0, 2.0, 3.0]).err(),
+        Some(E::NonFinite { index: 1 })
+    );
+    let wide = [[0.0, -huge], [1.0, 0.0], [2.0, huge], [3.0, 1.0]];
+    assert_eq!(
+        Nearest::rescaled(&wide, &[1.0, 2.0, 3.0, 4.0]).err(),
+        Some(E::NonFinite { index: 2 })
+    );
+    // As the numbers stand both are sets of points like any other.
+    let plain = Nearest::new(&same, &[1.0, 2.0, 3.0]).expect("finite points");
+    assert_eq!(bits(plain.eval(&[huge, 1.2])), bits(Some(2.0)));
+    assert!(Nearest::new(&wide, &[1.0, 2.0, 3.0, 4.0]).is_ok());
+    // Large, and still with a mean and a range.
+    let large = [[8e307, 0.0], [-8e307, 1.0]];
+    let rescaled = Nearest::rescaled(&large, &[1.0, 2.0]).expect("finite mean and range");
+    assert_eq!(bits(rescaled.eval(&[7e307, 0.1])), bits(Some(1.0)));
+
     // More points than the tree can number. Points without coordinates and
     // values without columns take no memory, so the count can be reached.
     #[cfg(target_pointer_width = "64")]
