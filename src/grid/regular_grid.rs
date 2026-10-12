@@ -499,18 +499,28 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
         }
     }
 
-    /// The value of the tensor-product spline: the sum over the
-    /// `(degree + 1)^D` splines that are not zero at the point, each the
-    /// product of one spline of every axis, times its coefficient.
+    /// The value of the tensor-product spline, by the degree: the loops over
+    /// the splines of an axis then have a length the compiler knows.
     fn spline_at(&self, spline: &Tensor<T, D, V>, cell: &[(usize, T); D]) -> V {
+        if spline.degree == 3 {
+            self.spline_sum::<4>(spline, cell)
+        } else {
+            self.spline_sum::<MAX_ORDER>(spline, cell)
+        }
+    }
+
+    /// The value of a tensor-product spline of degree `N - 1`: the sum over
+    /// the `N^D` splines that are not zero at the point, each the product of
+    /// one spline of every axis, times its coefficient.
+    fn spline_sum<const N: usize>(&self, spline: &Tensor<T, D, V>, cell: &[(usize, T); D]) -> V {
         let Some(last) = D.checked_sub(1) else {
             // No axes: the one coefficient, which is the one value.
             return spline.coefficients[0];
         };
-        let degree = spline.degree;
-        // For each axis, the values of its `degree + 1` splines at the
-        // coordinate, and the place in the coefficients of the first of them.
-        let mut basis = [[T::zero(); MAX_ORDER]; D];
+        let degree = N - 1;
+        // For each axis, the values of its `N` splines at the coordinate, and
+        // the place in the coefficients of the first of them.
+        let mut basis = [[T::zero(); N]; D];
         let mut first = [0; D];
         for d in 0..D {
             let (interval, x) = cell[d];
@@ -520,36 +530,47 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
             let skip = degree.div_ceil(2);
             let inner = self.axes[d].len() - degree - 1;
             let span = degree + (interval + 1).saturating_sub(skip).min(inner);
-            basis[d] = basis_values::<T, MAX_ORDER>(&spline.knots[d], degree, span, x);
+            basis[d] = basis_values::<T, N>(&spline.knots[d], degree, span, x);
             first[d] = (span - degree) * self.strides[d];
         }
-        // Every combination of one spline from each axis but the last, and for
-        // each the splines of the last axis, whose coefficients lie side by
-        // side.
-        let mut value = V::zero();
+        // The sum is nested, one level an axis:
+        //
+        //   sum over i0 of b0[i0] * (sum over i1 of b1[i1] * (... the sum along
+        //   the last axis of b[i] * coefficient))
+        //
+        // `partial[d]` is the running sum of level `d`: over the splines of
+        // axis `d` taken so far, for the splines chosen on the axes before it.
+        // The coefficients along the last axis lie side by side. A sum of one
+        // level does not wait for the sum of another, where one running sum
+        // over all the terms would make every term wait for the one before it.
+        let mut partial = [V::zero(); D];
         let mut chosen = [0; D];
         loop {
-            let mut weight = T::one();
             let mut offset = first[last];
             for d in 0..last {
-                weight = weight * basis[d][chosen[d]];
                 offset += first[d] + chosen[d] * self.strides[d];
             }
-            let row = &spline.coefficients[offset..=offset + degree];
-            for (coefficient, along) in row.iter().zip(&basis[last]) {
-                value = value.axpy(weight * *along, *coefficient);
+            let row = &spline.coefficients[offset..offset + N];
+            let mut done = V::zero();
+            for (coefficient, spline) in row.iter().zip(&basis[last]) {
+                done = done.axpy(*spline, *coefficient);
             }
-            // The next combination: count up, the last of the axes fastest.
+            // `done` is a finished sum of the level below `d`. It goes into
+            // level `d`; when that completes level `d` too, its sum goes up
+            // in turn.
             let mut d = last;
             loop {
                 if d == 0 {
-                    return value;
+                    return done;
                 }
                 d -= 1;
+                partial[d] = partial[d].axpy(basis[d][chosen[d]], done);
                 chosen[d] += 1;
                 if chosen[d] <= degree {
                     break;
                 }
+                done = partial[d];
+                partial[d] = V::zero();
                 chosen[d] = 0;
             }
         }
@@ -593,8 +614,12 @@ fn tensor<T: Scalar, const D: usize, V: Value<T>>(
                     fault: AxisFault::NonFinite { index: at.row },
                 }
             })?;
-        for block in coefficients.chunks_exact_mut(axis.len() * strides[d]) {
-            system.solve_slabs(block, strides[d]);
+        if strides[d] == 1 {
+            solve_lines(&system, &mut coefficients, axis.len());
+        } else {
+            for block in coefficients.chunks_exact_mut(axis.len() * strides[d]) {
+                system.solve_slabs(block, strides[d]);
+            }
         }
         knots[d] = system.knots;
     }
@@ -606,6 +631,43 @@ fn tensor<T: Scalar, const D: usize, V: Value<T>>(
         knots,
         coefficients,
     })
+}
+
+/// How many lines along the last axis are solved together.
+///
+/// Enough for the steps of one line not to wait for each other, few enough for
+/// the lines to stay in the cache while they are solved. Measured with 8, 32,
+/// and 128 on `benches/grid.rs`: more lines are a little faster on a grid of
+/// 100 by 100 (52, 48, and 44 microseconds) and a little slower on one of 400
+/// by 400 (1.36, 1.43, and 1.53 milliseconds). Any of them is three times as
+/// fast as one line at a time.
+const LINES_AT_ONCE: usize = 32;
+
+/// Solves the system of the last axis for every line along it. A line is `n`
+/// values side by side.
+///
+/// Solved one by one, the lines would each be a chain of steps that wait for
+/// one another. So the lines are taken a few at a time and laid out the other
+/// way round, value `i` of every line side by side: then one step works on all
+/// the lines at once, as it does along the other axes, where the grid is laid
+/// out that way already. The results are those of solving each line alone.
+fn solve_lines<T: Scalar, V: Value<T>>(system: &Collocation<T>, values: &mut [V], n: usize) {
+    let mut turned = vec![V::zero(); n * LINES_AT_ONCE];
+    for group in values.chunks_mut(n * LINES_AT_ONCE) {
+        let lines = group.len() / n;
+        let turned = &mut turned[..n * lines];
+        for (l, line) in group.chunks_exact(n).enumerate() {
+            for (slab, value) in turned.chunks_exact_mut(lines).zip(line) {
+                slab[l] = *value;
+            }
+        }
+        system.solve_slabs(turned, lines);
+        for (l, line) in group.chunks_exact_mut(n).enumerate() {
+            for (slab, value) in turned.chunks_exact(lines).zip(line) {
+                *value = slab[l];
+            }
+        }
+    }
 }
 
 /// How far `x` is from point `i` of the axis toward point `i + 1`, as a
