@@ -31,6 +31,14 @@ The hot path is evaluation: `eval`, `eval_or`, `eval_batch_into`, and the `_par`
 - Do not branch per element on data that is constant per call; hoist it.
 - `#[inline]` and `#[inline(always)]` only where a measurement shows an effect.
 
+## Dependency chains
+
+A loop whose every step needs the result of the step before it (a running sum, a forward or back substitution) runs at the speed of that chain, not of its count of operations. Fewer operations on a longer chain is slower.
+
+- Keep the chain between two steps short, and compute what does not depend on the last step beside it.
+- Give independent work its own chain: sum each level of a nested sum on its own, and solve several right-hand sides of one system together, value `i` of every one side by side, so that one step works on all of them.
+- Measure both forms. Three times in M1 and M2 the form with fewer operations lost (the tridiagonal sweep, partial products carried between the corners of a cell, one pass that checks two directions).
+
 ## SIMD and parallelism
 
 - Explicit SIMD is not in v0.1.0 unless a measurement shows a bottleneck. If added, it uses a safe crate (`wide` or similar), and its result is bit for bit the scalar path's result. FMA is used only when the error bound includes it.

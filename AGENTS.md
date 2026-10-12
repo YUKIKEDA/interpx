@@ -16,11 +16,11 @@ The current row's ID lives only in `docs/roadmap.md`.
 
 ## Required rules
 
-Read the rules that match the work. `alwaysApply` rules apply to every change.
+Read the rules that match the work. `alwaysApply` rules apply to every change. After every merge comes the retrospective of `workflow`: what the work taught goes into these files, not into an agent's memory.
 
 | Rule                        | One line                                                                      |
 | --------------------------- | ----------------------------------------------------------------------------- |
-| `workflow`                  | Grill, Issue, branch, PR, human merge; gates; language                        |
+| `workflow`                  | Grill, Issue, branch, PR, human merge, retrospective; gates; language         |
 | `consent`                   | A question is not a decision; options need a recommendation                   |
 | `git`                       | Destructive git needs a named order; commit and push only when asked          |
 | `conventional-commits`      | `type(scope): subject`; no `perf` type                                        |
@@ -31,6 +31,7 @@ Read the rules that match the work. `alwaysApply` rules apply to every change.
 | `layout`                    | Single crate; `compare/` is isolated; no empty files ahead of need            |
 | `scratch`                   | Remove scratch files in the turn that made them                               |
 | `record-corrections`        | A correction lands in the rule, design, ADR, or skill it belongs to           |
+| `open-ends`                 | A PR leaves no path untimed and no figure unexplained                         |
 | `similar-findings`          | Fix the same kind of problem where it also occurs                             |
 | `powershell-shell`          | Shell syntax on this setup                                                    |
 | `no-dead-code`              | Remove everything that only served a removed path                             |
