@@ -48,6 +48,9 @@ src/
                     built with the `scattered` feature; mod.rs re-exports)
     nearest_nd.rs   NearestNDInterpolator: equal points taken as one, then a k-d tree of
                     `kiddo`, kept behind an Arc
+    rbf.rs          the parts of RBFInterpolator up to its system (crate-private): the
+                    kernels, the monomials and their shift and scale, the matrix, the row
+                    of an evaluation; unit tests against SciPy's internal functions
   bspline.rs        BSpline: basis functions on the stack, derivatives and integrals;
                     PPoly::from_bspline and BSpline::from_ppoly
 tests/
