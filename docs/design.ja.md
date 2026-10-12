@@ -621,14 +621,48 @@ interpx/
   \begin{bmatrix} y \\ 0 \end{bmatrix},
   \quad A_{ij} = \phi(\|x_i - x_j\|) + \lambda \delta_{ij}
   $$
-  （$\lambda$ は `smoothing`。符号は SciPy 1.18 の実装に合わせて M3 で確定）
+  （$\lambda$ は `smoothing`。対角に足す。SciPy 1.18 と同じ符号である。M3-2 で確かめた）
 * **カーネル 8 種**（`RbfKernel` enum）: `linear`、`thin_plate_spline`、`cubic`、`quintic`、`gaussian`、`multiquadric`、`inverse_multiquadric`、`inverse_quadratic`。
-* `epsilon` は gaussian・multiquadric・inverse 系で必須。必要なのに未指定なら `Err(InvalidParameter)`。
-* `degree` の既定はカーネルごとの最小次数。最小次数未満の指定は `Err(InvalidParameter)`（SciPy は警告のみ）。多項式項は座標をシフト・スケーリングしてから構成する。
+* `epsilon` と `degree` の持ち方、多項式の項、座標の変換は、下の「部品（M3-2）」のとおり。
 * 既定値: `kernel = thin_plate_spline`、`smoothing = 0`、`neighbors = None`。
 * **ソルバー**: 係数行列は鞍点系で正定値ではないため、コレスキーは使わず `faer` の `partial_piv_lu` を用いる。特異なら `Err(SolverFailed(Singular))`。疑似逆行列フォールバックはロードマップ。
 * **メモリ**: 全域モードは O(N²)（N = 1万点で約 800 MB）。doc に明記し、大きい N では `neighbors` 指定を推奨する。上限は設けないが、確保サイズの `usize` オーバーフローは検査して `Err`。
 * `neighbors` 指定時はクエリごとに `kiddo` で近傍 $k$ 点を抽出し、局所問題を解く。
+
+**RBF の部品（M3-2）**
+
+M3-2 は、連立方程式を組み立てるところまでの部品を crate 内に入れる。公開の型は出さない。解けない型を先に公開しないためで、`RBFInterpolator` と `RbfKernel` は、解法の入る M3-3 が公開する。部品は `src/scattered/rbf.rs` に置き、SciPy の内部関数の出力と照合する。
+
+* **カーネル**: $r = \varepsilon \lVert x - y \rVert$（ユークリッド距離に `epsilon` を掛けたもの）の関数である。式と符号は SciPy と同じにする。
+
+  | カーネル | $\phi(r)$ | `epsilon` | 最小次数 | 既定の次数 |
+  | :--- | :--- | :--- | :--- | :--- |
+  | `Linear` | $-r$ | 持たない | 0 | 0 |
+  | `ThinPlateSpline` | $r^2 \log r$（$r = 0$ で 0） | 持たない | 1 | 1 |
+  | `Cubic` | $r^3$ | 持たない | 1 | 1 |
+  | `Quintic` | $-r^5$ | 持たない | 2 | 2 |
+  | `Multiquadric` | $-\sqrt{r^2 + 1}$ | 持つ | 0 | 0 |
+  | `InverseMultiquadric` | $1/\sqrt{r^2 + 1}$ | 持つ | なし | 0 |
+  | `InverseQuadratic` | $1/(r^2 + 1)$ | 持つ | なし | 0 |
+  | `Gaussian` | $e^{-r^2}$ | 持つ | なし | 0 |
+
+  * 符号が負のものがあるのは、条件つき正定値にするためである（SciPy と同じ。Fasshauer, *Meshfree Approximation Methods with MATLAB*, 8 章）。
+  * 距離は SciPy と同じ順で求める。座標に `epsilon` を掛けてから差を取り、2 乗の和の平方根を取る。
+* **`epsilon`**: 要るカーネル（表の「持つ」の 4 つ）は、variant がその値を持つ（`RbfKernel::Gaussian { epsilon }` の形）。要らない 4 つは持たない。「要るのに指定がない」という状態が書けないので、そのためのエラーはない。値は有限で正の数だけを受け付ける（検査と、そのエラーの理由の variant は、公開の型を出す M3-3 が入れる）。
+  * 持たない 4 つは、尺度によらないカーネルである（`epsilon` を変えても、平滑化なしなら補間は変わらない。SciPy 1.18 で確かめた。30 点、`epsilon` 1 と 2.5 で、差は $10^{-13}$ 以下）。SciPy は、この 4 つにも `epsilon` を渡せる（既定は 1）。平滑化があるときは結果が変わるが、それは平滑化の強さを変えたのと同じである。$\phi(\varepsilon r)$ が $\varepsilon^p \phi(r)$（`ThinPlateSpline` では、それに多項式の項が吸収する分を足したもの）になるので、SciPy の $(\varepsilon, \lambda)$ は、`epsilon` なしの $\lambda / \varepsilon^p$ に当たる（$p$ は `Linear` で 1、`ThinPlateSpline` で 2、`Cubic` で 3、`Quintic` で 5）。M3-3 の golden で確かめる。
+* **多項式の次数**: `Option<usize>` で持つ。`Some(k)` は $k$ 次までの単項式を足す。`None` は多項式の項を足さない（SciPy の `degree=-1`）。
+  * 既定は表の「既定の次数」（SciPy と同じ。最小次数がないカーネルでも、既定は 0 次で、定数の項を足す）。
+  * `Some(k)` で $k$ が最小次数より小さければ `InvalidParameter { name: "degree", reason: TooSmall { min } }`（SciPy は警告だけを出して続ける。解が一意に決まらないことがある）。
+  * `None` はどのカーネルでも受け付ける（SciPy も、`-1` には警告を出さない）。最小次数のあるカーネルで項を足さないと、系が特異になりうる。そのときは M3-3 の解法がエラーを返す。
+* **単項式**: $D$ 変数で $k$ 次までの単項式は $\binom{D + k}{D}$ 個ある。並びは SciPy と同じで、次数の低い順、同じ次数の中では「変数の重複組合せを辞書順に並べた順」である（2 変数 2 次なら $1,\ x,\ y,\ x^2,\ xy,\ y^2$）。
+  * 個数が `usize` に収まらなければ `InvalidParameter { name: "degree", reason: TooLarge { max } }`（`max` は、その次元で個数が収まるいちばん大きい次数）。
+  * 点の数が単項式の個数より少なければ `InsufficientPoints { required, actual }`（`required` は単項式の個数。多項式の行列が列について最大階数になれない。SciPy も同じ条件でエラーにする）。
+* **座標の変換**（多項式の項だけ）: 単項式に入れる座標は、軸ごとに $\hat{x}_d = (x_d - s_d) / c_d$ とする。$s_d$ は最大と最小の中点、$c_d$ は範囲の半分で、範囲が 0 の軸は $c_d = 1$（SciPy と同じ）。データの座標が $[-1, 1]$ に入るので、高い次数の単項式の値が大きくなりすぎない。カーネルに入れる座標は変換しない（`epsilon` を掛けるだけ）。
+  * `NearestNDInterpolator` の `rescaled` の変換（平均と範囲）とは別のものである。どちらも SciPy の式のまま持つ。
+* **系**: 点が $N$ 個、単項式が $R$ 個のとき、$(N + R) \times (N + R)$ の対称な行列を、行優先の平坦な配列で作る。左上が $A_{ij} = \phi(\varepsilon \lVert y_i - y_j \rVert) + \lambda\,\delta_{ij}$、右上が $P_{ij}$（点 $i$ での単項式 $j$ の値）、左下が $P^T$、右下が 0。右辺は、値 $N$ 個のあとに 0 が $R$ 個。
+  * 確保の大きさ $(N + R)^2$ が `usize` に収まらなければエラー（§3.5 の「入力だけで決まる上限」）。
+* **評価の行**: 問い合わせの点 $x$ に対して、$\phi(\varepsilon \lVert x - y_i \rVert)$ が $N$ 個、そのあとに $\hat{x}$ での単項式の値が $R$ 個。これと係数の内積が補間の値である（M3-3）。呼び出し側の渡した領域に書き、確保しない。
+* **照合**: SciPy の内部関数 `_rbfinterp_pythran` の `_build_system`（行列・右辺・変換）、`_kernel_matrix`、`_polynomial_matrix`、`_build_evaluation_coefficients`（評価の行）と、`_monomial_powers`（単項式の並び）の出力を golden にする。
 
 ### 6.4 `RegularGridInterpolator`
 * **型**: `RegularGridInterpolator<T: Scalar, const D: usize, V: Value<T> = T>`。$D$ 次元の直交グリッド（軸ごとの座標の直積）の上の値を補間する。`Point = [T; D]`、`Output = V`。
@@ -794,7 +828,7 @@ serde   = ["dep:serde"]
 
 * **照合の記録**: F1〜F5 は 2 つの独立した実装（UQTestFuns、および Burkardt の `test_interp_2d`（MIT））で式が一致した（F4 の係数 $\tfrac{81}{16}$ = 5.0625、F5 の $\tfrac{81}{4}$ = 20.25、いずれも因子 $\tfrac13$ を持つ）。F6 は UQTestFuns が $\tfrac19$ を欠くが、半径 $\tfrac89$ の球という記述と整合するのは $\tfrac19$ を持つ式であり、Burkardt の実装もこれと一致する。F1 の第 2 項は Burkardt の抜粋で二乗が見えないため、UQTestFuns の式を採る。Franke (1979) 原典は取得できていないため、golden を作る最初の行で原典または Renka–Brown の公開コードと再照合し、結果をこの節に追記する。
 * **散乱点の配置**: Franke の 100 点・33 点と、Lawson の 25 点の節点配置を使う（25 点は Franke ではなく Lawson の配置である）。座標は Burkardt の `test_interp_2d`（MIT）から機械的に転記する。Franke の 100 点には単位正方形の外に出る点があるため、単位正方形上のクエリの一部は凸包の外になる。
-* **golden の範囲**: 層 A の golden は、補間族ごとに `compare/goldens/` の `oned` / `cubic_spline` / `bspline1d` / `calculus` / `curve` / `grid` / `grid_pchip` / `scattered` / `rbf` に置く（`cubic_spline` は `CubicSpline` の全ケース、`calculus` は `PPoly` と `BSpline` の導関数・積分で、どちらも 1 ファイルの上限に収めるため `oned` から分けてある。`bspline1d` は `make_interp_spline` の全ケースで、M1-12 で同じ理由から分ける。`grid` は 6 つの方法を同じグリッドで比べるケースで、`grid_pchip` は `pchip` のために選んだケース（軸の入れ替え、段と平らな値、2 点と 3 点の軸など）である。`grid` が上限の 75% にあるので、M2-3 で分ける。SciPy のグリッドが受け付けない 2 点と 3 点の軸のケースは、SciPy の `PchipInterpolator` を最後の軸から順に当てた値を基準にする）。入力のみの `datasets`（古典データ・節点配置・敵対的入力）と、解析関数の値の `functions` も置く。1D のケースは値に加えて、1 階・2 階導関数、原始関数、定積分、区分多項式の係数（または B-spline のノットと制御点）を持つ。`calculus` は、導関数と原始関数そのもの（`PPoly` の係数、`BSpline` のノットと制御点）、3 階以上の導関数、2 階の原始関数、領域外にまたがる定積分、周期をまたぐ定積分を持つ。SciPy と意図して変える挙動（§6.1 の「SciPy との差」）は golden に入れず、解析解と性質テストで確かめる。`oned` には M1-7 で、無限大のクエリ（`numpy.interp`）、`fill_value="extrapolate"` の `nearest` / `nearest-up`、2 列の値（`interp1d`）を加える。M2-1 では `grid` に、`Nearest` でちょうど中間の問い合わせ点、2 列の値、3 次元で一部の軸だけ降順のグリッド、不均一なグリッドと 3 次元での `Extend` を加える。`Clamp` と `Periodic` は SciPy に対応がないので、性質テストで確かめる。M1-13 では `curve` に、3 つのパラメータの決め方それぞれ（パラメータそのものも持つ）、閉じた曲線（周期の 2・3・5 次）、4 次元の点、点数が $k + 1$ ちょうどの点列、間隔が極端に不均一な点列を加える。M1-12 では `bspline1d` に、偶数次（2・4 次）と 6 次以上、点数が $k + 1$ ちょうどのデータ、周期の 1〜5 次と点数が次数以下の周期、3 次の端の導関数が 0 でないもの、3 次で片端だけ not-a-knot のもの（基準は SciPy の `CubicSpline`）、2 列の値、間隔が不均一なデータを加える。帯行列ソルバーの golden は `banded` に置く（LAPACK の `gbsv` の解で、`scipy.linalg.lapack.dgbsv` から得る。`make_interp_spline` が呼ぶものである。`scipy.linalg.solve_banded` は、帯が上下 1 本ずつのとき三重対角専用の `gtsv` を呼ぶので、基準にしない。LAPACK が行を入れ替えた列の数も持ち、ピボットの選び方まで照合する。巡回帯行列は密行列の `scipy.linalg.solve` の解。ランダムな帯行列、行の入れ替えが実際に起きる行列、条件の悪い行列、$n = 1$〜$3$、全幅の帯（密行列）、複数列の右辺）。M1-11 では `CubicHermiteSpline` に、2 点、3 点、間隔が不均一なデータ、傾きが全部 0 のデータ、直線上のデータにその直線の傾きを与えたもの、データと合わない傾き（行き過ぎる例）、2 列の値、周期の外挿（両端が合うデータと、合わないデータ）を加える。M1-10 では `Akima1D` の両方式に、2 点、3 点、4 点、直線上のデータと平らな区間（傾きが式で定まらない点）、2 列の値を加える。M1-9 では `PchipInterpolator` の、2 点、3 点、平らな区間と符号の変化を含むデータ、単調なデータ、2 列の値を加える。M1-8 では `CubicSpline` の、2 点（境界条件ごと）、3 点（not-a-knot・周期・混在）、4 点の周期、not-a-knot と導関数の混在、2 列の値、間隔が極端に不均一なデータを加える。三重対角ソルバーの golden は `tridiagonal` に置く（SciPy の `solve_banded` の解。優対角のランダム行列、古典データから作った 4 種の境界条件の行列、巡回行列、条件の悪い行列、$n = 1$〜$3$、複数列の右辺）。グリッドの `cubic` / `quintic` の基準は §6.4 のとおり `cubic_legacy` / `quintic_legacy` の値とする。M2-2 では `grid` に、係数そのもの（`make_interp_spline` を軸ごとに当てたもの）、点数が下限ちょうどの軸、降順の軸、2 列の値を加える。
+* **golden の範囲**: 層 A の golden は、補間族ごとに `compare/goldens/` の `oned` / `cubic_spline` / `bspline1d` / `calculus` / `curve` / `grid` / `grid_pchip` / `scattered` / `rbf` / `rbf_system` に置く（`cubic_spline` は `CubicSpline` の全ケース、`calculus` は `PPoly` と `BSpline` の導関数・積分で、どちらも 1 ファイルの上限に収めるため `oned` から分けてある。`bspline1d` は `make_interp_spline` の全ケースで、M1-12 で同じ理由から分ける。`grid` は 6 つの方法を同じグリッドで比べるケースで、`grid_pchip` は `pchip` のために選んだケース（軸の入れ替え、段と平らな値、2 点と 3 点の軸など）である。`grid` が上限の 75% にあるので、M2-3 で分ける。SciPy のグリッドが受け付けない 2 点と 3 点の軸のケースは、SciPy の `PchipInterpolator` を最後の軸から順に当てた値を基準にする。`rbf` は補間の値、`rbf_system` は RBF の部品（行列、右辺、座標の変換、単項式、評価の行）で、SciPy の内部関数の出力である。点数は 12 以下にする（行列は点数の 2 乗の大きさになる）。`rbf` が 546 KB あるので、M3-2 で分ける）。入力のみの `datasets`（古典データ・節点配置・敵対的入力）と、解析関数の値の `functions` も置く。1D のケースは値に加えて、1 階・2 階導関数、原始関数、定積分、区分多項式の係数（または B-spline のノットと制御点）を持つ。`calculus` は、導関数と原始関数そのもの（`PPoly` の係数、`BSpline` のノットと制御点）、3 階以上の導関数、2 階の原始関数、領域外にまたがる定積分、周期をまたぐ定積分を持つ。SciPy と意図して変える挙動（§6.1 の「SciPy との差」）は golden に入れず、解析解と性質テストで確かめる。`oned` には M1-7 で、無限大のクエリ（`numpy.interp`）、`fill_value="extrapolate"` の `nearest` / `nearest-up`、2 列の値（`interp1d`）を加える。M2-1 では `grid` に、`Nearest` でちょうど中間の問い合わせ点、2 列の値、3 次元で一部の軸だけ降順のグリッド、不均一なグリッドと 3 次元での `Extend` を加える。`Clamp` と `Periodic` は SciPy に対応がないので、性質テストで確かめる。M1-13 では `curve` に、3 つのパラメータの決め方それぞれ（パラメータそのものも持つ）、閉じた曲線（周期の 2・3・5 次）、4 次元の点、点数が $k + 1$ ちょうどの点列、間隔が極端に不均一な点列を加える。M1-12 では `bspline1d` に、偶数次（2・4 次）と 6 次以上、点数が $k + 1$ ちょうどのデータ、周期の 1〜5 次と点数が次数以下の周期、3 次の端の導関数が 0 でないもの、3 次で片端だけ not-a-knot のもの（基準は SciPy の `CubicSpline`）、2 列の値、間隔が不均一なデータを加える。帯行列ソルバーの golden は `banded` に置く（LAPACK の `gbsv` の解で、`scipy.linalg.lapack.dgbsv` から得る。`make_interp_spline` が呼ぶものである。`scipy.linalg.solve_banded` は、帯が上下 1 本ずつのとき三重対角専用の `gtsv` を呼ぶので、基準にしない。LAPACK が行を入れ替えた列の数も持ち、ピボットの選び方まで照合する。巡回帯行列は密行列の `scipy.linalg.solve` の解。ランダムな帯行列、行の入れ替えが実際に起きる行列、条件の悪い行列、$n = 1$〜$3$、全幅の帯（密行列）、複数列の右辺）。M1-11 では `CubicHermiteSpline` に、2 点、3 点、間隔が不均一なデータ、傾きが全部 0 のデータ、直線上のデータにその直線の傾きを与えたもの、データと合わない傾き（行き過ぎる例）、2 列の値、周期の外挿（両端が合うデータと、合わないデータ）を加える。M1-10 では `Akima1D` の両方式に、2 点、3 点、4 点、直線上のデータと平らな区間（傾きが式で定まらない点）、2 列の値を加える。M1-9 では `PchipInterpolator` の、2 点、3 点、平らな区間と符号の変化を含むデータ、単調なデータ、2 列の値を加える。M1-8 では `CubicSpline` の、2 点（境界条件ごと）、3 点（not-a-knot・周期・混在）、4 点の周期、not-a-knot と導関数の混在、2 列の値、間隔が極端に不均一なデータを加える。三重対角ソルバーの golden は `tridiagonal` に置く（SciPy の `solve_banded` の解。優対角のランダム行列、古典データから作った 4 種の境界条件の行列、巡回行列、条件の悪い行列、$n = 1$〜$3$、複数列の右辺）。グリッドの `cubic` / `quintic` の基準は §6.4 のとおり `cubic_legacy` / `quintic_legacy` の値とする。M2-2 では `grid` に、係数そのもの（`make_interp_spline` を軸ごとに当てたもの）、点数が下限ちょうどの軸、降順の軸、2 列の値を加える。
 * **サイズの上限**: golden は 1 ファイル 1 MB、ディレクトリ合計 8 MB を上限とする（どちらも圧縮しない大きさ）。golden は公開パッケージに含める（取ってきたクレートで `cargo test` が通るようにするため）。crates.io の上限 10 MB は圧縮後の大きさで、golden は約 1/5 に圧縮されるので、8 MB は圧縮後で約 1.6 MB である。1 ファイルの上限は差分とレビューのためのもので、超える系統はファイルを分ける。合計が上限の 90% を超えることになる行は、ケースを落とさず、先に上限を決め直す。経緯と、採らなかった案は ADR 0010。
 
 **1D の古典データ。** 値は一次資料（原論文・原典）から転記し、出典を golden の `meta` に記録する。
