@@ -28,6 +28,6 @@ Not taken:
 
 The rows of M2 to M4 can add the cases their tests need. At the pace of M1 the directory reaches about 4.7 MB at v0.1.0.
 
-The limit is no longer a reason to thin out a case. A reason remains in the 1 MB per file and in the time `cargo test` takes to parse the files.
+The limit is no longer a reason to thin out a case. The curve cases that M1-13 had thinned to fit (queries at the midpoints between the data, and two of the three parametrizations in 3D) are restored in the change that raises the limit. The banded matrices that M1-12 had made smaller (80 rows for 150) stay as they are: a larger matrix of the same kind adds no case. A reason remains in the 1 MB per file and in the time `cargo test` takes to parse the files.
 
 If the directory nears 8 MB, the question is asked again with the sizes of that day: this record is what it starts from.
