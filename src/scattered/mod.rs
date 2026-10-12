@@ -1,6 +1,7 @@
 //! Interpolators of values at points without structure, in any number of
 //! dimensions. Built with the `scattered` feature.
 
+mod kdtree;
 mod nearest_nd;
 mod rbf;
 

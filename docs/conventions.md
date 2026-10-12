@@ -48,10 +48,13 @@ src/
                     built with the `scattered` feature; mod.rs re-exports)
     nearest_nd.rs   NearestNDInterpolator: equal points taken as one, then a k-d tree of
                     `kiddo`, kept behind an Arc
+    kdtree.rs       a k-d tree whose search for the nearest k points does not allocate
+                    (crate-private; for the neighbors mode of the RBF interpolant)
     rbf.rs          RBFInterpolator, RbfKernel, RbfOptions, RbfDegree: the kernels, the
                     monomials and their shift and scale, the matrix, its LU by `faer` in
-                    place and the substitutions here; unit tests of the parts against
-                    SciPy's internal functions
+                    place and the substitutions here; with neighbors, the system of the
+                    nearest points at every evaluation, in a working space of the thread;
+                    unit tests of the parts against SciPy's internal functions
   bspline.rs        BSpline: basis functions on the stack, derivatives and integrals;
                     PPoly::from_bspline and BSpline::from_ppoly
 tests/
@@ -75,9 +78,9 @@ tests/
   nearest_nd.rs     NearestNDInterpolator: SciPy's values, a scan of all points, repeated
                     points, ties, the bound, rescaled coordinates, input checks, properties
                     (the file is empty without the `scattered` feature)
-  rbf.rs            RBFInterpolator solved over all points: SciPy's values within a measured
-                    tolerance, input checks and their order, systems without a solution,
-                    properties (needs the `scattered` feature)
+  rbf.rs            RBFInterpolator, over all points and with neighbors: SciPy's values
+                    within a measured tolerance, input checks and their order, systems
+                    without a solution, properties (needs the `scattered` feature)
   bspline1d.rs      BSpline1D: SciPy's knots, control points, and values, input checks and their
                     order, the knots of each case, agreement with CubicSpline and Linear1D,
                     properties

@@ -183,6 +183,68 @@ def chosen_cases() -> list[dict]:
     return out
 
 
+def at_a_tie(points, queries, k: int) -> list[bool]:
+    """Whether the `k`-th and the next nearest point of a query are at the
+    same distance: which of them is a neighbor then follows from how the tree
+    was built, and the case is not compared there."""
+    pts, q = np.asarray(points, dtype=np.float64), np.asarray(queries, dtype=np.float64)
+    if k >= len(pts):
+        return [False] * len(q)
+    d = np.sort(np.linalg.norm(pts[None, :, :] - q[:, None, :], axis=2), axis=1)
+    return [bool(abs(row[k] - row[k - 1]) <= 1e-12 * max(row[k], 1.0)) for row in d]
+
+
+def neighbor_cases() -> list[dict]:
+    """Cases chosen for the `neighbors` mode (M3-4). Appended last, with a
+    generator of their own."""
+    rng = np.random.default_rng(SEED + 3)
+    reference = "scipy.interpolate.RBFInterpolator"
+    out = []
+    f33 = np.array(classic_data.FRANKE_33)
+    vals = datasets.franke(1, f33[:, 0], f33[:, 1])
+    q = np.vstack([-0.05 + 1.1 * rng.random((24, 2)), f33[:2]])
+    h50 = datasets.halton(50, 3)
+    v50 = datasets.genz("gaussian_peak", h50)
+    q3 = np.vstack([rng.random((20, 3)), h50[:2]])
+
+    def add(name, points, values, queries, kernel, neighbors, function, **kwargs):
+        options = {
+            "kernel": kernel,
+            "epsilon": kwargs.get("epsilon"),
+            "smoothing": kwargs.get("smoothing", 0.0),
+            "degree": kwargs.get("degree"),
+            "neighbors": neighbors,
+            "min_degree": MIN_DEGREE[kernel],
+            "function": function,
+        }
+        f = RBFInterpolator(points, values, kernel=kernel, neighbors=neighbors, **kwargs)
+        case = golden.case(name, reference, options, points=points, values=values, queries=queries, expected=f(queries))
+        case["tied"] = at_a_tie(points, queries, neighbors)
+        out.append(case)
+        return case
+
+    # Smoothing, a degree above the default, no polynomial.
+    add("rbf/thin_plate_spline/neighbors_12_smoothing/franke_33/f1", f33, vals, q, "thin_plate_spline", 12, "franke_f1", smoothing=0.1)
+    add("rbf/gaussian/neighbors_15_degree_1/franke_33/f1", f33, vals, q, "gaussian", 15, "franke_f1", epsilon=EPSILON, degree=1)
+    add("rbf/inverse_quadratic/neighbors_10_no_polynomial/franke_33/f1", f33, vals, q, "inverse_quadratic", 10, "franke_f1", epsilon=EPSILON, degree=-1)
+    # Few neighbors: one (the value of the nearest point), two, and as many as
+    # the polynomial has monomials.
+    add("rbf/linear/neighbors_1/franke_33/f1", f33, vals, q, "linear", 1, "franke_f1")
+    add("rbf/linear/neighbors_2/franke_33/f1", f33, vals, q, "linear", 2, "franke_f1")
+    add("rbf/cubic/neighbors_3/franke_33/f1", f33, vals, q, "cubic", 3, "franke_f1")
+    # As many neighbors as points, and more: all points.
+    add("rbf/thin_plate_spline/neighbors_33/franke_33/f1", f33, vals, q, "thin_plate_spline", 33, "franke_f1")
+    add("rbf/thin_plate_spline/neighbors_60/franke_33/f1", f33, vals, q, "thin_plate_spline", 60, "franke_f1")
+    # Three dimensions, a quintic with its ten monomials.
+    add("rbf/quintic/neighbors_25/halton_50_d3/gaussian_peak", h50, v50, q3, "quintic", 25, "genz_gaussian_peak")
+    # Two values at every point.
+    both = np.column_stack([vals, datasets.franke(4, f33[:, 0], f33[:, 1])])
+    case = add("rbf/multiquadric/neighbors_14_columns/franke_33/f1_f4", f33, vals, q, "multiquadric", 14, "franke_f1_f4", epsilon=EPSILON)
+    case["values_columns"] = golden.encode(both)
+    case["expected_columns"] = golden.encode(RBFInterpolator(f33, both, kernel="multiquadric", neighbors=14, epsilon=EPSILON)(q))
+    return out
+
+
 def main() -> None:
     rng = np.random.default_rng(SEED)
     f33 = np.array(classic_data.FRANKE_33)
@@ -232,6 +294,7 @@ def main() -> None:
     path = golden.write("rbf_system", GENERATOR, SEED, system_cases())
     print(f"wrote {path.name}")
     cases += chosen_cases()
+    cases += neighbor_cases()
     path = golden.write("rbf", GENERATOR, SEED, cases)
     print(f"wrote {path.name} ({len(cases)} cases)")
 

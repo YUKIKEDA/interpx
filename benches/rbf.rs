@@ -1,5 +1,5 @@
-//! Time to build and to evaluate an `RBFInterpolator` solved over all its
-//! points.
+//! Time to build and to evaluate an `RBFInterpolator`, solved over all its
+//! points and from the neighbors of each query.
 //!
 //! Points at random in the unit square: 100, 300, and 1000 of them, for three
 //! kernels: the thin plate spline (a logarithm an entry), the Gaussian (an
@@ -7,6 +7,11 @@
 //! together a matrix with a row for every point and factors it; its time grows
 //! with the cube of the points. Evaluation is 1000 queries; each takes one
 //! kernel for every point.
+//!
+//! With neighbors (`rbf_neighbors`), construction sorts the points into a
+//! tree: 10 000 and 100 000 of them. An evaluation finds the 10, 20, or 50
+//! nearest points and solves their system; its time does not depend on the
+//! number of points beyond the search.
 //!
 //! Run with `just bench`. Not a gate; CI does not run it.
 
@@ -16,7 +21,7 @@
 #![allow(missing_docs)]
 
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use interpx::{Interpolator, RBFInterpolator, RbfKernel};
+use interpx::{Interpolator, RBFInterpolator, RbfKernel, RbfOptions};
 use std::hint::black_box;
 
 /// A small generator, so that the inputs are the same on every run and machine.
@@ -71,5 +76,53 @@ fn rbf(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, rbf);
+fn neighbors(c: &mut Criterion) {
+    let kernels = [
+        ("thin_plate_spline", RbfKernel::ThinPlateSpline),
+        ("linear", RbfKernel::Linear),
+    ];
+    let mut group = c.benchmark_group("rbf_neighbors");
+    group.sample_size(20);
+    for n in [10_000, 100_000] {
+        let mut rng = Lcg(1);
+        let points: Vec<[f64; 2]> = (0..n).map(|_| [rng.next(), rng.next()]).collect();
+        let values: Vec<f64> = (0..n).map(|_| 2.0 * rng.next() - 1.0).collect();
+        let queries: Vec<[f64; 2]> = (0..1000).map(|_| [rng.next(), rng.next()]).collect();
+        let mut out = vec![0.0; queries.len()];
+        let twenty = RbfOptions::new().with_neighbors(20);
+        group.throughput(Throughput::Elements(n as u64));
+        group.bench_function(format!("new/{n}"), |b| {
+            b.iter(|| {
+                let built = RBFInterpolator::with_options(
+                    black_box(&points),
+                    &values,
+                    RbfKernel::ThinPlateSpline,
+                    &twenty,
+                );
+                black_box(built.is_ok())
+            });
+        });
+        group.throughput(Throughput::Elements(queries.len() as u64));
+        for (label, kernel) in kernels {
+            for k in [10, 20, 50] {
+                let options = RbfOptions::new().with_neighbors(k);
+                let Ok(built) = RBFInterpolator::with_options(&points, &values, kernel, &options)
+                else {
+                    return;
+                };
+                group.bench_function(format!("eval/{label}/k{k}/{n}"), |b| {
+                    b.iter(|| {
+                        for (query, slot) in queries.iter().zip(out.iter_mut()) {
+                            *slot = built.eval_or(black_box(query), f64::NAN);
+                        }
+                        black_box(&out);
+                    });
+                });
+            }
+        }
+    }
+    group.finish();
+}
+
+criterion_group!(benches, rbf, neighbors);
 criterion_main!(benches);
