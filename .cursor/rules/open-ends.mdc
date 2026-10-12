@@ -1,0 +1,24 @@
+---
+description: A PR does not go out with work it names as not done, or a figure it cannot explain
+alwaysApply: true
+---
+
+# No open ends in a PR
+
+A PR is opened when its work is finished, not when it runs. Two sentences do not belong in a PR body or in a report to the owner:
+
+- "The speed was not tuned." A PR that adds a path (an evaluation, a construction) times its stages before it is opened: cut the path short stage by stage, see where the time goes, tune what stands out, and report the numbers before and after. What is left is stated with a number and the reason it stays (`.cursor/rules/bench.mdc`).
+- "The cause is not confirmed." A figure the agent cannot explain (a coverage count, a tolerance that is missed, a benchmark that disagrees with its neighbors) is traced to its cause from the data before the PR is opened. A guess is not written as an explanation, with or without "probably".
+
+What is out of the row's scope is a roadmap row that names when (`.cursor/rules/defer.mdc`), not a caveat.
+
+On M2-2 a PR was opened with both sentences. The owner asked why. Timing the stages found that four fifths of the construction was one step done a line at a time (three times faster once fixed), and computing the coverage figure from the data found an error path that could never run.
+
+```text
+# BAD
+構築の速度は詰めていません。カバレッジは 99.97% で、総称関数の数え方によるものと見ていますが、断定はできていません。
+
+# GOOD
+構築は 200x200 で 598 → 200 µs。内訳を測ると最後の軸の求解が 8 割だったので、列をまとめて解く形に直した。
+カバレッジの 1 行は 0 次元の場合の `return` で、0 次元の実体でだけ実行される(データから計算して確かめた)。
+```

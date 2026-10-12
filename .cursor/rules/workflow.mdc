@@ -6,7 +6,7 @@ alwaysApply: true
 # Workflow
 
 ```
-Grill (when the design branches) → Issue → branch → work → PR → human review → squash merge
+Grill (when the design branches) → Issue → branch → work → PR → human review → squash merge → retrospective
 ```
 
 1. Grill when the API, the meaning, or a milestone boundary branches. Skill: `.agents/skills/grilling/SKILL.md`. Skip it when the Issue already has acceptance text and the design settles the question.
@@ -17,6 +17,7 @@ Grill (when the design branches) → Issue → branch → work → PR → human 
 6. Open the PR in the same turn that the branch is pushed. Use `.github/pull_request_template.md` (`.cursor/rules/pull-requests.mdc`). Write `Closes #N` on its own line under `## Related` (`.cursor/rules/github-closing.mdc`).
 7. A human reviews and squash-merges. An agent never merges.
 8. After the merge, delete the local and remote branch. A withdrawn prototype's branch is not a merged branch: post its diff on the Issue and leave the branch until the owner names it.
+9. Retrospective, below, before the next feature branch.
 
 ## Gates
 
@@ -47,6 +48,25 @@ Two rows that edit the same lines (the roadmap's **Current work**, one function)
 Identifiers, rustdoc, README, and the `Cargo.toml` description are English. Issue bodies, PR bodies, and commit subjects may be Japanese. `type`, `scope`, and the PR template headings stay English. The spec is `docs/design.ja.md`. The English `docs/design.md` is a roadmap row before v0.1.0 and is not kept in sync until then.
 
 Before calling a PR ready, and whenever the owner asks for the next step, read the reviews and inline comments of every open PR (`gh pr view <n> --json reviews,comments` and `gh api repos/{owner}/{repo}/pulls/<n>/comments`).
+
+## Retrospective
+
+After a squash merge, in the turn that learns of it, write three points as a comment on the merged PR. Write "none" when a point is empty.
+
+1. A lesson for `.cursor/rules/`, a skill, `docs/design.ja.md`, or one ADR under `docs/adr/`. Tacit knowledge the work relied on, which nothing states yet, is a lesson: a way of measuring, a way a tool fails on this setup, a mistake the review or the owner had to catch.
+2. The Issue that will carry it, if any.
+3. Whether to refactor. Yes opens a `refactor` Issue that is next, before the next feature. Postponing it needs a roadmap row that names when (`.cursor/rules/defer.mdc`).
+
+Then, without waiting for an ask, file a `chore` Issue and one PR that writes each lesson of point 1 into the file it names. One Issue and PR may carry the lessons of several retrospectives (a design PR and the feature PR stacked on it are usually one). The next feature branch waits until that PR is open. A lesson that changes what the library means goes through a `design` Issue instead.
+
+There is no retrospective log: the comment on the PR and the rule are the record.
+
+The first Grill on these rules left this step out, on the agent's proposal that lessons would be written into the rules when they were noticed. From M1-5 to M2-2 none was, and a correction from the owner went into the agent's memory instead of a rule. The step is here so that the question is asked after every merge.
+
+```text
+# BAD — the PR merged; the next row starts; what the row taught stays in the conversation
+# GOOD — the PR merged; three points on it; a chore PR with the lessons is open; then the next row
+```
 
 ## Lessons
 

@@ -3,7 +3,7 @@
 ## Order
 
 ```
-Grill (when the design branches) → Issue → branch → work → PR → human review → squash merge
+Grill (when the design branches) → Issue → branch → work → PR → human review → squash merge → retrospective
 ```
 
 1. **Grill** when the API, the meaning, or a milestone boundary branches. Skill: `.agents/skills/grilling/SKILL.md`.
@@ -24,6 +24,17 @@ Grill (when the design branches) → Issue → branch → work → PR → human 
 5. **Branch** from `main`: `type/<issue-number>-<slug>`, for example `feat/12-pchip`.
 6. **PR** from `.github/pull_request_template.md`. Write `Closes #N` alone on a line under `## Related`. The title is a Conventional Commits line.
 7. A **human reviews and squash-merges**. Agents do not merge. After the merge, delete the local and remote branch.
+8. **Retrospective** on the merged PR, before the next feature branch (below).
+
+## Retrospective
+
+After a squash merge, write three points as a comment on the merged PR. Write "none" when a point is empty.
+
+1. Whether a lesson belongs in `.cursor/rules/`, a skill, `docs/design.ja.md`, or `docs/adr/`. Something the work relied on that no file states is a lesson.
+2. Which Issue will carry it, if any.
+3. Whether to refactor. A yes opens a `refactor` Issue, and that Issue is next, before the next feature. Postponing it needs a roadmap row that names when.
+
+The lessons of point 1 then go into the files they name, in a `chore` Issue and one PR, opened before the next feature branch. An agent does this without being asked. There is no retrospective log.
 
 Decisions that need their reason kept become an ADR: `docs/adr/NNNN-slug.md` with Status, Date, Issue, Context, and Decision.
 
