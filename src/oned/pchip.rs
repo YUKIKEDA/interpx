@@ -237,6 +237,9 @@ fn inner_slope<T: Scalar, V: Value<T>>(h_before: T, h_after: T, before: V, after
     let two = T::one() + T::one();
     let (w1, w2) = (two * h_after + h_before, h_after + two * h_before);
     before.zip_with(after, |m0, m1| {
+        // The test for a zero secant is SciPy's, and is kept for that. It does
+        // not change a result: one zero secant has another sign than its
+        // neighbor, and for two the mean below is `1 / infinity`, zero as well.
         if sign(m0) != sign(m1) || sign(m0) == 0 {
             T::zero()
         } else {
@@ -257,6 +260,9 @@ fn end_slope<T: Scalar, V: Value<T>>(h0: T, h1: T, m0: V, m1: V) -> V {
     let three = two + T::one();
     m0.zip_with(m1, |m0, m1| {
         let d = ((two * h0 + h1) * m0 - h0 * m1) / (h0 + h1);
+        // The test of the two signs in the second branch is SciPy's, and is kept
+        // for that. It does not change a result: with secants of one sign the
+        // estimate is under twice the first, so it is never over three times it.
         if sign(d) != sign(m0) {
             T::zero()
         } else if sign(m0) != sign(m1) && d.abs() > three * m0.abs() {
