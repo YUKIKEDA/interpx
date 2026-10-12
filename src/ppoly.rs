@@ -145,6 +145,25 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
         })
     }
 
+    /// Builds a piecewise polynomial from parts a constructor of this crate has
+    /// checked already: break points that are finite and increase strictly,
+    /// `degree + 1` finite coefficients per interval.
+    ///
+    /// [`PPoly::from_owned`] would check them a second time, which for an
+    /// interpolator built from data is a second pass over all of it.
+    pub(crate) fn from_checked(breakpoints: Vec<T>, coefficients: Vec<V>, degree: usize) -> Self {
+        debug_assert!(
+            check(&breakpoints, &coefficients, degree).is_ok(),
+            "the caller checked the parts"
+        );
+        Self {
+            breakpoints,
+            coefficients,
+            order: degree + 1,
+            extrapolate: Extrapolate::Extend,
+        }
+    }
+
     /// Returns the same polynomial with another behavior outside its domain.
     ///
     /// # Examples

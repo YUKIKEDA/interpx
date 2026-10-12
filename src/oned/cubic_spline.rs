@@ -130,48 +130,53 @@ impl<T: Scalar, V: Value<T>> CubicSpline<T, V> {
             return Err(InterpolateError::NotPeriodic);
         }
 
-        let widths: Vec<T> = x.windows(2).map(|w| w[1] - w[0]).collect();
-        let mut secants = Vec::with_capacity(n - 1);
-        for (i, (h, ys)) in widths.iter().zip(y.windows(2)).enumerate() {
-            let secant = V::zero().axpy(h.recip(), ys[1].axpy(-T::one(), ys[0]));
-            if !secant.all_finite() {
-                return Err(InterpolateError::NonFinite { index: i + 1 });
-            }
-            secants.push(secant);
-        }
-
-        let slopes = match bc {
-            BoundaryCondition::Periodic => periodic_slopes(&widths, &secants)?,
+        // One buffer holds the slopes, one per point, and then the coefficients,
+        // four per interval, which are written over them from the last interval
+        // to the first: interval `i` needs the slopes at `i` and `i + 1`, and
+        // writes at `4 i` and above, where no slope it or an earlier interval
+        // needs is kept. The secants are computed where they are used, so the
+        // system takes one more allocation: its three diagonals, the reciprocal
+        // of every width (a division made once, for the secants and again for
+        // the coefficients), and the work space of the cyclic solver.
+        let mut buffer = vec![V::zero(); 4 * (n - 1)];
+        let mut scratch = vec![T::zero(); if periodic { 5 * n } else { 4 * n }];
+        match bc {
+            BoundaryCondition::Periodic => periodic_slopes(x, y, &mut buffer[..n], &mut scratch)?,
             BoundaryCondition::NotAKnot => {
                 let end = EndCondition::NotAKnot;
-                end_slopes(x, y, &widths, &secants, end, end)?
+                end_slopes(x, y, end, end, &mut buffer[..n], &mut scratch)?;
             }
-            BoundaryCondition::Ends(start, end) => end_slopes(x, y, &widths, &secants, start, end)?,
-        };
-
-        let two = T::one() + T::one();
-        let mut coefficients = Vec::with_capacity(4 * (n - 1));
-        for i in 0..n - 1 {
-            let per_width = widths[i].recip();
-            // (s[i] + s[i + 1] - 2 secant) / h
-            let t = V::zero().axpy(
-                per_width,
-                slopes[i]
-                    .axpy(T::one(), slopes[i + 1])
-                    .axpy(-two, secants[i]),
-            );
-            let cubic = V::zero().axpy(per_width, t);
-            let square = V::zero()
-                .axpy(per_width, secants[i].axpy(-T::one(), slopes[i]))
-                .axpy(-T::one(), t);
-            for c in [cubic, square, slopes[i], y[i]] {
-                if !c.all_finite() {
-                    return Err(InterpolateError::NonFinite { index: i });
-                }
-                coefficients.push(c);
+            BoundaryCondition::Ends(start, end) => {
+                end_slopes(x, y, start, end, &mut buffer[..n], &mut scratch)?;
             }
         }
-        let poly = PPoly::from_owned(x.to_vec(), coefficients, 3)?;
+
+        let two = T::one() + T::one();
+        // The first interval with a coefficient that is not finite: the loop
+        // goes down, so the last one it finds.
+        let mut overflowed = None;
+        for i in (0..n - 1).rev() {
+            let per_width = scratch[PER_WIDTH * n + i];
+            let secant = V::zero().axpy(per_width, y[i + 1].axpy(-T::one(), y[i]));
+            let (left, right) = (buffer[i], buffer[i + 1]);
+            // (s[i] + s[i + 1] - 2 secant) / h
+            let t = V::zero().axpy(per_width, left.axpy(T::one(), right).axpy(-two, secant));
+            let cubic = V::zero().axpy(per_width, t);
+            let square = V::zero()
+                .axpy(per_width, secant.axpy(-T::one(), left))
+                .axpy(-T::one(), t);
+            let piece = [cubic, square, left, y[i]];
+            if !piece.iter().all(V::all_finite) {
+                overflowed = Some(i);
+            }
+            buffer[4 * i..4 * i + 4].copy_from_slice(&piece);
+        }
+        if let Some(index) = overflowed {
+            return Err(InterpolateError::NonFinite { index });
+        }
+        // The coordinates passed the checks above, and every coefficient is
+        // finite.
+        let poly = PPoly::from_checked(x.to_vec(), buffer, 3);
         Ok(Self {
             poly: if periodic {
                 poly.with_extrapolate(Extrapolate::Periodic)
@@ -294,108 +299,165 @@ fn overflow(breakdown: Breakdown, points: usize) -> InterpolateError {
     }
 }
 
-/// The slopes at the data points of a periodic spline. The last one repeats the
-/// first.
+/// Which part of the scratch space holds the reciprocal widths: after the three
+/// diagonals, each as long as the data.
+const PER_WIDTH: usize = 3;
+
+/// The secant of interval `i`: the rise of the data over its width. The
+/// reciprocal of the width is left in `per_width[i]`.
 ///
-/// `widths` and `secants` have one entry per interval. The unknowns are the
-/// slopes at all points but the last, one per interval; row `i` is the inner
-/// row of a spline, with its indices taken around the period.
+/// # Errors
+///
+/// Returns [`InterpolateError::NonFinite`] with the later of the two points when
+/// the secant overflows.
+fn secant<T: Scalar, V: Value<T>>(
+    x: &[T],
+    y: &[V],
+    i: usize,
+    per_width: &mut [T],
+) -> Result<V, InterpolateError> {
+    per_width[i] = (x[i + 1] - x[i]).recip();
+    let rise = y[i + 1].axpy(-T::one(), y[i]);
+    let secant = V::zero().axpy(per_width[i], rise);
+    if secant.all_finite() {
+        Ok(secant)
+    } else {
+        Err(InterpolateError::NonFinite { index: i + 1 })
+    }
+}
+
+/// Writes the slopes at the data points of a periodic spline to `slopes`. The
+/// last one repeats the first.
+///
+/// The unknowns are the slopes at all points but the last, one per interval;
+/// row `i` is the inner row of a spline, with its indices taken around the
+/// period. `scratch` has room for the three diagonals, the reciprocal widths,
+/// and the work space of the cyclic solver: five times the number of points.
 fn periodic_slopes<T: Scalar, V: Value<T>>(
-    widths: &[T],
-    secants: &[V],
-) -> Result<Vec<V>, InterpolateError> {
-    let m = widths.len();
+    x: &[T],
+    y: &[V],
+    slopes: &mut [V],
+    scratch: &mut [T],
+) -> Result<(), InterpolateError> {
+    let n = x.len();
+    let m = n - 1;
     let three = T::one() + T::one() + T::one();
+    let width = |i: usize| x[i + 1] - x[i];
+    let (lower, rest) = scratch.split_at_mut(n);
+    let (diag, rest) = rest.split_at_mut(n);
+    let (upper, rest) = rest.split_at_mut(n);
+    let (per_width, work) = rest.split_at_mut(n);
     // Two points: the end values are equal, so the secant is zero (or a rounding
     // error), and SciPy takes it for the slope at both ends.
     if m == 1 {
-        return Ok(vec![secants[0]; 2]);
+        slopes.fill(secant(x, y, 0, per_width)?);
+        return Ok(());
     }
     // Three points leave two unknowns, fewer than a cyclic system has rows.
     // SciPy's formula for them gives every point the same slope.
     if m == 2 {
-        let (a, b) = (widths[0].recip(), widths[1].recip());
-        let slope = V::zero().axpy((a + b).recip(), combine(a, secants[0], b, secants[1]));
-        return Ok(vec![slope; 3]);
+        let (first, second) = (secant(x, y, 0, per_width)?, secant(x, y, 1, per_width)?);
+        let (a, b) = (per_width[0], per_width[1]);
+        let sum = combine(a, first, b, second);
+        slopes.fill(V::zero().axpy((a + b).recip(), sum));
+        return Ok(());
     }
-    let before = |i: usize| (i + m - 1) % m;
-    let lower = widths.to_vec();
-    let upper: Vec<T> = (0..m).map(|i| widths[before(i)]).collect();
-    let mut diag: Vec<T> = (0..m)
-        .map(|i| (widths[before(i)] + widths[i]) * (T::one() + T::one()))
-        .collect();
-    let mut slopes: Vec<V> = (0..m)
-        .map(|i| {
-            let sum = combine(widths[i], secants[before(i)], widths[before(i)], secants[i]);
-            V::zero().axpy(three, sum)
-        })
-        .collect();
-    let mut work = vec![T::zero(); m];
-    tridiagonal::solve_cyclic(&lower, &mut diag, &upper, &mut slopes, &mut work)
-        .map_err(|b| overflow(b, m + 1))?;
-    slopes.push(slopes[0]);
-    Ok(slopes)
+    // Row `i` joins interval `i` with the one before it; for row 0 that is the
+    // last interval.
+    let (mut width_before, mut secant_before) = (width(m - 1), secant(x, y, m - 1, per_width)?);
+    for i in 0..m {
+        let (h, d) = (width(i), secant(x, y, i, per_width)?);
+        lower[i] = h;
+        diag[i] = (width_before + h) * (T::one() + T::one());
+        upper[i] = width_before;
+        slopes[i] = V::zero().axpy(three, combine(h, secant_before, width_before, d));
+        (width_before, secant_before) = (h, d);
+    }
+    tridiagonal::solve_cyclic(
+        &lower[..m],
+        &mut diag[..m],
+        &upper[..m],
+        &mut slopes[..m],
+        &mut work[..m],
+    )
+    .map_err(|b| overflow(b, n))?;
+    slopes[m] = slopes[0];
+    Ok(())
 }
 
-/// The slopes at the data points of a spline with a condition at each end.
+/// Writes the slopes at the data points of a spline with a condition at each
+/// end to `slopes`. `scratch` has room for the three diagonals and the
+/// reciprocal widths: four times the number of points.
 fn end_slopes<T: Scalar, V: Value<T>>(
     x: &[T],
     y: &[V],
-    widths: &[T],
-    secants: &[V],
     start: EndCondition<V>,
     end: EndCondition<V>,
-) -> Result<Vec<V>, InterpolateError> {
+    slopes: &mut [V],
+    scratch: &mut [T],
+) -> Result<(), InterpolateError> {
     let n = x.len();
     let last = n - 1;
     let two = T::one() + T::one();
     let three = two + T::one();
     let half = two.recip();
+    let width = |i: usize| x[i + 1] - x[i];
+    let (lower, rest) = scratch.split_at_mut(n);
+    let (diag, rest) = rest.split_at_mut(n);
+    let (upper, per_width) = rest.split_at_mut(n);
+
+    // The inner rows. The secants of the first two and the last two intervals
+    // are kept for the end rows.
+    let mut before = secant(x, y, 0, per_width)?;
+    let mut first = [before; 2];
+    let mut tail = [before; 2];
+    for i in 1..last {
+        let d = secant(x, y, i, per_width)?;
+        let (h_before, h) = (width(i - 1), width(i));
+        lower[i] = h;
+        diag[i] = two * (h_before + h);
+        upper[i] = h_before;
+        slopes[i] = V::zero().axpy(three, combine(h, before, h_before, d));
+        if i == 1 {
+            first[1] = d;
+        }
+        tail = [before, d];
+        before = d;
+    }
+
     // Two points have no second interval for not-a-knot to join the first
     // with: SciPy gives such an end the slope of the line through them.
     let line = |end| match end {
-        EndCondition::NotAKnot if n == 2 => EndCondition::FirstDerivative(secants[0]),
+        EndCondition::NotAKnot if n == 2 => EndCondition::FirstDerivative(first[0]),
         other => other,
     };
     let (start, end) = (line(start), line(end));
-
-    let mut lower = vec![T::zero(); n];
-    let mut diag = vec![T::one(); n];
-    let mut upper = vec![T::zero(); n];
-    let mut slopes = vec![V::zero(); n];
     let not_a_knot = |end| matches!(end, EndCondition::NotAKnot);
     if n == 3 && not_a_knot(start) && not_a_knot(end) {
         // The two conditions say the same thing, that the two pieces are one
-        // polynomial: the parabola through the three points.
+        // polynomial: the parabola through the three points. Its middle row is
+        // the inner row above.
+        diag[0] = T::one();
         upper[0] = T::one();
-        slopes[0] = V::zero().axpy(two, secants[0]);
-        lower[1] = widths[1];
-        diag[1] = two * (widths[0] + widths[1]);
-        upper[1] = widths[0];
-        let sum = combine(widths[0], secants[1], widths[1], secants[0]);
-        slopes[1] = V::zero().axpy(three, sum);
+        slopes[0] = V::zero().axpy(two, first[0]);
         lower[2] = T::one();
-        slopes[2] = V::zero().axpy(two, secants[1]);
+        diag[2] = T::one();
+        slopes[2] = V::zero().axpy(two, first[1]);
     } else {
-        for i in 1..last {
-            lower[i] = widths[i];
-            diag[i] = two * (widths[i - 1] + widths[i]);
-            upper[i] = widths[i - 1];
-            let sum = combine(widths[i], secants[i - 1], widths[i - 1], secants[i]);
-            slopes[i] = V::zero().axpy(three, sum);
-        }
         match start {
             EndCondition::NotAKnot => {
-                let (h0, h1, d) = (widths[0], widths[1], x[2] - x[0]);
+                let (h0, h1, d) = (width(0), width(1), x[2] - x[0]);
                 diag[0] = h1;
                 upper[0] = d;
-                let sum = combine((h0 + two * d) * h1, secants[0], h0 * h0, secants[1]);
+                let sum = combine((h0 + two * d) * h1, first[0], h0 * h0, first[1]);
                 slopes[0] = V::zero().axpy(d.recip(), sum);
             }
-            // The row is the identity, as the vectors were filled.
-            EndCondition::FirstDerivative(v) => slopes[0] = v,
+            EndCondition::FirstDerivative(v) => {
+                diag[0] = T::one();
+                slopes[0] = v;
+            }
             EndCondition::SecondDerivative(v) => {
-                let h = widths[0];
+                let h = width(0);
                 diag[0] = two * h;
                 upper[0] = h;
                 slopes[0] = combine(-half * h * h, v, three, y[1].axpy(-T::one(), y[0]));
@@ -403,20 +465,18 @@ fn end_slopes<T: Scalar, V: Value<T>>(
         }
         match end {
             EndCondition::NotAKnot => {
-                let (h0, h1, d) = (widths[last - 2], widths[last - 1], x[last] - x[last - 2]);
+                let (h0, h1, d) = (width(last - 2), width(last - 1), x[last] - x[last - 2]);
                 diag[last] = h0;
                 lower[last] = d;
-                let sum = combine(
-                    h1 * h1,
-                    secants[last - 2],
-                    (two * d + h1) * h0,
-                    secants[last - 1],
-                );
+                let sum = combine(h1 * h1, tail[0], (two * d + h1) * h0, tail[1]);
                 slopes[last] = V::zero().axpy(d.recip(), sum);
             }
-            EndCondition::FirstDerivative(v) => slopes[last] = v,
+            EndCondition::FirstDerivative(v) => {
+                diag[last] = T::one();
+                slopes[last] = v;
+            }
             EndCondition::SecondDerivative(v) => {
-                let h = widths[last - 1];
+                let h = width(last - 1);
                 diag[last] = two * h;
                 lower[last] = h;
                 let rise = y[last].axpy(-T::one(), y[last - 1]);
@@ -424,8 +484,7 @@ fn end_slopes<T: Scalar, V: Value<T>>(
             }
         }
     }
-    tridiagonal::solve(&lower, &mut diag, &upper, &mut slopes).map_err(|b| overflow(b, n))?;
-    Ok(slopes)
+    tridiagonal::solve(lower, diag, upper, slopes).map_err(|b| overflow(b, n))
 }
 
 impl<T: Scalar, V: Value<T>> Interpolator for CubicSpline<T, V> {

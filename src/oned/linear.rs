@@ -99,8 +99,9 @@ impl<T: Scalar, V: Value<T>> Linear1D<T, V> {
             coefficients.push(slope);
             coefficients.push(ys[0]);
         }
+        // The coordinates passed the checks above, and every slope is finite.
         let poly =
-            PPoly::from_owned(x.to_vec(), coefficients, 1)?.with_extrapolate(Extrapolate::Clamp);
+            PPoly::from_checked(x.to_vec(), coefficients, 1).with_extrapolate(Extrapolate::Clamp);
         Ok(Self {
             poly,
             last: y[y.len() - 1],

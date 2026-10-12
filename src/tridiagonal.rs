@@ -6,7 +6,19 @@
 //! [`solve`] does not read them, and [`solve_cyclic`] takes them for the two
 //! corners of a cyclic matrix.
 //!
-//! The solvers work in place and do not allocate. They eliminate without
+//! The solvers work in place and do not allocate. The elimination leaves the
+//! reciprocals of the pivots in `diag`, and the substitutions multiply by them.
+//!
+//! A solve is a recurrence: every row waits for the row before it. What limits
+//! its speed is the chain of operations between one row's result and the next
+//! one's, more than how many operations there are. So each loop here is written
+//! with a short chain: a pivot waits for the pivot above through one division
+//! and one subtraction, and a substitution through one multiplication and one
+//! addition. Everything else in a row is computed beside the chain. (Counting
+//! divisions instead, one per row with a longer chain, was no faster; measured
+//! in `benches/cubic_spline.rs`.)
+//!
+//! They eliminate without
 //! pivoting (the Thomas algorithm), which is stable for the matrices of the
 //! spline boundary conditions (docs/design.ja.md section 6.1). A pivot that is
 //! zero or not finite is reported as a [`Breakdown`]; nothing panics. Whether the
@@ -22,7 +34,8 @@ pub(crate) struct Breakdown {
     pub(crate) row: usize,
 }
 
-/// Solves `A x = rhs` and leaves `x` in `rhs`. `diag` is left holding the pivots.
+/// Solves `A x = rhs` and leaves `x` in `rhs`. `diag` is left holding the
+/// reciprocals of the pivots.
 ///
 /// # Errors
 ///
@@ -34,9 +47,9 @@ pub(crate) fn solve<T: Scalar, V: Value<T>>(
     upper: &[T],
     rhs: &mut [V],
 ) -> Result<(), Breakdown> {
-    eliminate(lower, diag, upper)?;
-    substitute(lower, diag, upper, rhs);
-    Ok(())
+    // No second right-hand side.
+    let mut none: [T; 0] = [];
+    sweep(lower, diag, upper, rhs, &mut none)
 }
 
 /// Solves `A x = rhs` for a cyclic matrix and leaves `x` in `rhs`.
@@ -80,13 +93,10 @@ pub(crate) fn solve_cyclic<T: Scalar, V: Value<T>>(
     let ratio = top_right / gamma;
     diag[0] = diag[0] - gamma;
     diag[last] = diag[last] - bottom_left * ratio;
-    eliminate(lower, diag, upper)?;
-
-    substitute(lower, diag, upper, rhs);
     work.fill(T::zero());
     work[0] = gamma;
     work[last] = bottom_left;
-    substitute(lower, diag, upper, work);
+    sweep(lower, diag, upper, rhs, work)?;
 
     let denominator = T::one() + work[0] + ratio * work[last];
     if unusable(denominator) {
@@ -105,41 +115,75 @@ fn unusable<T: Scalar>(pivot: T) -> bool {
     pivot == T::zero() || !pivot.is_finite()
 }
 
-/// The forward elimination: turns `diag` into the pivots.
-fn eliminate<T: Scalar>(lower: &[T], diag: &mut [T], upper: &[T]) -> Result<(), Breakdown> {
-    debug_assert_eq!(lower.len(), diag.len());
-    debug_assert_eq!(upper.len(), diag.len());
-    for row in 0..diag.len() {
-        if row > 0 {
-            diag[row] = diag[row] - lower[row] / diag[row - 1] * upper[row - 1];
-        }
-        if unusable(diag[row]) {
+/// The pivot of `row`, given the pivot `above` it. `diag` still holds the entry
+/// of the matrix at `row`.
+///
+/// The product of the two entries beside the diagonal does not wait for
+/// `above`, so the pivot follows it by one division and one subtraction.
+fn next_pivot<T: Scalar>(lower: &[T], diag: &[T], upper: &[T], row: usize, above: T) -> T {
+    if row == 0 {
+        diag[0]
+    } else {
+        diag[row] - lower[row] * upper[row - 1] / above
+    }
+}
+
+/// Eliminates, and solves for `rhs` and for `second` with the same matrix.
+/// `second` is as long as `rhs`, or empty when there is one right-hand side.
+/// `diag` is left holding the reciprocals of the pivots.
+///
+/// One pass down does the elimination and the forward substitutions, one pass up
+/// the back substitutions. In each pass the chains of the pivots and of the
+/// right-hand sides run side by side: done in passes of their own, they would
+/// add up.
+fn sweep<T: Scalar, V: Value<T>>(
+    lower: &[T],
+    diag: &mut [T],
+    upper: &[T],
+    rhs: &mut [V],
+    second: &mut [T],
+) -> Result<(), Breakdown> {
+    let n = diag.len();
+    debug_assert_eq!(lower.len(), n);
+    debug_assert_eq!(upper.len(), n);
+    debug_assert_eq!(rhs.len(), n);
+    debug_assert!(second.is_empty() || second.len() == n);
+    let mut above = T::one();
+    for row in 0..n {
+        let pivot = next_pivot(lower, diag, upper, row, above);
+        let inverse = pivot.recip();
+        // A pivot too small to invert is as good as zero.
+        if unusable(pivot) || !inverse.is_finite() {
             return Err(Breakdown { row });
+        }
+        if row > 0 {
+            let multiplier = lower[row] * diag[row - 1];
+            rhs[row] = rhs[row].axpy(-multiplier, rhs[row - 1]);
+            if let Some(pair) = second.get_mut(row - 1..=row) {
+                pair[1] = pair[1] - multiplier * pair[0];
+            }
+        }
+        diag[row] = inverse;
+        above = pivot;
+    }
+    // A row is scaled by its reciprocal pivot before the row below is taken off
+    // it, and not after: the scaling then does not wait for the row below.
+    for row in (0..n).rev() {
+        let inverse = diag[row];
+        let factor = upper[row] * inverse;
+        let scaled = V::zero().axpy(inverse, rhs[row]);
+        rhs[row] = match rhs.get(row + 1) {
+            Some(below) => scaled.axpy(-factor, *below),
+            None => scaled,
+        };
+        if let Some(this) = second.get(row).copied() {
+            let below = second.get(row + 1).copied().unwrap_or_else(T::zero);
+            second[row] = this * inverse - factor * below;
         }
     }
     Ok(())
 }
 
-/// Solves for one right-hand side with the pivots [`eliminate`] left in `pivots`.
-fn substitute<T: Scalar, V: Value<T>>(lower: &[T], pivots: &[T], upper: &[T], rhs: &mut [V]) {
-    debug_assert_eq!(rhs.len(), pivots.len());
-    for row in 1..pivots.len() {
-        rhs[row] = rhs[row].axpy(-(lower[row] / pivots[row - 1]), rhs[row - 1]);
-    }
-    for row in (0..pivots.len()).rev() {
-        let mut value = rhs[row];
-        if let Some(next) = rhs.get(row + 1) {
-            value = value.axpy(-upper[row], *next);
-        }
-        rhs[row] = V::zero().axpy(pivots[row].recip(), value);
-    }
-}
-
-// The golden loader of the integration tests. An integration test cannot call
-// this crate-private module, so its tests are below and read the file the same
-// way (docs/conventions.md, "Golden data"). The module is declared here and not
-// inside `mod tests`: there the path would start from `src/tridiagonal/tests/`,
-// a directory that does not exist, and only Windows resolves `..` through one.
 #[cfg(test)]
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -432,12 +476,12 @@ mod tests {
     }
 
     #[test]
-    fn the_pivots_are_left_in_the_diagonal() {
-        // [[2, 1], [1, 3]]: the second pivot is 3 - 1/2.
+    fn the_reciprocal_pivots_are_left_in_the_diagonal() {
+        // [[2, 1], [1, 3]]: the pivots are 2 and 3 - 1/2.
         let mut diag = [2.0_f64, 3.0];
         let mut rhs = [3.0_f64, 4.0];
         assert_eq!(solve(&[0.0, 1.0], &mut diag, &[1.0, 0.0], &mut rhs), Ok(()));
-        assert_eq!(diag.map(f64::to_bits), [2.0_f64, 2.5].map(f64::to_bits));
+        assert_eq!(diag.map(f64::to_bits), [0.5_f64, 0.4].map(f64::to_bits));
         assert_eq!(rhs.map(f64::to_bits), [1.0_f64, 1.0].map(f64::to_bits));
     }
 
@@ -479,6 +523,15 @@ mod tests {
         );
         assert_eq!(
             run(&[0.0, f64::NAN], &[1.0, 1.0], &[1.0, 0.0]),
+            Err(Breakdown { row: 1 })
+        );
+        // A pivot too small to invert: its reciprocal is infinite.
+        assert_eq!(
+            run(&[0.0, 1.0], &[1e-320, 1.0], &[1.0, 0.0]),
+            Err(Breakdown { row: 0 })
+        );
+        assert_eq!(
+            run(&[0.0, 1.0], &[1.0, 1.0 + 1e-320], &[1.0, 0.0]),
             Err(Breakdown { row: 1 })
         );
         // A matrix that needs a row exchange is not for this solver: [[0, 1], [1, 0]].
