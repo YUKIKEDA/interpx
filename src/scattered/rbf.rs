@@ -1068,6 +1068,41 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
         }
     }
 
+    /// Hands the value at each of `points` to `put`, in their order. With
+    /// neighbors, the points share one working space, and with it the
+    /// factored system of the point before.
+    fn each(&self, points: &[[f64; D]], mut put: impl FnMut(Option<V>)) {
+        let Solved::Locally {
+            values,
+            tree,
+            neighbors,
+        } = &self.solved
+        else {
+            for point in points {
+                put(self.eval(point));
+            }
+            return;
+        };
+        let mut all = |working: &mut Working| {
+            // What is factored there may be of another interpolator.
+            working.factored.clear();
+            for point in points {
+                let finite = point.iter().all(|c| c.is_finite());
+                put(finite
+                    .then(|| self.eval_near(point, values, tree, *neighbors, working))
+                    .flatten());
+            }
+        };
+        // The working space of this thread, as `eval` takes it.
+        let done = WORKING
+            .try_with(|working| working.try_borrow_mut().ok().map(|mut w| all(&mut w)))
+            .ok()
+            .flatten();
+        if done.is_none() {
+            all(&mut Working::default());
+        }
+    }
+
     /// The value at `point` from its neighbors: their system is put together
     /// and factored in `working`, and solved for the row of the point. The sum
     /// of the neighbors' values, each times its entry of that solution, is the
@@ -1201,7 +1236,8 @@ impl<const D: usize, V: Value<f64>> Interpolator for RBFInterpolator<D, V> {
         value.all_finite().then_some(value)
     }
 
-    /// Evaluates at every point. With neighbors, a point that has the same
+    /// Evaluates at every point (so does [`eval_batch`](Self::eval_batch), in
+    /// the same way). With neighbors, a point that has the same
     /// neighbors as the point before it uses their system as it was factored
     /// for that point: points closer together than the data (the pixels of an
     /// image, a path) come in runs with the same neighbors. The results are
@@ -1218,37 +1254,21 @@ impl<const D: usize, V: Value<f64>> Interpolator for RBFInterpolator<D, V> {
                 actual: out.len(),
             });
         }
-        let Solved::Locally {
-            values,
-            tree,
-            neighbors,
-        } = &self.solved
-        else {
-            for (point, slot) in points.iter().zip(out.iter_mut()) {
-                *slot = self.eval(point).unwrap_or(fill);
-            }
-            return Ok(());
-        };
-        let mut all = |working: &mut Working| {
-            // What is factored there may be of another interpolator.
-            working.factored.clear();
-            for (point, slot) in points.iter().zip(out.iter_mut()) {
-                let finite = point.iter().all(|c| c.is_finite());
-                let value = finite
-                    .then(|| self.eval_near(point, values, tree, *neighbors, working))
-                    .flatten();
+        let mut slots = out.iter_mut();
+        self.each(points, |value| {
+            if let Some(slot) = slots.next() {
                 *slot = value.unwrap_or(fill);
             }
-        };
-        // The working space of this thread, as `eval` takes it.
-        let done = WORKING
-            .try_with(|working| working.try_borrow_mut().ok().map(|mut w| all(&mut w)))
-            .ok()
-            .flatten();
-        if done.is_none() {
-            all(&mut Working::default());
-        }
+        });
         Ok(())
+    }
+
+    /// As [`eval_batch_into`](Interpolator::eval_batch_into), with `None` for
+    /// a point without a value.
+    fn eval_batch(&self, points: &[[f64; D]]) -> Vec<Option<V>> {
+        let mut out = Vec::with_capacity(points.len());
+        self.each(points, |value| out.push(value));
+        out
     }
 }
 

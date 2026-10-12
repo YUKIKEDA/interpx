@@ -866,6 +866,16 @@ fn a_batch_of_points_with_the_same_neighbors_is_a_loop_over_eval() {
             Some(thin_looped[1999])
         );
     }
+    // `eval_batch` goes the same way, with `None` where there is no value.
+    for (rbf, want) in [(&cubic, &cubic_looped), (&thin, &thin_looped)] {
+        let options = rbf.eval_batch(&queries);
+        assert_eq!(options[700], None);
+        let got: Vec<u64> = options
+            .iter()
+            .map(|v| v.unwrap_or(-1.0).to_bits())
+            .collect();
+        assert_eq!(&got, want);
+    }
     // Backward, the runs are the same and are entered from the other end.
     let backward: Vec<[f64; 2]> = queries.iter().rev().copied().collect();
     thin.eval_batch_into(&backward, &mut out, -1.0)
