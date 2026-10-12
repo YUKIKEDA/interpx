@@ -337,8 +337,7 @@ fn first_of_each<const D: usize>(points: &[[f64; D]]) -> Vec<u32> {
     let mut seen = HashSet::with_capacity(points.len());
     let mut first = Vec::with_capacity(points.len());
     for (i, point) in points.iter().enumerate() {
-        // `-0.0 + 0.0` is `0.0`: the two zeros have the same bits after it.
-        if seen.insert(point.map(|c| (c + 0.0).to_bits())) {
+        if seen.insert(super::key(point)) {
             first.push(i as u32);
         }
     }
