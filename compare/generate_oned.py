@@ -151,6 +151,21 @@ def bspline_calculus(b, q: np.ndarray, limits: list[tuple[float, float]]) -> dic
     return out
 
 
+def akima_weight_sums(x: np.ndarray, y: np.ndarray, method: str) -> np.ndarray:
+    """The sum of the two weights at every point, as `Akima1DInterpolator` forms it."""
+    m = np.empty(len(x) + 3)
+    m[2:-2] = np.diff(y) / np.diff(x)
+    m[1] = 2.0 * m[2] - m[3]
+    m[0] = 2.0 * m[1] - m[2]
+    m[-2] = 2.0 * m[-3] - m[-4]
+    m[-1] = 2.0 * m[-2] - m[-3]
+    dm = np.abs(np.diff(m))
+    if method == "makima":
+        pm = np.abs(m[1:] + m[:-1])
+        return dm[2:] + 0.5 * pm[2:] + dm[:-2] + 0.5 * pm[:-2]
+    return dm[2:] + dm[:-2]
+
+
 def bc_option(bc):
     """A boundary condition as JSON: a name, or one entry per end, each a name or [order, value]."""
     if isinstance(bc, str):
@@ -499,6 +514,138 @@ def main() -> None:
                 x=x,
                 y=y,
                 **ppoly_fields(p, x, q),
+            )
+        )
+
+    # Akima on data chosen for its rules: few points, and data whose secants are
+    # equal on each side of a point, where the weights vanish and the slope is the
+    # mean of the outer secants (a line, a flat run before a straight rise, steps).
+    shapes = {
+        "two_points": ([0.0, 2.0], [1.0, 4.0]),
+        "three_points": ([0.0, 1.0, 3.0], [1.0, -1.0, 2.0]),
+        "four_points": ([0.0, 1.0, 1.5, 4.0], [1.0, -1.0, 2.0, 0.5]),
+        "line_6": ([0.0, 1.0, 2.5, 3.0, 4.5, 6.0], [1.0, 3.0, 6.0, 7.0, 10.0, 13.0]),
+        "flat_then_rise": ([0.0, 1.0, 2.0, 3.0, 4.0, 5.0], [1.0, 1.0, 1.0, 2.0, 3.0, 4.0]),
+        "steps": ([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0], [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0]),
+    }
+    for method in ("akima", "makima"):
+        for name, (x, y) in shapes.items():
+            x, y = np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
+            p = si.Akima1DInterpolator(x, y, method=method)
+            cases.append(
+                golden.case(
+                    f"akima/{method}/{name}",
+                    "scipy.interpolate.Akima1DInterpolator",
+                    {"method": method, "extrapolate": None},
+                    x=x,
+                    y=y,
+                    **ppoly_fields(p, x, queries_for(x)),
+                )
+            )
+        # Two values per point.
+        x, y = ds["random_20"]
+        y2 = np.stack([y, np.cos(x)], axis=1)
+        q = queries_for(x)
+        p = si.Akima1DInterpolator(x, y2, method=method)
+        cases.append(
+            golden.case(
+                f"akima/{method}/random_20/columns",
+                "scipy.interpolate.Akima1DInterpolator",
+                {"method": method, "extrapolate": None},
+                x=x,
+                y=y2,
+                queries=q,
+                expected=p(q),
+                derivative_1=p(q, 1),
+                derivative_2=p(q, 2),
+            )
+        )
+    # On both sides of the cutoff. Five points carry small secants (1, 2, 5, 3
+    # times `scale`), three more carry secants near 5, which set the largest sum
+    # of weights. With `scale` 1e-12 the small weights are 1e-12 of the largest:
+    # under the cutoff of 1e-9, and the slope there is the mean of the outer
+    # secants. With `scale` 1e-7 they are 1e-8 of it: over the cutoff, and the
+    # slope is the weighted mean. The values are too small for an absolute
+    # tolerance to tell the two apart, so the slopes are stored and compared
+    # relatively.
+    for label, scale in (("under_the_cutoff", 1e-12), ("over_the_cutoff", 1e-7)):
+        x = np.arange(8.0)
+        y = np.array([0.0, 1.0, 3.0, 8.0, 11.0, 0.0, 0.0, 0.0]) * scale
+        y[5:] = [5.0, 0.0, 5.0]
+        q = queries_for(x)
+        for method in ("akima", "makima"):
+            p = si.Akima1DInterpolator(x, y, method=method)
+            cases.append(
+                golden.case(
+                    f"akima/{method}/{label}",
+                    "scipy.interpolate.Akima1DInterpolator",
+                    {"method": method, "extrapolate": None},
+                    x=x,
+                    y=y,
+                    queries=q,
+                    expected=p(q),
+                    slopes=p(x, 1),
+                )
+            )
+
+    # The same data, with `scale` chosen so that the sum of weights at point 2 is
+    # 0.75e-9 of the largest sum, and then 1.5e-9 of it: just under the cutoff and
+    # just over it. An implementation that takes the largest weight of one side
+    # only, which is about half the largest sum, puts the first of these over
+    # its cutoff.
+    for label, share in (("just_under_the_cutoff", 0.75e-9), ("just_over_the_cutoff", 1.5e-9)):
+        for method in ("akima", "makima"):
+            x = np.arange(8.0)
+            pattern = np.array([0.0, 1.0, 3.0, 8.0, 11.0, 0.0, 0.0, 0.0])
+            tail = np.array([5.0, 0.0, 5.0])
+            y = pattern.copy()
+            y[5:] = tail
+            sums = akima_weight_sums(x, y, method)
+            # The weights at point 2 grow with `scale`; the largest sum, among the
+            # large secants, does not.
+            scale = share * sums.max() / sums[2]
+            y = pattern * scale
+            y[5:] = tail
+            sums = akima_weight_sums(x, y, method)
+            assert abs(sums[2] / sums.max() / share - 1.0) < 1e-6, (label, method)
+            p = si.Akima1DInterpolator(x, y, method=method)
+            q = queries_for(x)
+            cases.append(
+                golden.case(
+                    f"akima/{method}/{label}",
+                    "scipy.interpolate.Akima1DInterpolator",
+                    {"method": method, "extrapolate": None},
+                    x=x,
+                    y=y,
+                    queries=q,
+                    expected=p(q),
+                    slopes=p(x, 1),
+                )
+            )
+
+    # Where SciPy and interpx differ: SciPy takes the cutoff for vanishing weights
+    # from the largest weight over all columns. Beside a column of values near 1,
+    # a column of values near 1e-10 has all its weights under the cutoff, and its
+    # slopes are not those it has alone. `expected` is the first column beside the
+    # other, `expected_alone` the first column by itself; interpx gives the second
+    # for both (docs/design.ja.md section 6.1).
+    x = np.arange(8.0)
+    small = np.array([0.0, 0.0, 0.0, 1e-10, 2e-10, 2e-10, 2e-10, 5e-10])
+    big = np.array([0.0, 5.0, -3.0, 8.0, 1.0, 9.0, -4.0, 2.0])
+    q = np.linspace(0.0, 7.0, 29)
+    for method in ("akima", "makima"):
+        paired = si.Akima1DInterpolator(x, np.stack([small, big], axis=1), method=method)
+        alone = si.Akima1DInterpolator(x, small, method=method)
+        cases.append(
+            golden.case(
+                f"akima/{method}/coupled_columns",
+                "scipy.interpolate.Akima1DInterpolator",
+                {"method": method, "extrapolate": None},
+                x=x,
+                y=np.stack([small, big], axis=1),
+                queries=q,
+                expected=paired(q),
+                expected_alone=alone(q),
             )
         )
 

@@ -42,6 +42,12 @@ pub(crate) fn secant<T: Scalar, V: Value<T>>(
 /// and above, where no slope it or an earlier interval needs is kept. So the
 /// buffer of the slopes becomes the coefficients, without another allocation.
 ///
+/// Only the first `x.len()` entries of `buffer` are read. The rest is the
+/// caller's until this call, and is overwritten here: a caller may keep its
+/// own working values there while it finds the slopes (`Akima1D` keeps the
+/// secants there). The secants this function needs it computes itself, from
+/// `y` and `per_width`; it must not come to read them from `buffer`.
+///
 /// With the secant `d` of an interval of width `h` and the slopes `s0`, `s1` at
 /// its ends, and `t = (s0 + s1 - 2 d) / h`, the piece is
 /// `(t / h) dx^3 + ((d - s0) / h - t) dx^2 + s0 dx + y0`: SciPy's
