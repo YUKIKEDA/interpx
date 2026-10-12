@@ -89,6 +89,18 @@ pub enum InterpolateError {
     #[error("the solver failed: {0}")]
     SolverFailed(SolverError),
 
+    /// An allocation that can be far larger than the input that asked for it
+    /// could not be made: there is not that much memory.
+    ///
+    /// A matrix with the square of the number of points as its size, or the
+    /// coefficients of an antiderivative of a high order. Smaller input, or
+    /// another method (the `neighbors` of an RBF interpolant), is the way out.
+    #[error("an allocation of {bytes} bytes failed")]
+    AllocationFailed {
+        /// The size that was asked for.
+        bytes: usize,
+    },
+
     /// One axis of a grid cannot be used.
     #[error("axis {axis} of the grid: {fault}")]
     GridAxis {
@@ -240,6 +252,10 @@ mod tests {
     #[test]
     fn every_variant_has_its_message() {
         let cases = [
+            (
+                E::AllocationFailed { bytes: 1 << 40 },
+                "an allocation of 1099511627776 bytes failed",
+            ),
             (
                 E::SolverFailed(super::SolverError::Singular),
                 "the solver failed: the system is singular",

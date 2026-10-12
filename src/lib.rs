@@ -69,6 +69,7 @@ mod grid;
 mod interpolator;
 mod oned;
 mod ppoly;
+mod reserve;
 mod scalar;
 #[cfg(feature = "scattered")]
 mod scattered;

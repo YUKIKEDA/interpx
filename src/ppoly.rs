@@ -2,7 +2,8 @@
 
 use crate::scalar::{count, falling};
 use crate::{
-    search, validate, Extrapolate, Hint, InterpolateError, Interpolator, ParamReason, Scalar, Value,
+    reserve, search, validate, Extrapolate, Hint, InterpolateError, Interpolator, ParamReason,
+    Scalar, Value,
 };
 
 /// A piecewise polynomial in one variable.
@@ -349,9 +350,9 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
     /// Returns [`InterpolateError::NonFinite`] when a coefficient overflows, and
     /// [`InterpolateError::InvalidParameter`] when `nu` is so large that the
     /// result would have more coefficients than a `Vec` can hold (`isize::MAX`
-    /// bytes). Its `max` is the largest order under that limit. Running out of
-    /// memory under it is not an error: as for any allocation in Rust, the
-    /// process stops.
+    /// bytes). Its `max` is the largest order under that limit. Under it,
+    /// [`InterpolateError::AllocationFailed`] when there is not the memory for
+    /// the coefficients.
     ///
     /// # Examples
     ///
@@ -373,10 +374,9 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
             return Ok(self.clone());
         }
         let intervals = self.breakpoints.len() - 1;
-        // A `Vec` holds `isize::MAX` bytes at most, and asking it for more
-        // panics, so that limit is checked here. (Memory that runs out under the
-        // limit is left to the allocator, as everywhere in this crate.) The
-        // coefficients there are now fit, so the subtraction below does not wrap.
+        // A `Vec` holds `isize::MAX` bytes at most: that limit is checked
+        // here, to name the largest `nu` under it. The coefficients there are
+        // now fit, so the subtraction below does not wrap.
         let max_order = isize::MAX.unsigned_abs() / size_of::<V>().max(1) / intervals;
         let Some(new_order) = self
             .order
@@ -392,7 +392,9 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
         };
         // Each piece keeps its coefficients at the front, and gets one more
         // behind them at every step.
-        let mut coefficients = vec![V::zero(); intervals * new_order];
+        // One more coefficient a piece for every order: far more than the
+        // polynomial itself, when `nu` is large.
+        let mut coefficients = reserve::filled(intervals * new_order, V::zero())?;
         for (new, old) in coefficients
             .chunks_exact_mut(new_order)
             .zip(self.coefficients.chunks_exact(self.order))

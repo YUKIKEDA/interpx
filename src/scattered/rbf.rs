@@ -15,7 +15,7 @@
 
 use super::kdtree::{self, Tree};
 use crate::error::{ParamReason, SolverError};
-use crate::{validate, InterpolateError, Interpolator, Value};
+use crate::{reserve, validate, InterpolateError, Interpolator, Value};
 use faer::dyn_stack::{MemBuffer, MemStack};
 use faer::linalg::lu::partial_pivoting::factor::{lu_in_place, lu_in_place_scratch};
 use faer::{MatMut, Par};
@@ -359,7 +359,8 @@ const TILE: usize = 64;
 ///
 /// Returns [`InterpolateError::InvalidParameter`] for `points` with
 /// [`ParamReason::TooLarge`] when the matrix would be larger than a `Vec`
-/// holds.
+/// holds, and [`InterpolateError::AllocationFailed`] when it would fit one and
+/// there is not the memory for it.
 fn system<const D: usize, V: Value<f64>>(
     points: &[[f64; D]],
     values: &[V],
@@ -368,27 +369,34 @@ fn system<const D: usize, V: Value<f64>>(
     terms: &Terms<D>,
 ) -> Result<(Vec<f64>, Vec<V>), InterpolateError> {
     let (n, r) = (points.len(), terms.len());
-    // A `Vec` holds `isize::MAX` bytes at most, and asking it for more
-    // panics.
-    let most = isize::MAX.unsigned_abs() / size_of::<f64>();
-    let side = n.checked_add(r).filter(|side| {
-        side.checked_mul(*side)
-            .is_some_and(|entries| entries <= most)
-    });
-    let Some(side) = side else {
-        return Err(InterpolateError::InvalidParameter {
-            name: "points",
-            reason: ParamReason::TooLarge {
-                max: most.isqrt().saturating_sub(r),
-            },
-        });
-    };
-
-    let mut matrix = vec![0.0; side * side];
+    let side = side_of(n, r).map_err(|max| InterpolateError::InvalidParameter {
+        name: "points",
+        reason: ParamReason::TooLarge { max },
+    })?;
+    // The square of the points: far more than the points themselves.
+    let mut matrix = reserve::filled(side * side, 0.0)?;
     fill(&mut matrix, n, |i| points[i], smoothing, kernel, terms);
     let mut rhs = vec![V::zero(); side];
     rhs[..n].copy_from_slice(values);
     Ok((matrix, rhs))
+}
+
+/// The number of rows of the matrix of a [`system`] with `n` points and `r`
+/// monomials.
+///
+/// # Errors
+///
+/// Returns the largest number of points whose matrix a `Vec` can hold (it
+/// holds `isize::MAX` bytes at most, and asking it for more panics), when
+/// this one cannot be held.
+fn side_of(n: usize, r: usize) -> Result<usize, usize> {
+    let most = isize::MAX.unsigned_abs() / size_of::<f64>();
+    n.checked_add(r)
+        .filter(|side| {
+            side.checked_mul(*side)
+                .is_some_and(|entries| entries <= most)
+        })
+        .ok_or_else(|| most.isqrt().saturating_sub(r))
 }
 
 /// Writes the matrix of a [`system`] on the `n` points that `point` gives to
@@ -687,9 +695,15 @@ impl RbfOptions {
 ///
 /// Construction solves a dense system: with `n` points, a matrix of `n * n`
 /// numbers (800 MB at 10 000 points, 80 GB at 100 000) and a time that grows
-/// with the cube of `n`. A matrix that the machine has no memory for is not
-/// an error: as for any allocation in Rust, the process stops. An evaluation
-/// takes one kernel for every point. This suits up to a few thousand points.
+/// with the cube of `n`. A matrix there is no memory for is an error
+/// ([`InterpolateError::AllocationFailed`]), not the end of the process. An
+/// evaluation takes one kernel for every point. This suits up to a few
+/// thousand points.
+///
+/// Two things are out of the reach of that error. `faer`, which factors the
+/// matrix, allocates working space of its own (small beside the matrix). And
+/// a system that promises more memory than it has (Linux, as it comes) lets
+/// the allocation succeed and stops the process when the matrix is written.
 ///
 /// # Many points: neighbors
 ///
@@ -700,7 +714,9 @@ impl RbfOptions {
 /// depend on the number of points beyond the search. The result is the
 /// interpolant of the neighbors, so it can jump where the set of neighbors
 /// changes from one query to the next. A query whose neighbors have a system
-/// without one solution has no value.
+/// without one solution has no value. Nor has any query when there is no
+/// memory for a system of `k` rows (the square of `k` numbers: 80 GB at
+/// 100 000 neighbors).
 ///
 /// An evaluation in this mode works in a space its thread keeps. The space is
 /// allocated at the first evaluation on the thread; evaluations after it do
@@ -833,15 +849,21 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
     ///
     /// - [`InterpolateError::InvalidParameter`] for `points` when the matrix of
     ///   the system would be larger than a `Vec` can hold (`isize::MAX` bytes).
-    ///   Running out of memory under that limit is not an error: the process
-    ///   stops (see "Cost" on [`RBFInterpolator`]).
+    /// - [`InterpolateError::AllocationFailed`] when the matrix fits a `Vec`
+    ///   and there is not the memory for it (see "Cost" on
+    ///   [`RBFInterpolator`]).
     /// - [`InterpolateError::SolverFailed`] when the system has no solution, or
     ///   not one alone: the points do not tell the monomials apart (all in a
     ///   line along an axis, with a polynomial of degree 1), or the kernel was
     ///   left without the polynomial it needs.
     ///
-    /// With neighbors no system is solved here: an evaluation whose neighbors
-    /// have such a system returns `None`.
+    /// With neighbors no system is solved here. In place of the three above:
+    ///
+    /// - [`InterpolateError::InvalidParameter`] for `neighbors` when the system
+    ///   of that many neighbors would be larger than a `Vec` can hold.
+    ///
+    /// An evaluation whose neighbors have a system without one solution, or
+    /// that cannot get the memory for that system, returns `None`.
     ///
     /// # Examples
     ///
@@ -915,6 +937,12 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
         let powers = monomials(neighbors.unwrap_or(points.len()), kernel, degree)?;
         if let Some((first, second)) = super::first_repeat(points) {
             return Err(InterpolateError::DuplicatePoints { first, second });
+        }
+        // The system of the neighbors is made at every evaluation, in a
+        // matrix that has to be one a `Vec` can hold.
+        if let Some(neighbors) = neighbors {
+            side_of(neighbors, powers.len())
+                .map_err(|max| invalid("neighbors", ParamReason::TooLarge { max }))?;
         }
         let solved = match neighbors {
             Some(neighbors) => Solved::Locally {
@@ -1048,7 +1076,10 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
         let terms = Terms::on(&self.powers, (0..neighbors).map(near));
         let side = neighbors + terms.len();
 
+        // The square of the neighbors: with many of them, more than there may
+        // be memory for. There is no value then.
         matrix.clear();
+        reserve::room(matrix, side * side).ok()?;
         matrix.resize(side * side, 0.0);
         fill(matrix, neighbors, near, self.smoothing, self.kernel, &terms);
         row.clear();
@@ -1137,7 +1168,7 @@ impl<const D: usize, V: Value<f64>> Interpolator for RBFInterpolator<D, V> {
 
 #[cfg(test)]
 mod tests {
-    use super::{monomial_count, monomials, system, RbfKernel, Terms};
+    use super::{monomial_count, monomials, side_of, system, RbfKernel, Terms};
     use crate::common::{assert_close, load, reals, Real, Tol, DIRECT_F64};
     use crate::{InterpolateError as E, ParamReason};
     use serde_json::Value as Json;
@@ -1626,6 +1657,51 @@ mod tests {
                     assert_eq!(below.to_bits(), want.to_bits(), "{name}: P^T[{j}][{i}]");
                 }
             }
+        }
+    }
+
+    #[test]
+    fn a_matrix_there_is_no_memory_for_is_an_error_and_not_the_end_of_the_process() {
+        // Points without coordinates and values without columns take no
+        // memory, so their number can be anything.
+        #[cfg(target_pointer_width = "64")]
+        {
+            // 2^28 points and a constant: a matrix of (2^28 + 1)^2 numbers, which
+            // a `Vec` could hold (under 2^60) and no machine has.
+            let count = 1_usize << 28;
+            let (points, values) = (vec![[0.0_f64; 0]; count], vec![[0.0_f64; 0]; count]);
+            let terms = Polynomial {
+                powers: monomials::<0>(count, RbfKernel::Linear, Some(0)).expect("valid terms"),
+                shift: [],
+                scale: [],
+            };
+            let side = count + 1;
+            assert_eq!(side_of(count, 1), Ok(side));
+            assert_eq!(
+                system(&points, &values, 0.0, RbfKernel::Linear, &terms.terms()).err(),
+                Some(E::AllocationFailed {
+                    bytes: side * side * 8
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn the_side_of_a_system_is_checked_against_what_a_vec_holds() {
+        assert_eq!(side_of(5, 3), Ok(8));
+        assert_eq!(side_of(0, 0), Ok(0));
+        #[cfg(target_pointer_width = "64")]
+        {
+            // A `Vec` of `f64` holds under 2^60 numbers: a side of 2^30 is one
+            // too many.
+            let most = (1_usize << 30) - 1;
+            assert_eq!(side_of(most, 0), Ok(most));
+            assert_eq!(side_of(most - 3, 3), Ok(most));
+            assert_eq!(side_of(most + 1, 0), Err(most));
+            // The monomials take their rows: fewer points fit.
+            assert_eq!(side_of(most - 2, 3), Err(most - 3));
+            assert_eq!(side_of(usize::MAX, 10), Err(most - 10));
+            assert_eq!(side_of(7, usize::MAX), Err(0));
         }
     }
 
