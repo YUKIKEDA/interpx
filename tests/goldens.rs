@@ -15,7 +15,8 @@ use std::collections::BTreeSet;
 
 /// The files `just gen-goldens` writes. A generator that stops writing its file,
 /// or a file nobody generates, fails `every_expected_file_exists_and_no_other`.
-const FILES: [&str; 10] = [
+const FILES: [&str; 11] = [
+    "banded",
     "calculus",
     "cubic_spline",
     "curve",

@@ -50,8 +50,22 @@
 //! assert_eq!(Ramp.eval_batch(&[0.5, 2.0]), [Some(5.0), None]);
 //! ```
 
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "first used by BSpline1D (M1-12, second pull request)"
+    )
+)]
+mod banded;
 mod boundary;
 mod bspline;
+// The golden loader of the integration tests, for the unit tests of the
+// crate-private modules (an integration test cannot call their functions).
+// Declared here once: a file included from two modules is compiled twice.
+#[cfg(test)]
+#[path = "../tests/common/mod.rs"]
+mod common;
 mod error;
 mod extrapolate;
 mod interpolator;
