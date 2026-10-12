@@ -33,6 +33,7 @@ Read the rules that match the work. `alwaysApply` rules apply to every change. A
 | `scratch`                   | Remove scratch files in the turn that made them                               |
 | `record-corrections`        | A correction lands in the rule, design, ADR, or skill it belongs to           |
 | `open-ends`                 | A PR leaves no path untimed and no figure unexplained                         |
+| `pace`                      | Split off what is outside the row; limit an investigation; run side by side   |
 | `similar-findings`          | Fix the same kind of problem where it also occurs                             |
 | `powershell-shell`          | Shell syntax on this setup                                                    |
 | `no-dead-code`              | Remove everything that only served a removed path                             |
