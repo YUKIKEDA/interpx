@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M1-13.
+M1-14.
 
 ## Dependencies
 
@@ -35,7 +35,7 @@ M1-13.
 | M1-10 | Feat | `Akima1D` (including makima)                                                                                                                     | #50      | Done   |
 | M1-11 | Feat | `CubicHermiteSpline`                                                                                                                             | #55      | Done   |
 | M1-12 | Feat | `BSpline1D` (degrees 1 to 15), and the banded LU with partial pivoting it solves with                                                            | #64, #60 | Done   |
-| M1-13 | Feat | `BSplineCurve<T, D>`                                                                                                                             |          | Todo   |
+| M1-13 | Feat | `BSplineCurve<T, D>`                                                                                                                             | #67      | Done   |
 | M1-14 | Task | Golden data budget: the directory is near its 4 MB limit; raise the limit or keep part of the goldens out of the package                         |          | Todo   |
 
 ## M2: Regular grid

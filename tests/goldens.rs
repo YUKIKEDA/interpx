@@ -458,7 +458,12 @@ fn curve_goldens_reproduce_the_points_at_the_parameters() {
     let file = load::<Value>("curve").expect("golden file curve");
     for case in &file.cases {
         let name = case["name"].as_str().expect("name");
-        let (t, points) = (nums(&case["t"]), rows(&case["points"]));
+        // The parameters are given (`t`), or the generator chose them from the
+        // points (`parameters`).
+        let t = nums(case.get("t").unwrap_or_else(|| &case["parameters"]));
+        let points = rows(&case["points"]);
+        assert_eq!(t.len(), points.len(), "{name}: a parameter for every point");
+        assert!(t.len() >= 2, "{name}");
         let (q, e) = (nums(&case["queries"]), rows(&case["expected"]));
         for (ti, p) in t.iter().zip(&points) {
             let k = q

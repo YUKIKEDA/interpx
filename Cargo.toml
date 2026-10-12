@@ -88,5 +88,9 @@ name = "bspline1d"
 harness = false
 
 [[bench]]
+name = "curve"
+harness = false
+
+[[bench]]
 name = "bspline"
 harness = false

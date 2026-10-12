@@ -273,6 +273,7 @@ fn scipy_curves_differentiate_column_by_column() {
         checked += match rows(&case["control_points"]).first().map_or(0, Vec::len) {
             2 => check_curve::<2>(case),
             3 => check_curve::<3>(case),
+            4 => check_curve::<4>(case),
             other => panic!("a curve with {other} columns"),
         };
     }

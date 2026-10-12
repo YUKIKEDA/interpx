@@ -66,7 +66,10 @@ pub(crate) fn length<V>(input: &[V], expected: usize) -> Result<(), InterpolateE
 }
 
 /// Step 2: the number of coordinates.
-fn enough<T>(coordinates: &[T], required: usize) -> Result<(), InterpolateError> {
+///
+/// On its own for a constructor that has no coordinates yet (`BSplineCurve`
+/// makes them from its points).
+pub(crate) fn enough<T>(coordinates: &[T], required: usize) -> Result<(), InterpolateError> {
     if coordinates.len() < required {
         Err(InterpolateError::InsufficientPoints {
             required,

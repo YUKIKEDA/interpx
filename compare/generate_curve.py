@@ -2,6 +2,12 @@
 
 Reference: SciPy 1.18 `make_interp_spline` with a 2-D `y` (one column per output).
 
+SciPy has no function that chooses the parameter of each point for an
+interpolating spline. The `parametrized/*` cases compute the parameters here,
+by the formulas of docs/design.ja.md section 6.1 (`BSplineCurve`), pass them to
+`make_interp_spline`, and store them as `parameters`: the Rust side is given
+the points only.
+
 Run: `just gen-goldens`
 """
 
@@ -25,6 +31,38 @@ def chord_parameter(points: np.ndarray) -> np.ndarray:
     step = np.linalg.norm(np.diff(points, axis=0), axis=1)
     t = np.concatenate([[0.0], np.cumsum(step)])
     return t / t[-1]
+
+
+def parameters(points: np.ndarray, way: str) -> np.ndarray:
+    """The parameter of each point, from 0 to 1: `uniform`, `chord_length`, or `centripetal`."""
+    step = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    if way == "uniform":
+        step = np.ones_like(step)
+    elif way == "centripetal":
+        step = np.sqrt(step)
+    else:
+        assert way == "chord_length"
+    t = np.concatenate([[0.0], np.cumsum(step)])
+    return t / t[-1]
+
+
+def parametrized(name: str, points: np.ndarray, k: int, way: str, bc=None) -> dict:
+    """One case whose parameters come from the points. Fewer queries than the
+    cases above: the goldens have a size budget."""
+    t = parameters(points, way)
+    periodic = bc == "periodic"
+    # The parameters of the points and a coarse grid, without the midpoints.
+    extend = 0.5 if periodic else 0.05
+    q = np.unique(np.concatenate([t, np.linspace(-extend, 1.0 + extend, 9)]))
+    b = si.make_interp_spline(t, points, k=k, bc_type=bc)
+    return golden.case(
+        f"curve/parametrized/{way}/k{k}/{name}",
+        "scipy.interpolate.make_interp_spline",
+        {"k": k, "bc_type": bc, "extrapolate": "periodic" if periodic else True, "parametrization": way},
+        points=points,
+        parameters=t,
+        **fields(b, t, q),
+    )
 
 
 def fields(b, t: np.ndarray, q: np.ndarray) -> dict:
@@ -86,6 +124,31 @@ def main() -> None:
             **fields(b, u, q),
         )
     )
+
+    # Parameters chosen from the points: each way on an open curve in 2D (the
+    # Lissajous points are unevenly spaced, so the three ways differ), and one
+    # in 3D.
+    for way in ("uniform", "chord_length", "centripetal"):
+        cases.append(parametrized("lissajous_2d", lissajous, 3, way))
+    cases.append(parametrized("helix_3d", helix, 2, "chord_length"))
+    # Closed curves.
+    closed = ellipse[::2].copy()
+    closed[-1] = closed[0]
+    for k in (2, 3, 5):
+        cases.append(parametrized("ellipse_2d", closed, k, "chord_length", "periodic"))
+    cases.append(parametrized("ellipse_2d", closed, 3, "centripetal", "periodic"))
+    # Four dimensions.
+    rng = np.random.default_rng(SEED)
+    cases.append(parametrized("random_4d", rng.normal(size=(9, 4)), 3, "chord_length"))
+    # As many points as one polynomial of the degree takes.
+    cases.append(parametrized("fewest_points_2d", rng.normal(size=(4, 2)), 3, "centripetal"))
+    cases.append(parametrized("fewest_points_3d", rng.normal(size=(6, 3)), 5, "chord_length"))
+    # Points in clusters: neighbors 1e-3 apart, then 1 apart.
+    steps = np.tile([1.0, 1e-3], 6)
+    angle = np.linspace(0.0, 2.0, len(steps))
+    clustered = np.concatenate([[[0.0, 0.0]], np.cumsum(np.column_stack([steps * np.cos(angle), steps * np.sin(angle)]), axis=0)])
+    for way in ("chord_length", "centripetal"):
+        cases.append(parametrized("clustered_2d", clustered, 3, way))
 
     path = golden.write("curve", GENERATOR, SEED, cases)
     print(f"wrote {path.name} ({len(cases)} cases)")

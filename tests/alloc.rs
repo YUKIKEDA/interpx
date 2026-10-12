@@ -14,9 +14,9 @@
 //! A row that adds an interpolator adds it to `main`.
 
 use interpx::{
-    Akima1D, AkimaMethod, BSpline, BSpline1D, BoundaryCondition, CubicHermiteSpline, CubicSpline,
-    Extrapolate, Hint, InterpolateError, Interpolator, Linear1D, Nearest1D, NearestKind, PPoly,
-    PchipInterpolator,
+    Akima1D, AkimaMethod, BSpline, BSpline1D, BSplineCurve, BoundaryCondition, CubicHermiteSpline,
+    CubicSpline, Extrapolate, Hint, InterpolateError, Interpolator, Linear1D, Nearest1D,
+    NearestKind, PPoly, Parametrization, PchipInterpolator,
 };
 use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
 use std::alloc::System;
@@ -309,6 +309,53 @@ fn main() -> Result<(), InterpolateError> {
             });
             assert_eq!(n, 0, "Akima1D {mode:?}: eval_hinted or as_ppoly allocates");
         }
+
+        // BSplineCurve: evaluation is that of its BSpline. Parameters chosen
+        // from the points, and given.
+        let corners = [
+            [0.0_f64, 0.0],
+            [1.0, 0.0],
+            [1.0, 2.0],
+            [0.0, 2.0],
+            [0.0, 0.0],
+        ];
+        let chosen = BSplineCurve::new(
+            &corners,
+            3,
+            BoundaryCondition::Periodic,
+            Parametrization::ChordLength,
+        )?
+        .with_extrapolate(mode);
+        check(
+            &format!("BSplineCurve<f64, 2> {mode:?}"),
+            &chosen,
+            &at_points,
+            [f64::NAN; 2],
+        );
+        let given = BSplineCurve::with_parameters(
+            &[0.0, 0.5, 1.0, 1.5, 2.0],
+            &corners,
+            2,
+            BoundaryCondition::NotAKnot,
+        )?
+        .with_extrapolate(mode);
+        check(
+            &format!("BSplineCurve<f64, 2> with parameters {mode:?}"),
+            &given,
+            &at_points,
+            [f64::NAN; 2],
+        );
+        let n = allocations(|| {
+            let mut hint = Hint::new();
+            for u in at_points {
+                std::hint::black_box(chosen.eval_hinted(u, &mut hint));
+            }
+            std::hint::black_box((chosen.as_bspline(), chosen.parameters()));
+        });
+        assert_eq!(
+            n, 0,
+            "BSplineCurve {mode:?}: eval_hinted, as_bspline, or parameters allocates"
+        );
 
         // BSpline1D: evaluation is that of its BSpline. An even and an odd
         // degree, and a periodic one.
