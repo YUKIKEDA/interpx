@@ -14,4 +14,5 @@ The default shell is PowerShell (a Git Bash tool also exists, with POSIX syntax)
 - `just` recipes run in PowerShell on Windows (`set windows-shell` in `justfile`) and in `sh` elsewhere. Keep recipes to simple commands that work in both.
 - In the Git Bash tool: a backtick inside a double-quoted string or an unquoted heredoc runs a command, so text that holds backticks (Markdown, Rust doc comments) goes into a file written by the editor, never into a command line. An argument that starts with `/` is turned into a Windows path, so a criterion filter does not start with one.
 - A script that edits a source file replaces text it expects exactly once and stops when the count differs. Files here have CRLF or LF line ends: normalize before matching and write the same ends back.
+- A script is not edited by another script: an edit applied twice left a duplicated line in M3-4. Change the script with the editor and run it again.
 - `gh pr checks --watch` does not return when the PR merges meanwhile: run it under `timeout`.
