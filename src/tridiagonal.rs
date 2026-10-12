@@ -18,11 +18,11 @@
 //! divisions instead, one per row with a longer chain, was no faster; measured
 //! in `benches/cubic_spline.rs`.)
 //!
-//! They eliminate without
-//! pivoting (the Thomas algorithm), which is stable for the matrices of the
-//! spline boundary conditions (docs/design.ja.md section 6.1). A pivot that is
-//! zero or not finite is reported as a [`Breakdown`]; nothing panics. Whether the
-//! solution is finite is for the caller to check.
+//! The elimination is without pivoting (the Thomas algorithm), which is stable
+//! for the matrices of the spline boundary conditions (docs/design.ja.md
+//! section 6.1). A pivot that is zero or not finite is reported as a
+//! [`Breakdown`]; nothing panics. Whether the solution is finite is for the
+//! caller to check.
 
 use crate::{Scalar, Value};
 
@@ -184,6 +184,11 @@ fn sweep<T: Scalar, V: Value<T>>(
     Ok(())
 }
 
+// The golden loader of the integration tests. An integration test cannot call
+// this crate-private module, so its tests are below and read the file the same
+// way (docs/conventions.md, "Golden data"). The module is declared here and not
+// inside `mod tests`: there the path would start from `src/tridiagonal/tests/`,
+// a directory that does not exist, and only Windows resolves `..` through one.
 #[cfg(test)]
 #[path = "../tests/common/mod.rs"]
 mod common;

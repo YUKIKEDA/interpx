@@ -88,23 +88,20 @@ type Column<'a> = &'a dyn Fn(f64) -> Option<f64>;
 /// Coordinates, values, a boundary condition, and the error they give.
 type Fault<'a> = (&'a [f64], &'a [f64], Bc<f64>, E);
 
-/// The tolerance for the second derivatives of a case, the largest of which is
-/// `largest`.
+/// The tolerance for a second derivative on the `uneven` data, inside the data.
 ///
-/// A second derivative is a difference of slopes divided by a width, so on a
-/// short interval it carries the rounding of the slopes many times over, and it
-/// is compared with a looser tolerance than a value. The error is also measured
-/// against the largest one, not against each on its own: on
-/// `square_with_near_point`, where two points are 1e-5 apart, the second
-/// derivative runs from 1.7e4 to -1.7e4 across that interval and passes 7 in the
-/// middle. There SciPy's and this one differ by 2e-8, which is 1e-12 of the
-/// swing and 3e-9 of the 7.
-fn second_derivative_tolerance(largest: f64) -> Tol {
-    Tol {
-        rtol: 1e-10,
-        atol: 1e-10 * largest.max(1.0),
-    }
-}
+/// The spacings there alternate between 1 and 1e-3. A second derivative is a
+/// difference of slopes divided by a width, so on the short intervals it carries
+/// the rounding of the slopes a thousand times over. Against exact rational
+/// arithmetic, SciPy's second derivatives on this data are off by 8e-13 and this
+/// crate's by 1.4e-12 (relative to the largest of them, which is about 1), and
+/// the two differ from each other by 1.6e-12. Every other case, the two points
+/// 1e-5 apart of `square_with_near_point` included, is within the tolerance of a
+/// value.
+const SECOND_DERIVATIVE_UNEVEN: Tol = Tol {
+    rtol: 1e-11,
+    atol: 1e-11,
+};
 
 #[test]
 fn scipy_cubic_splines_are_rebuilt_from_their_data() {
@@ -145,18 +142,15 @@ fn scipy_cubic_splines_are_rebuilt_from_their_data() {
 
         // The values, and the two derivatives through the piecewise polynomial.
         let queries = nums(&case["queries"]);
-        let largest = nums(&case["derivative_2"])
-            .iter()
-            .filter(|v| v.is_finite())
-            .fold(0.0_f64, |m, v| m.max(v.abs()));
+        let second = if name.contains("uneven") {
+            SECOND_DERIVATIVE_UNEVEN
+        } else {
+            DIRECT_F64
+        };
         let columns: [(&str, Column, Tol); 3] = [
             ("expected", &|q| spline.eval(&q), DIRECT_F64),
             ("derivative_1", &|q| poly.eval_derivative(q, 1), DIRECT_F64),
-            (
-                "derivative_2",
-                &|q| poly.eval_derivative(q, 2),
-                second_derivative_tolerance(largest),
-            ),
+            ("derivative_2", &|q| poly.eval_derivative(q, 2), second),
         ];
         // The `uneven` data ends with a piece 1e-3 wide. Continued 400 widths
         // past it, the rounding of its cubic coefficient (1e-9, see above) shows
