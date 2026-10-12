@@ -811,6 +811,8 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
     /// - [`InterpolateError::LengthMismatch`] when `points` and `values` differ
     ///   in length.
     /// - [`InterpolateError::InsufficientPoints`] when there is no point.
+    /// - With neighbors, [`InterpolateError::InvalidParameter`] for `points`
+    ///   when there are more than `u32::MAX` of them.
     /// - [`InterpolateError::NonFinite`] when a coordinate, or else a value, is
     ///   NaN or infinite. Its `index` is that of the point.
     /// - [`InterpolateError::InvalidParameter`] for `epsilon` when the one of
@@ -879,6 +881,17 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
     ) -> Result<Self, InterpolateError> {
         validate::length(values, points.len())?;
         validate::enough(points, 1)?;
+        // With neighbors the points go into a tree that numbers them with
+        // `u32`. (Counted before the points are looked at one by one.)
+        let in_a_tree = options.neighbors.is_some_and(|k| k < points.len());
+        if in_a_tree && u32::try_from(points.len()).is_err() {
+            return Err(InterpolateError::InvalidParameter {
+                name: "points",
+                reason: ParamReason::TooLarge {
+                    max: u32::MAX as usize,
+                },
+            });
+        }
         let not_finite = |point: &[f64; D]| !point.iter().all(|c| c.is_finite());
         if let Some(index) = points.iter().position(not_finite) {
             return Err(InterpolateError::NonFinite { index });

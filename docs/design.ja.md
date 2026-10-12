@@ -723,6 +723,7 @@ M3-2 は、連立方程式を組み立てるところまでの部品を crate �
 * **選び方**: `RbfOptions::with_neighbors(k)`（SciPy の `neighbors=k`）。問い合わせの点ごとに、近い $k$ 点だけで補間する。全域の求解は点数の 3 乗の時間と 2 乗のメモリが要るので、点が多いとき（数千点より上）のための形である。`RbfOptions::neighbors()` と `RBFInterpolator::neighbors()`（`Option<usize>`）で読める。
   * $k$ が点数以上なら、全域の求解になる（結果が同じなので、構築時に 1 度だけ解く。SciPy も $k$ を点数で切り詰める）。`RBFInterpolator::neighbors()` は、そのとき `None` を返す。
 * **検査**（M3-3 の順に、次を足す）:
+  * 2 の次: 点の数が `u32::MAX` を超えれば `InvalidParameter { name: "points", reason: TooLarge { max } }`（木が点の番号を `u32` で持つ。`NearestNDInterpolator` と同じ検査で、数えるだけで分かるので、点を 1 つずつ見る検査より先に置く。近傍モードのときだけ）
   * 6 の次: `InvalidParameter { name: "neighbors", reason: TooSmall { min: 1 } }`（$k = 0$）
   * 7 を読み替える: 点が単項式より少ない、または $k$ が単項式より少ないとき、`InsufficientPoints { required, actual }`（`actual` は点数と $k$ の小さいほう。SciPy も、近傍の数を点数として同じ検査をする）
   * 9（行列が大きすぎる）と 10（特異）は、近傍モードの構築では起きない（構築時に系を作らない）。
