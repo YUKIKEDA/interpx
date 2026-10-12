@@ -1,13 +1,14 @@
-//! `RegularGridInterpolator` with `Nearest` and `Linear`: the golden data, the
-//! input checks and their order, the layout of the values, the extrapolation
-//! modes on a grid, and the properties.
+//! `RegularGridInterpolator`: the golden data of every method, the input checks
+//! and their order, the layout of the values, the extrapolation modes on a
+//! grid, the spline methods against the splines in one variable, and the
+//! properties.
 
 mod common;
 
 use common::{assert_close, load, reals, Real, DIRECT_F64};
 use interpx::{
-    AxisFault, Extrapolate, GridMethod, Hint, InterpolateError as E, Interpolator,
-    RegularGridInterpolator as Grid,
+    AxisFault, BSpline1D, BoundaryCondition, Extrapolate, GridMethod, Hint, InterpolateError as E,
+    Interpolator, RegularGridInterpolator as Grid,
 };
 use proptest::prelude::*;
 use serde_json::Value as Json;
@@ -34,7 +35,10 @@ fn bits(v: Option<f64>) -> Option<u64> {
 fn method_of(case: &Json) -> Option<GridMethod> {
     match case["options"]["method"].as_str().expect("method") {
         "nearest" => Some(GridMethod::Nearest),
-        "linear" => Some(GridMethod::Linear),
+        // SciPy's two names for one function.
+        "linear" | "slinear" => Some(GridMethod::Linear),
+        "cubic" => Some(GridMethod::Cubic),
+        "quintic" => Some(GridMethod::Quintic),
         _ => None,
     }
 }
@@ -127,17 +131,24 @@ fn scipy_grids_evaluate_to_the_golden_values() {
         descending += usize::from(axes.iter().any(|a| a[0] > a[1]));
     }
     let counts: Vec<((usize, String), i32)> = counts.into_iter().collect();
+    // `Linear` takes SciPy's `linear` and `slinear` cases.
     let want = [
-        ((2, "Linear"), 12),
+        ((2, "Cubic"), 13),
+        ((2, "Linear"), 21),
         ((2, "Nearest"), 14),
-        ((3, "Linear"), 4),
+        ((2, "Quintic"), 13),
+        ((3, "Cubic"), 4),
+        ((3, "Linear"), 6),
         ((3, "Nearest"), 4),
-        ((4, "Linear"), 1),
+        ((3, "Quintic"), 4),
+        ((4, "Cubic"), 1),
+        ((4, "Linear"), 2),
         ((4, "Nearest"), 1),
+        ((4, "Quintic"), 1),
     ]
     .map(|((d, m), n)| ((d, m.to_owned()), n));
     assert_eq!(counts, want);
-    assert_eq!((extended, columns, descending), (6, 2, 5));
+    assert_eq!((extended, columns, descending), (17, 4, 7));
 }
 
 // --- Input checks -------------------------------------------------------------------
@@ -581,6 +592,209 @@ fn f32_one_dimension_columns_and_thread_safety() {
     assert_send_sync::<Grid<f32, 2, [f32; 4]>>();
 }
 
+// --- The spline methods ----------------------------------------------------------
+
+fn splines() -> [(GridMethod, usize); 2] {
+    [(GridMethod::Cubic, 3), (GridMethod::Quintic, 5)]
+}
+
+#[test]
+fn a_spline_method_takes_one_point_more_than_its_degree_on_every_axis() {
+    let x: Vec<f64> = (0..8).map(f64::from).collect();
+    for (method, degree) in splines() {
+        let fewest = degree + 1;
+        let values = vec![0.0; 8 * fewest];
+        assert!(Grid::new([&x[..], &x[..fewest]], &values, method).is_ok());
+        assert_eq!(
+            Grid::new([&x[..], &x[..fewest]], &values, method).map(|g| g.method()),
+            Ok(method)
+        );
+        let short = Grid::new([&x[..], &x[..degree]], &values[..8 * degree], method).err();
+        assert_eq!(
+            short,
+            Some(on_axis(
+                1,
+                AxisFault::InsufficientPoints {
+                    required: fewest,
+                    actual: degree
+                }
+            ))
+        );
+        // The count of an axis still comes after the length of the values.
+        assert_eq!(
+            Grid::new([&x[..], &x[..degree]], &values, method).err(),
+            Some(E::LengthMismatch {
+                expected: 8 * degree,
+                actual: 8 * fewest
+            })
+        );
+    }
+}
+
+#[test]
+fn what_cannot_be_solved_is_an_error_and_not_a_panic() {
+    // The second axis reaches from one end of the numbers to the other: the
+    // distances between its points overflow, and so do the splines on it.
+    let x: Vec<f64> = (0..6).map(f64::from).collect();
+    let wide = [-1.7e308, -1.0e308, -1.0, 1.0, 1.0e308, 1.7e308];
+    for (method, _) in splines() {
+        let err = Grid::new([&x[..], &wide[..]], &[0.0; 36], method).err();
+        assert!(
+            matches!(
+                err,
+                Some(E::GridAxis {
+                    axis: 1,
+                    fault: AxisFault::NonFinite { .. }
+                })
+            ),
+            "{method:?}: {err:?}"
+        );
+        // Values near the largest number, alternating in sign: the
+        // coefficients of the spline through them are larger.
+        let values: Vec<f64> = (0..36)
+            .map(|n| {
+                if (n / 6 + n % 6) % 2 == 0 {
+                    1.7e308
+                } else {
+                    -1.7e308
+                }
+            })
+            .collect();
+        let err = Grid::new([&x[..], &x[..]], &values, method).err();
+        assert!(
+            matches!(err, Some(E::NonFinite { .. })),
+            "{method:?}: {err:?}"
+        );
+        // The methods that solve nothing take both.
+        assert!(Grid::new([&x[..], &x[..]], &values, GridMethod::Linear).is_ok());
+    }
+    assert!(Grid::new([&x[..], &wide[..]], &[0.0; 36], GridMethod::Nearest).is_ok());
+}
+
+#[test]
+fn in_one_dimension_a_spline_method_is_the_spline_through_the_points() {
+    let x = [0.0, 0.5, 1.5, 2.0, 3.5, 4.0, 5.5, 6.0, 7.0];
+    let y = [1.0, -1.0, 0.5, 2.0, 0.0, -2.0, 1.5, 0.5, 3.0];
+    for (method, degree) in splines() {
+        let grid = Grid::new([&x[..]], &y, method)
+            .expect("valid")
+            .with_extrapolate(Extrapolate::Extend);
+        let spline = BSpline1D::new(&x, &y, degree, BoundaryCondition::NotAKnot).expect("valid");
+        // The same knots, the same system, the same sum: the same bits.
+        for k in 0..=160 {
+            let q = -0.5 + 0.05 * f64::from(k);
+            assert_eq!(
+                bits(grid.eval(&[q])),
+                bits(spline.eval(&q)),
+                "{method:?} at {q}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_tensor_product_polynomial_of_the_degree_is_reproduced() {
+    // Unevenly spaced axes of 6, 7, and 8 points.
+    let a = [0.0, 0.3, 1.0, 1.4, 2.5, 3.0];
+    let b = [-1.0, -0.5, 0.25, 1.0, 1.5, 2.75, 3.0];
+    let c = [0.0, 0.5, 1.0, 2.0, 2.25, 3.0, 4.0, 4.5];
+    for (method, degree) in splines() {
+        let power = i32::try_from(degree).expect("small");
+        // A product of polynomials of the full degree in each coordinate.
+        let f = |p: &[f64; 3]| {
+            (1.0 + p[0] - 0.2 * p[0].powi(power))
+                * (2.0 - 0.5 * p[1] * p[1] + 0.05 * p[1].powi(power))
+                * (0.5 + 0.1 * p[2].powi(power - 1) - 0.01 * p[2].powi(power))
+        };
+        let mut values = Vec::new();
+        for x in a {
+            for y in b {
+                for z in c {
+                    values.push(f(&[x, y, z]));
+                }
+            }
+        }
+        let grid = Grid::new([&a[..], &b[..], &c[..]], &values, method)
+            .expect("valid")
+            .with_extrapolate(Extrapolate::Extend);
+        for i in 0..=8 {
+            for j in 0..=8 {
+                for k in 0..=8 {
+                    // From a little outside the grid to a little outside.
+                    let p = [
+                        -0.2 + 0.425 * f64::from(i),
+                        -1.2 + 0.55 * f64::from(j),
+                        -0.2 + 0.6125 * f64::from(k),
+                    ];
+                    let (got, want) = (grid.eval(&p).expect("extends"), f(&p));
+                    let tol = 1e-9 * want.abs().max(100.0);
+                    assert!(
+                        (got - want).abs() <= tol,
+                        "{method:?} at {p:?}: {got} for {want}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn exchanging_the_axes_exchanges_the_coordinates() {
+    let a = [0.0, 0.3, 1.0, 1.4, 2.5, 3.0, 3.25];
+    let b = [-1.0, -0.5, 0.25, 1.0, 1.5, 2.75];
+    let values: Vec<f64> = (0..42_u32).map(|n| f64::from(n * 29 % 17) - 8.0).collect();
+    // The transposed grid: the value at (j, i) is the one at (i, j).
+    let mut transposed = vec![0.0; 42];
+    for i in 0..7 {
+        for j in 0..6 {
+            transposed[j * 7 + i] = values[i * 6 + j];
+        }
+    }
+    for method in [GridMethod::Linear, GridMethod::Cubic, GridMethod::Quintic] {
+        let grid = Grid::new([&a[..], &b[..]], &values, method).expect("valid");
+        let other = Grid::new([&b[..], &a[..]], &transposed, method).expect("valid");
+        for i in 0..=20 {
+            for j in 0..=20 {
+                let (x, y) = (
+                    3.25 * f64::from(i) / 20.0,
+                    -1.0 + 3.75 * f64::from(j) / 20.0,
+                );
+                let (here, there) = (
+                    grid.eval(&[x, y]).expect("inside"),
+                    other.eval(&[y, x]).expect("inside"),
+                );
+                let tol = 1e-11 * here.abs().max(10.0);
+                assert!(
+                    (here - there).abs() <= tol,
+                    "{method:?} at ({x}, {y}): {here} and {there}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_grid_of_no_dimensions_is_its_one_value() {
+    for method in [
+        GridMethod::Nearest,
+        GridMethod::Linear,
+        GridMethod::Cubic,
+        GridMethod::Quintic,
+    ] {
+        let point: Grid<f64, 0> = Grid::new([], &[4.5], method).expect("one value");
+        assert_eq!(bits(point.eval(&[])), bits(Some(4.5)), "{method:?}");
+        assert_eq!(point.shape(), [0_usize; 0]);
+        assert_eq!(point.method(), method);
+        assert_eq!(
+            Grid::<f64, 0>::new([], &[], method).err(),
+            Some(E::LengthMismatch {
+                expected: 1,
+                actual: 0
+            })
+        );
+    }
+}
+
 // --- Properties ----------------------------------------------------------------
 
 /// An axis of 2 to 6 points, increasing.
@@ -603,6 +817,40 @@ fn cases() -> impl Strategy<Value = Case> {
         [axis(), axis(), axis()],
         prop::collection::vec(-10.0_f64..10.0, 216),
         prop::collection::vec(prop::array::uniform3(-0.5_f64..1.5), 1..30),
+    )
+        .prop_map(|(axes, values, fractions)| {
+            let count = axes.iter().map(Vec::len).product();
+            let points = fractions
+                .iter()
+                .map(|f| {
+                    core::array::from_fn(|d| {
+                        let (lo, hi) = (axes[d][0], axes[d][axes[d].len() - 1]);
+                        lo + f[d] * (hi - lo)
+                    })
+                })
+                .collect();
+            (axes, values[..count].to_vec(), points)
+        })
+}
+
+/// An axis of 6 or 7 points: enough for the quintic.
+fn long_axis() -> impl Strategy<Value = Vec<f64>> {
+    (-3.0_f64..3.0, prop::collection::vec(0.2_f64..1.5, 5..7)).prop_map(|(start, widths)| {
+        let mut x = vec![start];
+        for w in widths {
+            x.push(x[x.len() - 1] + w);
+        }
+        x
+    })
+}
+
+/// [`cases`] for the spline methods, with points up to a tenth of the box
+/// outside it.
+fn spline_cases() -> impl Strategy<Value = Case> {
+    (
+        [long_axis(), long_axis(), long_axis()],
+        prop::collection::vec(-10.0_f64..10.0, 343),
+        prop::collection::vec(prop::array::uniform3(-0.1_f64..1.1), 1..20),
     )
         .prop_map(|(axes, values, fractions)| {
             let count = axes.iter().map(Vec::len).product();
@@ -786,6 +1034,76 @@ proptest! {
             let columns = pair.eval(p);
             prop_assert_eq!(bits(columns.map(|c| c[0])), bits(got));
             prop_assert_eq!(bits(columns.map(|c| c[1])), bits(other.eval(p)));
+        }
+    }
+
+    #[test]
+    fn a_spline_method_has_the_properties_of_the_grid(
+        (axes, values, points) in spline_cases(),
+        cubic in any::<bool>(),
+        mode in modes(),
+        flip in prop::array::uniform3(any::<bool>()),
+        scale in -3.0_f64..3.0,
+    ) {
+        let method = if cubic { GridMethod::Cubic } else { GridMethod::Quintic };
+        let grid = Grid::new(slices(&axes), &values, method).expect("valid").with_extrapolate(mode);
+        let shape = grid.shape();
+        // The values at the grid points. The coefficients of a spline through
+        // random values are larger than the values, and round accordingly.
+        let size = values.iter().fold(10.0_f64, |m, v| m.max(v.abs()));
+        for i in 0..shape[0] {
+            for j in 0..shape[1] {
+                for k in 0..shape[2] {
+                    let wrapped = mode == Extrapolate::Periodic
+                        && (i + 1 == shape[0] || j + 1 == shape[1] || k + 1 == shape[2]);
+                    if !wrapped {
+                        let at = [axes[0][i], axes[1][j], axes[2][k]];
+                        let (got, want) = (grid.eval(&at).expect("on the grid"), values[(i * shape[1] + j) * shape[2] + k]);
+                        prop_assert!((got - want).abs() <= 1e-9 * size, "{:?} at {:?}: {} for {}", method, at, got, want);
+                    }
+                }
+            }
+        }
+        // Axes given backward, with the values to match: the same grid.
+        let given: [Vec<f64>; 3] = core::array::from_fn(|d| {
+            let mut axis = axes[d].clone();
+            if flip[d] {
+                axis.reverse();
+            }
+            axis
+        });
+        let mut moved = vec![0.0; values.len()];
+        for i in 0..shape[0] {
+            for j in 0..shape[1] {
+                for k in 0..shape[2] {
+                    let from = [i, j, k];
+                    let to: [usize; 3] = core::array::from_fn(|d| if flip[d] { shape[d] - 1 - from[d] } else { from[d] });
+                    moved[(to[0] * shape[1] + to[1]) * shape[2] + to[2]] = values[(i * shape[1] + j) * shape[2] + k];
+                }
+            }
+        }
+        let backward = Grid::new(slices(&given), &moved, method).expect("valid").with_extrapolate(mode);
+        // Two values at every point, and each alone.
+        let second: Vec<f64> = values.iter().rev().map(|v| v * scale + 1.0).collect();
+        let both: Vec<[f64; 2]> = values.iter().zip(&second).map(|(a, b)| [*a, *b]).collect();
+        let pair = Grid::new(slices(&axes), &both, method).expect("valid").with_extrapolate(mode);
+        let other = Grid::new(slices(&axes), &second, method).expect("valid").with_extrapolate(mode);
+        let clamp = grid.clone().with_extrapolate(Extrapolate::Clamp);
+        let plain = grid.clone().with_extrapolate(Extrapolate::Forbid);
+        let (lo, hi) = grid.domain();
+        let mut hints = [Hint::new(); 3];
+        let mut out = vec![0.0; points.len()];
+        prop_assert_eq!(grid.eval_batch_into(&points, &mut out, -7.0), Ok(()));
+        for (p, slot) in points.iter().zip(&out) {
+            let got = grid.eval(p);
+            prop_assert_eq!(bits(backward.eval(p)), bits(got), "backward at {:?}", p);
+            prop_assert_eq!(bits(grid.eval_hinted(p, &mut hints)), bits(got));
+            prop_assert_eq!(bits(Some(*slot)), bits(Some(got.unwrap_or(-7.0))));
+            let columns = pair.eval(p);
+            prop_assert_eq!(bits(columns.map(|c| c[0])), bits(got));
+            prop_assert_eq!(bits(columns.map(|c| c[1])), bits(other.eval(p)));
+            let clamped: [f64; 3] = core::array::from_fn(|d| p[d].clamp(lo[d], hi[d]));
+            prop_assert_eq!(bits(clamp.eval(p)), bits(plain.eval(&clamped)), "clamp at {:?}", p);
         }
     }
 }

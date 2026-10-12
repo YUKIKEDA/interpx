@@ -171,6 +171,65 @@ pub(crate) fn solve<T: Scalar, V: Value<T>>(band: Band, ab: &[T], pivots: &[usiz
     }
 }
 
+/// [`solve`] for right-hand sides laid out in rows: row `i` is the slab
+/// `rhs[i * width..(i + 1) * width]`, and every position in a slab is a system
+/// of its own. Each position gets, bit for bit, what [`solve`] gives it alone.
+///
+/// The lines of a grid along an axis that is not its last are laid out this
+/// way: the entries of one line are a whole slab apart. A step of the
+/// substitution then works on two slabs, which are contiguous.
+pub(crate) fn solve_slabs<T: Scalar, V: Value<T>>(
+    band: Band,
+    ab: &[T],
+    pivots: &[usize],
+    rhs: &mut [V],
+    width: usize,
+) {
+    let Band { n, lower, upper } = band;
+    let stride = band.stride();
+    let main = lower + upper;
+    debug_assert_eq!(ab.len(), band.len());
+    debug_assert_eq!(rhs.len(), n * width);
+    // L y = P rhs.
+    for j in 0..n {
+        let exchanged = pivots[j];
+        if exchanged != j {
+            let (head, tail) = rhs.split_at_mut(exchanged * width);
+            head[j * width..(j + 1) * width].swap_with_slice(&mut tail[..width]);
+        }
+        let below = lower.min(n - 1 - j);
+        let diag = j * stride + main;
+        let (head, tail) = rhs.split_at_mut((j + 1) * width);
+        let y = &head[j * width..];
+        for (slab, multiplier) in tail
+            .chunks_exact_mut(width)
+            .zip(&ab[diag + 1..=diag + below])
+        {
+            for (slot, y) in slab.iter_mut().zip(y) {
+                *slot = slot.axpy(-*multiplier, *y);
+            }
+        }
+    }
+    // U x = y, row by row from the last.
+    for j in (0..n).rev() {
+        let diag = j * stride + main;
+        let above = main.min(j);
+        let (head, tail) = rhs.split_at_mut(j * width);
+        let x = &mut tail[..width];
+        for slot in x.iter_mut() {
+            *slot = V::zero().axpy(ab[diag], *slot);
+        }
+        for (slab, entry) in head[(j - above) * width..]
+            .chunks_exact_mut(width)
+            .zip(&ab[diag - above..diag])
+        {
+            for (slot, x) in slab.iter_mut().zip(x.iter()) {
+                *slot = slot.axpy(-*entry, *x);
+            }
+        }
+    }
+}
+
 /// The shape of a cyclic banded matrix: a band of `lower` diagonals below the
 /// main one and `upper` above it that wraps around, so that row `i` holds
 /// entries in the columns `i - lower` to `i + upper`, taken modulo `n`.
@@ -343,7 +402,7 @@ impl Cyclic {
 
 #[cfg(test)]
 mod tests {
-    use super::{factor, solve, Band, Breakdown, Cyclic};
+    use super::{factor, solve, solve_slabs, Band, Breakdown, Cyclic};
     use crate::common::{assert_close, load, reals, Real, DIRECT_F64};
     use proptest::prelude::*;
     use serde_json::Value as Json;
@@ -651,6 +710,35 @@ mod tests {
             for ((pair, x), y) in both.iter().zip(&x).zip(&y) {
                 prop_assert_eq!(pair[0].to_bits(), x.to_bits());
                 prop_assert_eq!(pair[1].to_bits(), y.to_bits());
+            }
+        }
+
+        #[test]
+        fn slabs_are_solved_as_if_each_position_were_alone(
+            (band, a, first) in systems(false),
+            width in 1..5_usize,
+            scale in -3.0_f64..3.0,
+        ) {
+            let mut ab = pack(band, &a, 0.0);
+            let mut pivots = vec![0; band.n];
+            prop_assume!(factor(band, &mut ab, &mut pivots).is_ok());
+            // Position `p` of every slab holds its own right-hand side.
+            let column = |p: usize| -> Vec<f64> {
+                first.iter().enumerate().map(|(i, v)| v * scale.powi(i32::try_from(p).unwrap_or(0)) + (p * i) as f64).collect()
+            };
+            let mut slabs = vec![0.0; band.n * width];
+            for p in 0..width {
+                for (i, v) in column(p).iter().enumerate() {
+                    slabs[i * width + p] = *v;
+                }
+            }
+            solve_slabs(band, &ab, &pivots, &mut slabs, width);
+            for p in 0..width {
+                let mut alone = column(p);
+                solve(band, &ab, &pivots, &mut alone);
+                for (i, want) in alone.iter().enumerate() {
+                    prop_assert_eq!(slabs[i * width + p].to_bits(), want.to_bits(), "row {} position {}", i, p);
+                }
             }
         }
 

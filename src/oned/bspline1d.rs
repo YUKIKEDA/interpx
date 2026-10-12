@@ -355,12 +355,6 @@ fn polygon<T: Scalar, V: Value<T>>(x: &[T], y: &[V]) -> Result<BSpline<T, V>, In
 
 /// Degree 2 or more, not periodic: `left` and `right` are the derivatives given
 /// at the ends (degree 3 only).
-///
-/// Both ends of the knots have multiplicity `degree + 1`. Between them, the
-/// knots are data points (odd degrees) or midpoints of neighboring data points
-/// (even degrees), without the outermost ones: that leaves as many control
-/// points as there are conditions. An end with a derivative keeps one knot more
-/// than a not-a-knot end.
 fn open_spline<T: Scalar, V: Value<T>>(
     x: &[T],
     y: &[V],
@@ -368,20 +362,61 @@ fn open_spline<T: Scalar, V: Value<T>>(
     left: EndDerivative<V>,
     right: EndDerivative<V>,
 ) -> Result<BSpline<T, V>, InterpolateError> {
-    let n = x.len();
-    let before = usize::from(left.is_some());
-    let unknowns = n + before + usize::from(right.is_some());
-    let mut knots = Vec::with_capacity(unknowns + degree + 1);
-    knots.resize(degree + 1, x[0]);
-    if degree % 2 == 1 {
-        // With a derivative at an end (degree 3) the data point next to that
-        // end stays a knot.
-        let skip = degree.div_ceil(2);
-        let (first, last) = (skip - before, n - skip + (unknowns - n - before));
-        knots.extend_from_slice(&x[first..last]);
-    } else {
+    let order = |end: EndDerivative<V>| end.map(|(order, _)| order);
+    let knots = Collocation::knots(x, degree, left.is_some(), right.is_some())?;
+    let system =
+        Collocation::factor(x, knots, degree, order(left), order(right)).map_err(unsolved)?;
+    let mut rhs = Vec::with_capacity(system.unknowns());
+    rhs.extend(left.map(|(_, value)| value));
+    rhs.extend_from_slice(y);
+    rhs.extend(right.map(|(_, value)| value));
+    system.solve(&mut rhs);
+    BSpline::from_owned(system.knots, rhs, degree)
+}
+
+/// The system an interpolating spline that is not periodic solves for its
+/// control points, factored: one row for every data point, and one for a
+/// derivative given at an end. It solves any number of right-hand sides (the
+/// lines of a grid along one axis all have the same system).
+pub(crate) struct Collocation<T: Scalar> {
+    /// The knots of the spline.
+    pub(crate) knots: Vec<T>,
+    band: Band,
+    ab: Vec<T>,
+    pivots: Vec<usize>,
+}
+
+impl<T: Scalar> Collocation<T> {
+    /// The knots for the data points `x` (checked, and as many as the degree
+    /// takes) and a degree of 2 or more. `left` and `right` say whether a
+    /// derivative is given at that end (degree 3 only).
+    ///
+    /// Both ends of the knots have multiplicity `degree + 1`. Between them, the
+    /// knots are data points (odd degrees) or midpoints of neighboring data
+    /// points (even degrees), without the outermost ones: that leaves as many
+    /// control points as there are conditions. An end with a derivative keeps
+    /// one knot more than a not-a-knot end.
+    ///
+    /// # Errors
+    ///
+    /// For an even degree, returns [`InterpolateError::DuplicatePoints`] or
+    /// [`InterpolateError::NonFinite`] for a knot that is not between its two
+    /// data points ([`between`]). An odd degree has no such knots, and no
+    /// error.
+    pub(crate) fn knots(
+        x: &[T],
+        degree: usize,
+        left: bool,
+        right: bool,
+    ) -> Result<Vec<T>, InterpolateError> {
+        if degree % 2 == 1 {
+            return Ok(Self::knots_at_points(x, degree, left, right));
+        }
+        let n = x.len();
         let skip = degree / 2;
         let two = T::one() + T::one();
+        let mut knots = Vec::with_capacity(n + degree + 1);
+        knots.resize(degree + 1, x[0]);
         for (i, pair) in x.windows(2).enumerate() {
             // Halved before they are added: the sum of two large coordinates
             // would overflow. The result is the same otherwise.
@@ -390,72 +425,134 @@ fn open_spline<T: Scalar, V: Value<T>>(
                 knots.push(middle);
             }
         }
+        knots.resize(n + degree + 1, x[n - 1]);
+        Ok(knots)
     }
-    knots.resize(unknowns + degree + 1, x[n - 1]);
 
-    // The rows: a derivative at the left end, the data points, a derivative at
-    // the right end. In this order the matrix has `degree` diagonals at most on
-    // each side.
-    //
-    // Without a derivative it has one fewer. A point lies in the interval of
-    // `degree + 1` splines, and only two rows reach the outermost diagonal:
-    // the first, in the first interval, and the last, in the last one. There
-    // the entry is the spline that is zero at that end of the interval, and it
-    // is left out. (The cost of the elimination grows with the square of the
-    // number of diagonals; `benches/bspline1d.rs` measures the construction.)
-    let open_ends = left.is_none() && right.is_none();
-    let side = if open_ends { degree - 1 } else { degree };
-    let band = Band {
-        n: unknowns,
-        lower: side,
-        upper: side,
-    };
-    let mut ab = vec![T::zero(); band.len()];
-    let mut rhs = Vec::with_capacity(unknowns);
-    // The knot interval of the point, which only moves right. The last point is
-    // the right end of the last interval.
-    let last_span = unknowns - 1;
-    let mut span = degree;
-    if let Some((order, value)) = left {
-        let row = basis_derivatives(&knots, degree, span, x[0], order);
-        fill(band, &mut ab, 0, span - degree, &row[..=degree]);
-        rhs.push(value);
+    /// [`knots`](Collocation::knots) for an odd degree, whose knots are data
+    /// points: nothing to compute, and nothing that can fail. (A grid has odd
+    /// degrees only, and no error to pass on.)
+    pub(crate) fn knots_at_points(x: &[T], degree: usize, left: bool, right: bool) -> Vec<T> {
+        debug_assert!(degree % 2 == 1, "an odd degree");
+        let n = x.len();
+        let before = usize::from(left);
+        let unknowns = n + before + usize::from(right);
+        let mut knots = Vec::with_capacity(unknowns + degree + 1);
+        knots.resize(degree + 1, x[0]);
+        // With a derivative at an end (degree 3) the data point next to that
+        // end stays a knot.
+        let skip = degree.div_ceil(2);
+        let (first, last) = (skip - before, n - skip + (unknowns - n - before));
+        knots.extend_from_slice(&x[first..last]);
+        knots.resize(unknowns + degree + 1, x[n - 1]);
+        knots
     }
-    for (i, at) in x.iter().enumerate() {
-        while span < last_span && knots[span + 1] <= *at {
-            span += 1;
+
+    /// Sets up and factors the system for the data points `x` and their
+    /// [`knots`](Collocation::knots). `left` and `right` are the orders of the
+    /// derivatives given at the ends.
+    ///
+    /// The rows are: a derivative at the left end, the data points, a
+    /// derivative at the right end.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Breakdown`] with the row when the matrix cannot be factored.
+    /// The matrix is regular; its entries are not finite when the data points
+    /// are so far apart that their distance overflows.
+    pub(crate) fn factor(
+        x: &[T],
+        knots: Vec<T>,
+        degree: usize,
+        left: Option<usize>,
+        right: Option<usize>,
+    ) -> Result<Self, Breakdown> {
+        let n = x.len();
+        let before = usize::from(left.is_some());
+        let unknowns = n + before + usize::from(right.is_some());
+
+        // In the order of the rows above the matrix has `degree` diagonals at
+        // most on each side.
+        //
+        // Without a derivative it has one fewer. A point lies in the interval
+        // of `degree + 1` splines, and only two rows reach the outermost
+        // diagonal: the first, in the first interval, and the last, in the
+        // last one. There the entry is the spline that is zero at that end of
+        // the interval, and it is left out. (The cost of the elimination grows
+        // with the square of the number of diagonals; `benches/bspline1d.rs`
+        // measures the construction.)
+        let open_ends = left.is_none() && right.is_none();
+        let side = if open_ends { degree - 1 } else { degree };
+        let band = Band {
+            n: unknowns,
+            lower: side,
+            upper: side,
+        };
+        let mut ab = vec![T::zero(); band.len()];
+        // The knot interval of the point, which only moves right. The last
+        // point is the right end of the last interval.
+        let last_span = unknowns - 1;
+        let mut span = degree;
+        if let Some(order) = left {
+            let row = basis_derivatives(&knots, degree, span, x[0], order);
+            fill(band, &mut ab, 0, span - degree, &row[..=degree]);
         }
-        let row = basis_values::<T, MAX_ORDER>(&knots, degree, span, *at);
-        if open_ends && i == 0 {
-            debug_assert!(
-                row[degree] == T::zero(),
-                "zero at the left end of its interval"
+        for (i, at) in x.iter().enumerate() {
+            while span < last_span && knots[span + 1] <= *at {
+                span += 1;
+            }
+            let row = basis_values::<T, MAX_ORDER>(&knots, degree, span, *at);
+            if open_ends && i == 0 {
+                debug_assert!(
+                    row[degree] == T::zero(),
+                    "zero at the left end of its interval"
+                );
+                fill(band, &mut ab, 0, 0, &row[..degree]);
+            } else if open_ends && i == n - 1 {
+                debug_assert!(row[0] == T::zero(), "zero at the right end of its interval");
+                fill(band, &mut ab, i, span - degree + 1, &row[1..=degree]);
+            } else {
+                fill(band, &mut ab, before + i, span - degree, &row[..=degree]);
+            }
+        }
+        if let Some(order) = right {
+            let row = basis_derivatives(&knots, degree, last_span, x[n - 1], order);
+            fill(
+                band,
+                &mut ab,
+                unknowns - 1,
+                last_span - degree,
+                &row[..=degree],
             );
-            fill(band, &mut ab, 0, 0, &row[..degree]);
-        } else if open_ends && i == n - 1 {
-            debug_assert!(row[0] == T::zero(), "zero at the right end of its interval");
-            fill(band, &mut ab, i, span - degree + 1, &row[1..=degree]);
-        } else {
-            fill(band, &mut ab, before + i, span - degree, &row[..=degree]);
         }
-    }
-    rhs.extend_from_slice(y);
-    if let Some((order, value)) = right {
-        let row = basis_derivatives(&knots, degree, last_span, x[n - 1], order);
-        fill(
+
+        let mut pivots = vec![0; unknowns];
+        banded::factor(band, &mut ab, &mut pivots)?;
+        Ok(Self {
+            knots,
             band,
-            &mut ab,
-            unknowns - 1,
-            last_span - degree,
-            &row[..=degree],
-        );
-        rhs.push(value);
+            ab,
+            pivots,
+        })
     }
 
-    let mut pivots = vec![0; unknowns];
-    banded::factor(band, &mut ab, &mut pivots).map_err(unsolved)?;
-    banded::solve(band, &ab, &pivots, &mut rhs);
-    BSpline::from_owned(knots, rhs, degree)
+    /// The number of control points: of rows of the system.
+    pub(crate) fn unknowns(&self) -> usize {
+        self.band.n
+    }
+
+    /// Solves for the control points and leaves them in `rhs`, which holds the
+    /// right-hand side in the order of the rows.
+    pub(crate) fn solve<V: Value<T>>(&self, rhs: &mut [V]) {
+        banded::solve(self.band, &self.ab, &self.pivots, rhs);
+    }
+
+    /// Solves for the control points of `width` splines at once: row `i` of
+    /// the right-hand sides is `rhs[i * width..(i + 1) * width]`, one entry a
+    /// spline.
+    pub(crate) fn solve_slabs<V: Value<T>>(&self, rhs: &mut [V], width: usize) {
+        banded::solve_slabs(self.band, &self.ab, &self.pivots, rhs, width);
+    }
 }
 
 /// A knot of an even degree, which lies between the data points `index` and

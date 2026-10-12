@@ -2,14 +2,15 @@
 
 Reference: SciPy 1.18 `RegularGridInterpolator` with the six methods `linear`,
 `nearest`, `slinear`, `cubic`, `quintic`, `pchip`. For `cubic` and `quintic` the
-expected values come from the direct solver (see `run`). `values` is stored flat in C
-order (last axis fastest) with its `shape`, as docs/design.ja.md section 6.4 says.
+expected values come from `cubic_legacy` and `quintic_legacy` (see `run`). `values`
+is stored flat in C order (last axis fastest) with its `shape`, as
+docs/design.ja.md section 6.4 says.
 
 Run: `just gen-goldens`
 """
 
 import numpy as np
-from scipy.interpolate import RegularGridInterpolator
+from scipy.interpolate import RegularGridInterpolator, make_interp_spline
 from scipy.sparse.linalg import spsolve
 
 from common import datasets, golden
@@ -17,7 +18,7 @@ from common import datasets, golden
 GENERATOR = "generate_grid.py"
 SEED = 3
 METHODS = ("linear", "nearest", "slinear", "cubic", "quintic", "pchip")
-EXACT_SOLVER_METHODS = ("cubic", "quintic")
+SPLINE_DEGREES = {"cubic": 3, "quintic": 5}
 
 
 def nonuniform_axis(rng, n: int) -> np.ndarray:
@@ -37,14 +38,28 @@ def run(name, axes, values, method, queries, extrapolate: bool, function: str) -
     grid = np.asarray(values).reshape(shape)
     kwargs = {"method": method, "bounds_error": False, "fill_value": fill}
     try:
-        if method in EXACT_SOLVER_METHODS:
+        if method in SPLINE_DEGREES:
             # SciPy's default for these two methods is an iterative sparse solver
             # (gcrotmk) whose result is about 1e-5 away from the tensor-product
-            # spline. `expected` is the spline itself (direct solver); the default's
-            # result is kept beside it so that the difference stays measurable.
-            options["solver"] = "scipy.sparse.linalg.spsolve"
+            # spline on these smooth functions (and of the size of the values on
+            # random ones). `expected` is the spline itself, from the legacy
+            # method, which interpolates along one axis after the other; the
+            # default's result is kept beside it so that the difference stays
+            # measurable.
+            #
+            # A direct sparse solve (`solver=spsolve`) gives the same spline, but
+            # less accurately: it solves all axes in one matrix, whose condition
+            # number is the product of those of the axes. It is checked here to
+            # be close, and not stored (docs/design.ja.md section 6.4 has the
+            # comparison with exact arithmetic).
+            options["reference_method"] = f"{method}_legacy"
             common["expected_scipy_default"] = RegularGridInterpolator(tuple(axes), grid, **kwargs)(queries)
-            kwargs["solver"] = spsolve
+            direct = RegularGridInterpolator(tuple(axes), grid, **kwargs, solver=spsolve)(queries)
+            kwargs["method"] = f"{method}_legacy"
+            legacy = RegularGridInterpolator(tuple(axes), grid, **kwargs)(queries)
+            inside = ~np.isnan(legacy)
+            assert np.array_equal(np.isnan(direct), ~inside), name
+            assert np.allclose(direct[inside], legacy[inside], rtol=1e-9, atol=1e-9), name
         f = RegularGridInterpolator(tuple(axes), grid, **kwargs)
         return golden.case(name, "scipy.interpolate.RegularGridInterpolator", options, **common, expected=f(queries))
     except Exception as exc:  # recorded so that the difference is visible in review
@@ -138,6 +153,53 @@ def main() -> None:
     for method in ("linear", "nearest"):
         case = run(f"grid2d/nonuniform/columns/{method}", nonuniform, both[:, 0], method, q2[:16], False, "franke_f1_f4")
         f = RegularGridInterpolator(nonuniform, both.reshape(shape2 + [2]), method=method, bounds_error=False)
+        case["values_columns"] = golden.encode(both)
+        case["expected_columns"] = golden.encode(f(q2[:16]))
+        cases.append(case)
+
+    # Chosen for `cubic` and `quintic` (M2-2).
+    def coefficients(axes, values, k: int) -> np.ndarray:
+        """The coefficients of the tensor-product spline: the 1D spline of every
+        line along axis 0, then along axis 1, and so on."""
+        c = np.asarray(values, dtype=np.float64).reshape([len(a) for a in axes])
+        for d, x in enumerate(axes):
+            c = np.moveaxis(make_interp_spline(x, np.moveaxis(c, d, 0), k=k).c, 0, d)
+        return c.ravel()
+
+    # The coefficients themselves, on a non-uniform grid in 2D and in 3D.
+    pts = mesh(nonuniform)
+    vals = datasets.franke(2, pts[:, 0], pts[:, 1])
+    for method, k in SPLINE_DEGREES.items():
+        case = run(f"grid2d/nonuniform/f2/{method}/coefficients", nonuniform, vals, method, q2[:16], True, "franke_f2")
+        case["coefficients"] = golden.encode(coefficients(nonuniform, vals, k))
+        cases.append(case)
+    vals = datasets.genz("gaussian_peak", mesh(axes3))
+    for method, k in SPLINE_DEGREES.items():
+        case = run(f"grid3d/gaussian_peak/{method}/coefficients", axes3, vals, method, q3[:10], True, "genz_gaussian_peak")
+        case["coefficients"] = golden.encode(coefficients(axes3, vals, k))
+        cases.append(case)
+    # As many points an axis as the degree takes: one polynomial in each
+    # coordinate. And one point more on one axis.
+    for method, k in SPLINE_DEGREES.items():
+        fewest = (nonuniform_axis(rng, k + 1), nonuniform_axis(rng, k + 1))
+        pts = mesh(fewest)
+        vals = datasets.franke(1, pts[:, 0], pts[:, 1])
+        cases.append(run(f"grid2d/fewest_points/{method}", fewest, vals, method, q2[:20], True, "franke_f1"))
+        one_more = (nonuniform_axis(rng, k + 2), nonuniform_axis(rng, k + 1))
+        pts = mesh(one_more)
+        vals = datasets.franke(1, pts[:, 0], pts[:, 1])
+        cases.append(run(f"grid2d/one_point_more/{method}", one_more, vals, method, q2[:20], True, "franke_f1"))
+    # A descending axis among ascending ones, in 3D.
+    mixed = (axes3[0], axes3[1][::-1].copy(), axes3[2])
+    vals = datasets.genz("gaussian_peak", mesh(mixed))
+    for method in SPLINE_DEGREES:
+        cases.append(run(f"grid3d/descending_middle/{method}", mixed, vals, method, q3[:16], False, "genz_gaussian_peak"))
+    # Two values at every point (the layout of the linear cases above).
+    pts = mesh(nonuniform)
+    both = np.column_stack([datasets.franke(1, pts[:, 0], pts[:, 1]), datasets.franke(4, pts[:, 0], pts[:, 1])])
+    for method in SPLINE_DEGREES:
+        case = run(f"grid2d/nonuniform/columns/{method}", nonuniform, both[:, 0], method, q2[:16], False, "franke_f1_f4")
+        f = RegularGridInterpolator(nonuniform, both.reshape(shape2 + [2]), method=f"{method}_legacy", bounds_error=False)
         case["values_columns"] = golden.encode(both)
         case["expected_columns"] = golden.encode(f(q2[:16]))
         cases.append(case)
