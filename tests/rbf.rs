@@ -650,6 +650,32 @@ fn the_number_of_neighbors_is_checked_against_the_points_and_the_polynomial() {
             assert_eq!(bits(rbf.eval(&query)), bits(global.eval(&query)), "{all}");
         }
     }
+    // More points than the tree of this mode can number. Points without
+    // coordinates and values without columns take no memory, so the count can
+    // be reached.
+    #[cfg(target_pointer_width = "64")]
+    {
+        let count = u32::MAX as usize + 1;
+        let (many, nothing) = (vec![[0.0_f64; 0]; count], vec![[0.0_f64; 0]; count]);
+        let built = Rbf::with_options(&many, &nothing, tps, &plain.with_neighbors(5));
+        assert_eq!(
+            built.err(),
+            Some(invalid(
+                "points",
+                ParamReason::TooLarge {
+                    max: u32::MAX as usize
+                }
+            ))
+        );
+        // The length still comes first.
+        assert_eq!(
+            Rbf::with_options(&many, &nothing[1..], tps, &plain.with_neighbors(5)).err(),
+            Some(E::LengthMismatch {
+                expected: count,
+                actual: count - 1
+            })
+        );
+    }
     // A degree is checked before the neighbors, the neighbors before the same
     // point twice.
     let low = plain.with_neighbors(0).with_degree(RbfDegree::Degree(0));
