@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M2-4, then M3-5. M4 waits for `convx` (see Dependencies), so the rows of M5 that do not need it come after them: M5-1 first.
+M3-5 first: it finishes a part of the neighbors mode that SciPy has (a capability, `.cursor/rules/pace.mdc`). M4 waits for `convx` (see Dependencies), so the rows of M5 that do not need it come next: M5-1 first. M2-4 changes nothing for a user (it explains a figure): it is closed with what was measured, beside the other rows and without holding them.
 
 ## Dependencies
 
