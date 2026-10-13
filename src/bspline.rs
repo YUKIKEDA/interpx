@@ -783,10 +783,10 @@ fn check<T: Scalar, V: Value<T>>(
             actual: n,
         });
     }
-    if let Some(index) = knots.iter().position(|t| !t.is_finite()) {
+    if let Some(index) = crate::validate::first_failing(knots, |t| t.is_finite()) {
         return Err(InterpolateError::NonFinite { index });
     }
-    if let Some(index) = control_points.iter().position(|c| !c.all_finite()) {
+    if let Some(index) = crate::validate::first_failing(control_points, V::all_finite) {
         return Err(InterpolateError::NonFinite { index });
     }
     if let Some(i) = knots.windows(2).position(|w| w[1] < w[0]) {

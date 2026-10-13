@@ -976,8 +976,8 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
                 },
             });
         }
-        let not_finite = |point: &[f64; D]| !point.iter().all(|c| c.is_finite());
-        if let Some(index) = points.iter().position(not_finite) {
+        let finite = |point: &[f64; D]| point.iter().all(|c| c.is_finite());
+        if let Some(index) = validate::first_failing(&points, finite) {
             return Err(InterpolateError::NonFinite { index });
         }
         if let Some(index) = validate::first_failing(&values, V::all_finite) {
