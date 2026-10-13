@@ -28,7 +28,7 @@ just compare-perf --list                # the names
 just compare-report                     # docs/performance.md from what out/ holds
 ```
 
-How long a run takes is set by three things, not by the work measured: the number of processes (cases x libraries x rounds), the time each timed loop is given (50 ms), and the start of Python and SciPy (0.7 s a process). The first runs gave each loop 250 ms, paused 60 ms after every phase of every case, and started every library on every case to hear that it had none: all cases took two hours. After that was changed, the 112 cases of one variable took 16 minutes for three rounds (#123); all the cases have not been run in one go since.
+How long a run takes is set by three things, not by the work measured: the number of processes (cases x libraries x rounds), the time each timed loop is given (50 ms), and the start of Python and SciPy (0.7 s a process). The first runs gave each loop 250 ms, paused 60 ms after every phase of every case, and started every library on every case to hear that it had none: all cases took two hours. After that was changed, the 112 cases of one variable took 16 minutes for three rounds (#123); all 277 cases take 22 minutes (#151).
 
 A run that was stopped goes on where it stopped (`out/results.jsonl` says what is done). Delete `compare/perf/out/` to start over. Nothing else that takes a core runs meanwhile: no build, no test, no second comparison.
 
