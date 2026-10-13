@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M5-4 (#157): the audit is done and the tests it found missing (the orders of convergence) are in. One line is left: what becomes of the real-world data of design section 8.4.7, which is the owner's to decide. Then M5-6 (`README.md`, `README.ja.md`, `examples/`): the capabilities of v0.1.0 that do not wait for `convx` are there and tested, and nothing a user reads says so yet. M5-7 and M5-8 follow it. M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4 (the orders of its two types, the adversarial geometry of section 8.4.6), and its part of the documents. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
+P-12 (#159) next: a figure of the RBF interpolant that is three times SciPy's and not explained may be a wrong result, and that comes before everything else. Then M5-11 (#160, the real-world data of the comparison): it can still show a loss the synthetic cases do not, and a loss is worked before the documents describe the library. Then M5-6 (`README.md`, `README.ja.md`, `examples/`), M5-7, and M5-8. M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4 (the orders of its two types, the adversarial geometry of section 8.4.6), and its part of the documents. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
 
 ## Dependencies
 
@@ -81,6 +81,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | P-9 | Task   | Search: the time for points in no order moves twofold with where it is built in          | #132  | Done   |
 | P-10 | Task  | Search: the cause of P-9 in the disassembly, the five cases it made slower, a two-place check | #138  | Todo   |
 | P-11 | Task  | Grid: the search on two and three axes against `interpn` (up to 1.5x, part of it unexplained) | #144  | Todo   |
+| P-12 | Bug   | RBF, Gaussian kernel: on an ill-conditioned system the error is three times SciPy's, outside SciPy's own range | #159  | Todo   |
 
 ## M5: Integration and quality
 
@@ -88,13 +89,14 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | ----- | ---- | --------------------------------------------------------------------------- | ----- | ------ |
 | M5-1  | Feat | `rayon` features: `eval_batch_par`, `eval_batch_into_par`                   | #150  | Done   |
 | M5-3  | Feat | `serde` for all interpolators (topology stored, format version, validation) | #154  | Done   |
-| M5-4  | Test | Property tests (`proptest`) and the SciPy 1.18 golden suite for every type  | #157  | Todo   |
+| M5-4  | Test | Property tests (`proptest`) and the SciPy 1.18 golden suite for every type  | #157  | Done   |
 | M5-5  | Task | `compare/perf`: SciPy and other pure-Rust crates, time and memory           | #120  | Done   |
 | M5-6  | Task | `README.md`, `README.ja.md`, and `examples/`                                |       | Todo   |
 | M5-7  | Task | English `docs/design.md`                                                    |       | Todo   |
 | M5-8  | Task | Run `publish-review`, fix rustdoc and README failures                       |       | Todo   |
 | M5-9  | Task | Switch `convx` to the published version; set license and publish fields     |       | Todo   |
 | M5-10 | Task | Release PR for v0.1.0                                                       |       | Todo   |
+| M5-11 | Task | `compare/perf`: the real-world data sets of design section 8.4.7 (left out of M5-5) | #160  | Todo   |
 
 ## After v0.1.0
 
