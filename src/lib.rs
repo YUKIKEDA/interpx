@@ -20,8 +20,9 @@
 //!   `ParInterpolator`, which every interpolator that is `Sync` then has. The
 //!   results are those of the serial batches bit for bit. A batch times its
 //!   first points and is shared out only when the rest is worth it; for
-//!   batches you know to be small, the serial forms cost a little less
-//!   (the timing is up to half a microsecond).
+//!   batches you know to be small, call the serial forms: a batch of less
+//!   than a tenth of a millisecond of work is not shared out, and deciding
+//!   that has made it up to a third slower than the serial form.
 //!
 //! # Examples
 //!

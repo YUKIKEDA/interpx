@@ -27,7 +27,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        features: ["--no-default-features", "--all-features"]
+        features: ["--no-default-features", "--no-default-features --features rayon", "--all-features"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -39,7 +39,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.89
-      - run: cargo test --locked
+      # Every feature: the code behind a feature has the same MSRV.
+      - run: cargo test --locked --all-features
 
   coverage:
     name: coverage (stable)

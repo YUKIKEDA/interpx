@@ -2,6 +2,7 @@
 
 use crate::{InterpolateError, Interpolator};
 use rayon::prelude::*;
+use std::convert::Infallible;
 use std::ops::Range;
 use std::time::{Duration, Instant};
 
@@ -105,10 +106,13 @@ fn timed<E>(work: impl FnOnce() -> Result<(), E>) -> Result<Duration, E> {
 ///
 /// A batch times its own first points and is shared out only when the rest
 /// is work worth waking other threads for (a tenth of a millisecond). A batch
-/// that is not shared out costs what the serial form costs and a little more
-/// for the timing: nothing up to 16 points, and a tenth to a half of a
-/// microsecond above that. For batches you know to be small, call the serial
-/// form.
+/// that is not shared out costs more than the serial form: nothing more up to
+/// 16 points, and above that the two readings of the clock and, more than
+/// those, the batch being evaluated as two serial batches (the points timed,
+/// then the rest). In this crate's comparison (`docs/performance.md`) that
+/// was 0.1 µs on batches under a microsecond, and up to a third more time on
+/// batches from a microsecond to a tenth of a millisecond (7 µs at the
+/// most). For batches you know to be small, call the serial form.
 ///
 /// The threads are those of `rayon`'s global pool. To use another pool, call
 /// from inside its `install`.
@@ -151,13 +155,10 @@ where
         let first = lead(points.len(), |range| {
             timed(|| {
                 out.extend(self.eval_batch(&points[range]));
-                Ok::<(), InterpolateError>(())
+                Ok::<(), Infallible>(())
             })
         });
-        let Ok(Rest { from, chunk }) = first else {
-            // The closure above has no error to give.
-            return out;
-        };
+        let Ok(Rest { from, chunk }) = first;
         let rest = &points[from..];
         match chunk {
             Some(chunk) => {
