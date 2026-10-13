@@ -350,10 +350,19 @@ fn handed_over() -> Result<(), InterpolateError> {
 
 /// The parallel batch that writes into a slice allocates nothing of its own.
 ///
-/// A batch too small to share out never reaches `rayon`: it allocates
+/// A batch that is not shared out never reaches `rayon`: it allocates
 /// nothing at all, which is asserted. A batch that is shared out goes through
 /// `rayon`, whose own allocations are not this crate's to count (design
 /// section 3.2); what is counted there is printed and not asserted.
+///
+/// Whether a batch is shared out is decided from the time its first points
+/// take, so it is not the same on every machine or on every run: a batch of
+/// 300 points was shared out by an unoptimized build on a slow runner (#155).
+/// Up to 16 points nothing is timed, and one count is the count. Above that
+/// the least of several counts is taken, of batches short enough to be
+/// shared out only when the thread is held up while their first points are
+/// timed (each of their points would have to take 2 microseconds): what this
+/// crate allocated on the way to the decision would be in every count.
 #[cfg(feature = "rayon")]
 fn parallel() -> Result<(), InterpolateError> {
     use interpx::{Linear1D, ParInterpolator};
@@ -362,12 +371,22 @@ fn parallel() -> Result<(), InterpolateError> {
     let line = Linear1D::new(&x, &x)?;
     let points: Vec<f64> = (0..200_000).map(|i| f64::from(i % 997) + 0.25).collect();
     let mut out = vec![0.0; points.len()];
-    for n in [0, 1, 16, 17, 300] {
-        let small = allocations(|| {
+    let mut count = |n: usize| {
+        allocations(|| {
             let done = line.eval_batch_into_par(&points[..n], &mut out[..n], f64::NAN);
             std::hint::black_box(done.is_ok());
-        });
-        assert_eq!(small, 0, "eval_batch_into_par, {n} points, not shared out");
+        })
+    };
+    for n in [0, 1, 16] {
+        assert_eq!(count(n), 0, "eval_batch_into_par, {n} points, not timed");
+    }
+    for n in [17, 64] {
+        let least = (0..20).map(|_| count(n)).min();
+        assert_eq!(
+            least,
+            Some(0),
+            "eval_batch_into_par, {n} points, not shared out"
+        );
     }
     // Once before counting: the pool is started by the first batch shared out.
     line.eval_batch_into_par(&points, &mut out, f64::NAN)?;
