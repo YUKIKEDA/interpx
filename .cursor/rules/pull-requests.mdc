@@ -9,6 +9,7 @@ alwaysApply: true
 - The body uses the six headings of `.github/pull_request_template.md`, in order, in English: `## Summary`, `## Related`, `## Test plan`, `## Verification`, `## Risk / Rollback`, `## Checklist`. List text under them may be Japanese. An empty section is `N/A`. Do not invent headings.
 - Start a body from the template file, not from an earlier PR's body.
 - An acceptance line the PR cannot fill means the PR does not finish that Issue: write `Part of #N`, not `Closes #N` (`.cursor/rules/github-closing.mdc`).
+- `## Verification` has, before anything else, every line of the Issue's Definition of done with what met it, or "not met" and where it went. It is written before `gh pr create`, from the Issue as it reads then, not from memory. #137, #139, and #140 each closed an Issue with a line unmet, one after the other, with the rule above already in this file: the lines were not laid next to the work until a review did it.
 - A hot-path PR pastes the criterion comparison against the named baseline under `## Verification`, or says why speed does not change (`.cursor/rules/bench.mdc`).
 - A statement that "the output is unchanged" names its grain: bit for bit, or equal within a stated tolerance.
 - Read the body again when its base merges and when a commit lands after it was written. A "Stacked on #N" line is rewritten once #N merges.

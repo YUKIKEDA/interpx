@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-The rows of P (below) that are not done, in this order: P-4 and P-6 first (what SciPy builds and interpx cannot; a constructor the design names and the code lacks), then the speed rows by the size of the loss: P-3, P-7, P-8, P-5, P-10 and P-11 (what P-9 and P-3 left open: no result depends on them). They come before M5-1 and M5-3, which are put on top of the types these rows may change (`.cursor/rules/pace.mdc`, `.cursor/rules/bench.mdc`). M4 waits for `convx` (see Dependencies).
+M5-3 (`serde`) next: it is the last capability of v0.1.0 that does not wait for `convx`, and M5-4 (the tests of every type) and M5-6 to M5-8 (the documents) describe what it leaves. M4 waits for `convx` (see Dependencies). P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
 
 ## Dependencies
 
@@ -86,7 +86,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 
 | ID    | Kind | Title                                                                       | Issue | Status |
 | ----- | ---- | --------------------------------------------------------------------------- | ----- | ------ |
-| M5-1  | Feat | `rayon` features: `eval_batch_par`, `eval_batch_into_par`                   |       | Todo   |
+| M5-1  | Feat | `rayon` features: `eval_batch_par`, `eval_batch_into_par`                   | #150  | Done   |
 | M5-3  | Feat | `serde` for all interpolators (topology stored, format version, validation) |       | Todo   |
 | M5-4  | Test | Property tests (`proptest`) and the SciPy 1.18 golden suite for every type  |       | Todo   |
 | M5-5  | Task | `compare/perf`: SciPy and other pure-Rust crates, time and memory           | #120  | Done   |

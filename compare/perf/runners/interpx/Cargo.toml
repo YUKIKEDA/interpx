@@ -6,7 +6,8 @@ edition = "2021"
 publish = false
 
 [dependencies]
-interpx = { path = "../../../.." }
+# With `rayon`: the parallel batch is one of the ways this runner evaluates.
+interpx = { path = "../../../..", features = ["rayon"] }
 perf-harness = { path = "../harness" }
 
 [profile.release]

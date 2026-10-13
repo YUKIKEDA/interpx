@@ -1,11 +1,13 @@
 //! The interpx side of the comparison: one case, the phases of
 //! `perf-harness`. Every evaluation is the serial batch, `eval_batch_into`,
-//! into an array that is there already.
+//! into an array that is there already; or, when the process has `par` as
+//! its second argument, the parallel batch, `eval_batch_into_par`.
 
 use interpx::{
     Akima1D, AkimaMethod, BSpline, BSpline1D, BSplineCurve, BoundaryCondition, CubicSpline,
     GridMethod, Interpolator, Linear1D, Nearest1D, NearestKind, NearestNDInterpolator, PPoly,
-    PchipInterpolator, RBFInterpolator, RbfKernel, RbfOptions, RegularGridInterpolator,
+    ParInterpolator, PchipInterpolator, RBFInterpolator, RbfKernel, RbfOptions,
+    RegularGridInterpolator,
 };
 use perf_harness::{run, run_given, unsupported, Case};
 use std::cell::RefCell;
@@ -20,16 +22,49 @@ fn owned() -> bool {
     std::env::args().nth(2).as_deref() == Some("owned")
 }
 
+/// The same library, evaluated with the parallel batch on the threads the
+/// driver allows (`RAYON_NUM_THREADS`).
+const PARALLEL: &str = "interpx_par";
+
+/// Read once: this is asked at every batch, and reading the arguments of the
+/// process takes a microsecond, which is ten times a small batch.
+fn parallel() -> bool {
+    static MODE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *MODE.get_or_init(|| std::env::args().nth(2).as_deref() == Some("par"))
+}
+
+/// The name the results of this process go under.
+fn library() -> &'static str {
+    if parallel() {
+        PARALLEL
+    } else {
+        LIBRARY
+    }
+}
+
+/// The batch of the mode this process runs in.
+fn batch<I>(built: &I, q: &[I::Point], out: &mut [I::Output], fill: I::Output)
+where
+    I: Interpolator + Sync,
+    I::Point: Sync,
+    I::Output: Send + Sync + Clone,
+{
+    let done = if parallel() {
+        built.eval_batch_into_par(q, out, fill)
+    } else {
+        built.eval_batch_into(q, out, fill)
+    };
+    done.expect("same length");
+}
+
 /// Runs a scalar interpolator of one variable over the queries `q`.
 fn scalar<I>(case: &Case, build: impl Fn() -> I)
 where
-    I: Interpolator<Point = f64, Output = f64>,
+    I: Interpolator<Point = f64, Output = f64> + Sync,
 {
     let q = case.array("q");
-    run(case, LIBRARY, q.len(), build, |built, out| {
-        built
-            .eval_batch_into(&q, out, f64::NAN)
-            .expect("same length");
+    run(case, library(), q.len(), build, |built, out| {
+        batch(built, &q, out, f64::NAN);
     });
 }
 
@@ -71,15 +106,19 @@ fn curve(case: &Case) {
         // curve so that the timed evaluation does not allocate it.
         (curve.expect("valid"), RefCell::new(vec![[0.0; 2]; q.len()]))
     };
-    run(case, LIBRARY, 2 * q.len(), build, |(curve, space), out| {
-        let mut space = space.borrow_mut();
-        curve
-            .eval_batch_into(&q, &mut space, [f64::NAN; 2])
-            .expect("same length");
-        for (pair, point) in out.as_chunks_mut::<2>().0.iter_mut().zip(space.iter()) {
-            *pair = *point;
-        }
-    });
+    run(
+        case,
+        library(),
+        2 * q.len(),
+        build,
+        |(curve, space), out| {
+            let mut space = space.borrow_mut();
+            batch(curve, &q, &mut space, [f64::NAN; 2]);
+            for (pair, point) in out.as_chunks_mut::<2>().0.iter_mut().zip(space.iter()) {
+                *pair = *point;
+            }
+        },
+    );
 }
 
 fn grid<const D: usize>(case: &Case) {
@@ -95,9 +134,7 @@ fn grid<const D: usize>(case: &Case) {
         other => unsupported(&format!("no method {other}")),
     };
     let eval = |built: &RegularGridInterpolator<f64, D>, out: &mut [f64]| {
-        built
-            .eval_batch_into(&q, out, f64::NAN)
-            .expect("same length");
+        batch(built, &q, out, f64::NAN);
     };
     if owned() {
         let make = || (axes.clone(), values.clone());
@@ -110,7 +147,7 @@ fn grid<const D: usize>(case: &Case) {
         let slices: [&[f64]; D] = core::array::from_fn(|d| axes[d].as_slice());
         RegularGridInterpolator::new(slices, &values, method).expect("valid")
     };
-    run(case, LIBRARY, q.len(), build, eval);
+    run(case, library(), q.len(), build, eval);
 }
 
 fn nearest_nd(case: &Case) {
@@ -120,16 +157,14 @@ fn nearest_nd(case: &Case) {
         case.rows::<2>("q"),
     );
     let eval = |built: &NearestNDInterpolator<2>, out: &mut [f64]| {
-        built
-            .eval_batch_into(&q, out, f64::NAN)
-            .expect("same length");
+        batch(built, &q, out, f64::NAN);
     };
     if owned() {
         let build = |values| NearestNDInterpolator::from_owned(&points, values).expect("valid");
         return run_given(case, OWNED, q.len(), || values.clone(), build, eval);
     }
     let build = || NearestNDInterpolator::new(&points, &values).expect("valid");
-    run(case, LIBRARY, q.len(), build, eval);
+    run(case, library(), q.len(), build, eval);
 }
 
 fn rbf(case: &Case) {
@@ -155,9 +190,7 @@ fn rbf(case: &Case) {
         None => RbfOptions::new(),
     };
     let eval = |built: &RBFInterpolator<2>, out: &mut [f64]| {
-        built
-            .eval_batch_into(&q, out, f64::NAN)
-            .expect("same length");
+        batch(built, &q, out, f64::NAN);
     };
     if owned() {
         let make = || (points.clone(), values.clone());
@@ -168,7 +201,7 @@ fn rbf(case: &Case) {
     }
     let build =
         || RBFInterpolator::with_options(&points, &values, kernel, &options).expect("valid");
-    run(case, LIBRARY, q.len(), build, eval);
+    run(case, library(), q.len(), build, eval);
 }
 
 fn main() {

@@ -44,7 +44,9 @@ TIME_LIMIT = 900.0
 
 RUST_RUNNERS = ("interpx", "scirs2", "ndarray_interp", "interpn")
 # interpx again, built with `from_owned` (the data handed over, not copied).
-VARIANTS = {"interpx_owned": ("interpx", "owned")}
+# and with its parallel batch, on `PAR_THREADS` threads and every core.
+VARIANTS = {"interpx_owned": ("interpx", "owned"), "interpx_par": ("interpx", "par")}
+PAR_THREADS = min(8, os.cpu_count() or 1)
 LIBRARIES = ("scipy", *RUST_RUNNERS, *VARIANTS)
 
 
@@ -91,12 +93,16 @@ def command(library: str, directory: Path) -> list[str]:
 
 def run_one(library: str, directory: Path, pause: bool) -> dict:
     """One process: its marks, its times, and its memory over time."""
+    several = library == "interpx_par"
     env = os.environ | ({"PERF_PAUSE_MS": str(case_table.PAUSE_MS)} if pause else {}) | {name: "1" for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "RAYON_NUM_THREADS")}
+    if several:
+        env["RAYON_NUM_THREADS"] = str(PAR_THREADS)
     start_ns = time.time_ns()
     process = subprocess.Popen(command(library, directory), stdout=subprocess.PIPE, text=True, env=env)
     watched = psutil.Process(process.pid)
     try:
-        watched.cpu_affinity([CORE])
+        # One core for the serial runs; the parallel one has them all.
+        watched.cpu_affinity(list(range(os.cpu_count() or 1)) if several else [CORE])
     except (psutil.Error, AttributeError):
         pass
     samples: list[tuple[int, int]] = []
@@ -199,6 +205,7 @@ def environment() -> dict:
         "commit": version("git", "rev-parse", "HEAD"),
         "dirty": bool(version("git", "status", "--porcelain", "--untracked-files=no")),
         "core": CORE,
+        "par_threads": PAR_THREADS,
         "date": time.strftime("%Y-%m-%d"),
         "command": " ".join(sys.argv),
     }
