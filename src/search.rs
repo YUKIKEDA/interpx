@@ -72,8 +72,22 @@ fn last<T>(grid: &[T]) -> usize {
 
 /// The interval of `x`, for `x` between the first and the last entry of `grid`.
 fn locate<T: Scalar>(grid: &[T], x: T) -> usize {
-    let after = grid.partition_point(|b| *b <= x);
-    after.saturating_sub(1).min(last(grid))
+    // The last entry that is `x` or less, by halves. Which half holds `x`
+    // cannot be foreseen for points in no order, so the step is said to be a
+    // choice between two numbers that is not to be made by a jump. With
+    // `partition_point` the compiler chose for itself, differently from one
+    // place the search was built into to the next: the same evaluation took
+    // 328 µs in one place of a program and 707 µs in another (40 000 points
+    // in no order on 100 entries; both about 307 µs with this. #132).
+    let mut low = 0;
+    let mut size = grid.len();
+    while size > 1 {
+        let half = size / 2;
+        let middle = low + half;
+        low = core::hint::select_unpredictable(grid[middle] <= x, middle, low);
+        size -= half;
+    }
+    low.min(last(grid))
 }
 
 /// [`locate`] for a grid that is [`evenly_spaced`]: the interval `x` would be

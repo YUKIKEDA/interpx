@@ -78,7 +78,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | P-6 | Feat   | `from_owned` for `NearestNDInterpolator` and `RBFInterpolator` (the types that keep data) | #128  | Todo   |
 | P-7 | Task   | `BSpline1D` of degree 1 on 10 000 points: evaluation in order (1.14x), construction (3x) | #130  | Todo   |
 | P-8 | Task   | `Linear1D` and `Nearest1D`: construction on 10 000 points (1.9x and 1.1x against SciPy)  | #131  | Todo   |
-| P-9 | Task   | Search: the time for points in no order moves twofold with where it is built in          | #132  | Todo   |
+| P-9 | Task   | Search: the time for points in no order moves twofold with where it is built in          | #132  | Done   |
 
 ## M5: Integration and quality
 
