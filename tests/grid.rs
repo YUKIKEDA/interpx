@@ -134,7 +134,8 @@ fn check_file(name: &str) -> (Counts, [usize; 3]) {
         extended += usize::from(case["options"]["fill_value"].is_null());
         columns += usize::from(case.get("values_columns").is_some());
         let axes = rows(&case["axes"]);
-        descending += usize::from(axes.iter().any(|a| a[0] > a[1]));
+        // An axis of one point has no direction.
+        descending += usize::from(axes.iter().any(|a| a.len() > 1 && a[0] > a[1]));
     }
     (
         counts.into_iter().collect(),
@@ -148,13 +149,13 @@ fn scipy_grids_evaluate_to_the_golden_values() {
     // `Linear` takes SciPy's `linear` and `slinear` cases.
     let want = [
         ((2, "Cubic"), 13),
-        ((2, "Linear"), 21),
-        ((2, "Nearest"), 14),
+        ((2, "Linear"), 24),
+        ((2, "Nearest"), 17),
         ((2, "Pchip"), 9),
         ((2, "Quintic"), 13),
         ((3, "Cubic"), 4),
-        ((3, "Linear"), 6),
-        ((3, "Nearest"), 4),
+        ((3, "Linear"), 8),
+        ((3, "Nearest"), 6),
         ((3, "Pchip"), 2),
         ((3, "Quintic"), 4),
         ((4, "Cubic"), 1),
@@ -165,7 +166,7 @@ fn scipy_grids_evaluate_to_the_golden_values() {
     ]
     .map(|((d, m), n)| ((d, m.to_owned()), n));
     assert_eq!(counts, want);
-    assert_eq!((extended, columns, descending), (18, 4, 7));
+    assert_eq!((extended, columns, descending), (22, 4, 9));
 }
 
 #[test]
@@ -199,23 +200,26 @@ fn the_constructor_reports_each_fault() {
             actual: 5
         })
     );
-    assert_eq!(
-        new(&x, &[0.0], &[0.0; 3]),
-        Some(on_axis(
-            1,
-            AxisFault::InsufficientPoints {
-                required: 2,
-                actual: 1
-            }
-        ))
-    );
+    // One point on an axis is a grid for `Linear` and `Nearest`; none is not.
+    assert_eq!(new(&x, &[0.0], &[0.0; 3]), None);
     assert_eq!(
         new(&[], &y, &[]),
         Some(on_axis(
             0,
             AxisFault::InsufficientPoints {
-                required: 2,
+                required: 1,
                 actual: 0
+            }
+        ))
+    );
+    // A slope takes two points.
+    assert_eq!(
+        Grid::new([&x[..], &[0.0][..]], &[0.0; 3], GridMethod::Pchip).err(),
+        Some(on_axis(
+            1,
+            AxisFault::InsufficientPoints {
+                required: 2,
+                actual: 1
             }
         ))
     );
@@ -280,17 +284,100 @@ fn the_constructor_reports_each_fault() {
         ))
     );
     // The same checks for the method that needs no weights.
-    let nearest = Grid::new([&x[..], &[0.0][..]], &[0.0; 3], GridMethod::Nearest).err();
+    let none: [f64; 0] = [];
+    let nearest = Grid::new([&x[..], &none[..]], &none, GridMethod::Nearest).err();
     assert_eq!(
         nearest,
         Some(on_axis(
             1,
             AxisFault::InsufficientPoints {
-                required: 2,
-                actual: 1
+                required: 1,
+                actual: 0
             }
         ))
     );
+}
+
+#[test]
+fn an_axis_of_one_point_is_a_direction_the_grid_is_constant_in() {
+    // Three points along x, one along y (at 5), two along z.
+    let (x, y, z) = ([0.0, 1.0, 3.0], [5.0], [-1.0, 1.0]);
+    let values = [1.0, 2.0, 10.0, 20.0, 100.0, 200.0];
+    let grid = |method| Grid::new([&x[..], &y[..], &z[..]], &values, method).expect("valid");
+    let linear = grid(GridMethod::Linear);
+    assert_eq!(linear.shape(), [3, 1, 2]);
+    assert_eq!(linear.domain(), ([0.0, 5.0, -1.0], [3.0, 5.0, 1.0]));
+    // On the coordinate of the point: the grid of the other two axes.
+    assert_eq!(linear.eval(&[0.5, 5.0, 0.0]), Some(8.25));
+    assert_eq!(linear.eval(&[3.0, 5.0, 1.0]), Some(200.0));
+    assert_eq!(grid(GridMethod::Nearest).eval(&[0.9, 5.0, 0.5]), Some(20.0));
+    // Off it there is no value: the point is the whole axis.
+    for off in [4.999, 5.001, f64::INFINITY, f64::NAN] {
+        assert_eq!(linear.eval(&[0.5, off, 0.0]), None, "{off}");
+    }
+    // Held or continued, the value is that at the point: one point has no
+    // slope to continue with. Not for a NaN.
+    for mode in [Extrapolate::Clamp, Extrapolate::Extend] {
+        let outside = linear.clone().with_extrapolate(mode);
+        for off in [-7.0, 4.999, 5.0, 1e300, f64::NEG_INFINITY] {
+            assert_eq!(outside.eval(&[0.5, off, 0.0]), Some(8.25), "{mode:?} {off}");
+        }
+        assert_eq!(outside.eval(&[0.5, f64::NAN, 0.0]), None);
+    }
+    // One point is not a period.
+    let periodic = linear.clone().with_extrapolate(Extrapolate::Periodic);
+    assert_eq!(periodic.eval(&[0.5, 5.0, 0.0]), Some(8.25));
+    assert_eq!(periodic.eval(&[0.5, 6.0, 0.0]), None);
+    assert_eq!(periodic.eval(&[3.5, 5.0, 0.0]), Some(8.25));
+
+    // With hints and in a batch, the same bits: along a path (the batch takes
+    // its hints) and with points that have no value among the others.
+    let mut path: Vec<[f64; 3]> = (0..40)
+        .map(|i| [0.075 * f64::from(i), 5.0, -1.0 + 0.05 * f64::from(i)])
+        .collect();
+    path[7][1] = 5.5;
+    path[20][1] = f64::NAN;
+    for mode in [Extrapolate::Forbid, Extrapolate::Extend] {
+        let grid = linear.clone().with_extrapolate(mode);
+        let each: Vec<Option<u64>> = path
+            .iter()
+            .map(|p| grid.eval(p).map(f64::to_bits))
+            .collect();
+        assert_eq!(each[7].is_some(), mode == Extrapolate::Extend);
+        assert_eq!(each[20], None);
+        let mut hints = [Hint::new(); 3];
+        let hinted: Vec<_> = path
+            .iter()
+            .map(|p| grid.eval_hinted(p, &mut hints).map(f64::to_bits))
+            .collect();
+        assert_eq!(hinted, each);
+        let batch: Vec<_> = grid
+            .eval_batch(&path)
+            .into_iter()
+            .map(|v| v.map(f64::to_bits))
+            .collect();
+        assert_eq!(batch, each);
+    }
+
+    // Every axis of one point: one value. Two values a point.
+    let point =
+        Grid::new([&[2.0][..], &[3.0][..]], &[[7.0, -7.0]], GridMethod::Linear).expect("valid");
+    assert_eq!(point.eval(&[2.0, 3.0]), Some([7.0, -7.0]));
+    assert_eq!(point.eval(&[2.0, 3.5]), None);
+    // The methods that fit a curve along an axis take what they took.
+    for (method, required) in [
+        (GridMethod::Pchip, 2),
+        (GridMethod::Cubic, 4),
+        (GridMethod::Quintic, 6),
+    ] {
+        let long = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
+        let fault = AxisFault::InsufficientPoints {
+            required,
+            actual: 1,
+        };
+        let built = Grid::new([&long[..], &y[..]], &[0.0; 6], method);
+        assert_eq!(built.err(), Some(on_axis(1, fault)), "{method:?}");
+    }
 }
 
 #[test]
@@ -307,12 +394,12 @@ fn the_checks_come_in_the_order_of_the_design() {
     );
     // The count of a later axis before a NaN in an earlier one.
     assert_eq!(
-        new(&[f64::NAN, 1.0], &[0.0], &[0.0; 2]),
+        new(&[f64::NAN, 1.0], &[], &[]),
         Some(on_axis(
             1,
             AxisFault::InsufficientPoints {
-                required: 2,
-                actual: 1
+                required: 1,
+                actual: 0
             }
         ))
     );

@@ -256,6 +256,29 @@ def main() -> None:
         case["expected_columns"] = golden.encode(f(q2[:16]))
         cases.append(case)
 
+    # An axis of one point (P-4), for the two methods SciPy takes one with.
+    # The grid is constant along it: a query has a value at the coordinate of
+    # the point, and elsewhere only when the grid is continued. A generator
+    # of its own, so that the cases above and the file of `pchip` below stay
+    # as they are.
+    alone = np.random.default_rng(SEED + 125)
+    one_side = nonuniform_axis(alone, 6)
+    one_vals = alone.uniform(-1.0, 1.0, (6, 1))
+    one_on = np.column_stack([-0.1 + 1.2 * alone.random(16), np.full(16, 0.3)])
+    one_off = np.column_stack([-0.1 + 1.2 * alone.random(12), 0.3 + alone.uniform(-0.5, 0.5, 12)])
+    one_q = np.vstack([one_on, one_off, [[one_side[2], 0.3], [one_side[0], 0.3], [one_side[5], 0.3]]])
+    for method in ("linear", "nearest"):
+        one_last = (one_side, np.array([0.3]))
+        cases.append(run(f"grid2d/one_point/last/{method}", one_last, one_vals, method, one_q, False, "random"))
+        cases.append(run(f"grid2d/one_point/last/{method}/extrapolate", one_last, one_vals, method, one_q, True, "random"))
+        one_first = (np.array([0.3]), one_side[::-1].copy())
+        cases.append(run(f"grid2d/one_point/first/descending/{method}", one_first, one_vals.T[:, ::-1], method, one_q[:, ::-1], False, "random"))
+        one_middle = (nonuniform_axis(alone, 4), np.array([-2.0]), nonuniform_axis(alone, 5))
+        one_vals3 = alone.uniform(-1.0, 1.0, (4, 1, 5))
+        one_q3 = np.column_stack([alone.random(20), np.where(np.arange(20) % 3 == 0, -1.5, -2.0), alone.random(20)])
+        cases.append(run(f"grid3d/one_point/middle/{method}", one_middle, one_vals3, method, one_q3, False, "random"))
+        cases.append(run(f"grid3d/one_point/middle/{method}/extrapolate", one_middle, one_vals3, method, one_q3, True, "random"))
+
     path = golden.write("grid", GENERATOR, SEED, cases)
     print(f"wrote {path.name} ({len(cases)} cases)")
 

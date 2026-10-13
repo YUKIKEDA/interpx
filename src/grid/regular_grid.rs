@@ -94,6 +94,18 @@ pub enum GridMethod {
 }
 
 impl GridMethod {
+    /// The fewest points an axis has: one for the methods that only look at
+    /// the grid points around a query (an axis of one point is then a
+    /// direction the values do not change in), two for a slope, and `k + 1`
+    /// for a spline of degree `k`, which they fix one polynomial of.
+    fn fewest_points(self) -> usize {
+        match self {
+            Self::Nearest | Self::Linear => 1,
+            Self::Pchip => 2,
+            Self::Cubic | Self::Quintic => self.degree().map_or(2, |degree| degree + 1),
+        }
+    }
+
     /// The degree of the spline of a spline method.
     fn degree(self) -> Option<usize> {
         match self {
@@ -146,7 +158,10 @@ struct Tensor<T, const D: usize, V> {
 /// points are all combinations of one coordinate from each axis.
 ///
 /// SciPy's `RegularGridInterpolator`. The axes need not be evenly spaced. Each
-/// increases strictly or decreases strictly, and has two points at least. The
+/// increases strictly or decreases strictly. For [`GridMethod::Nearest`] and
+/// [`GridMethod::Linear`] an axis may have one point alone: the grid is then
+/// constant in that direction, and a query has a value at the coordinate of
+/// that point (elsewhere it is outside the grid, see [`Extrapolate`]). The
 /// values are one flat slice in C order, the last axis varying fastest: with
 /// axes of `n0` and `n1` points, the value at point `i0` of the first axis and
 /// `i1` of the second is `values[i0 * n1 + i1]` (the layout of a NumPy array
@@ -262,8 +277,8 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
     ///   axes.
     /// - [`InterpolateError::GridAxis`] with [`AxisFault::InsufficientPoints`]
     ///   for the first axis with fewer points than the method needs: four for
-    ///   [`GridMethod::Cubic`], six for [`GridMethod::Quintic`], two for the
-    ///   others.
+    ///   [`GridMethod::Cubic`], six for [`GridMethod::Quintic`], two for
+    ///   [`GridMethod::Pchip`], one for the others.
     /// - [`InterpolateError::GridAxis`] with [`AxisFault::NonFinite`] for the
     ///   first axis with a coordinate that is NaN or infinite.
     /// - [`InterpolateError::NonFinite`] when a value is NaN or infinite. Its
@@ -327,8 +342,7 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
         }
         let on_axis =
             |axis: usize| move |fault: AxisFault| InterpolateError::GridAxis { axis, fault };
-        // A spline of degree `k` takes `k + 1` points to fix one polynomial.
-        let required = method.degree().map_or(2, |degree| degree + 1);
+        let required = method.fewest_points();
         for (d, axis) in axes.iter().enumerate() {
             if axis.len() < required {
                 return Err(on_axis(d)(AxisFault::InsufficientPoints {
@@ -500,10 +514,12 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
         let mut cell = [(0, T::zero()); D];
         for (d, place) in cell.iter_mut().enumerate() {
             let axis = &self.axes[d];
-            *place =
-                search::eval_hinted(axis, self.extrapolate, point[d], &mut hints[d], |i, x| {
-                    (i, x)
-                })?;
+            *place = if let [only] = axis[..] {
+                alone(only, self.extrapolate, point[d])?
+            } else {
+                let hint = &mut hints[d];
+                search::eval_hinted(axis, self.extrapolate, point[d], hint, |i, x| (i, x))?
+            };
         }
         Some(self.at(&cell))
     }
@@ -536,7 +552,10 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
                 let mut offsets = [[0; 2]; D];
                 for (d, ((lower, fraction), stride)) in fractions().zip(&self.strides).enumerate() {
                     weights[d] = [T::one() - fraction, fraction];
-                    offsets[d] = [lower * stride, (lower + 1) * stride];
+                    // An axis of one point has no upper side: its one point
+                    // again, with the weight of nothing.
+                    let upper = lower + usize::from(self.axes[d].len() > 1);
+                    offsets[d] = [lower * stride, upper * stride];
                 }
                 // The corners of the cell, the first axis outermost (the order
                 // SciPy adds them in): bit `d` from the top says whether the
@@ -856,19 +875,37 @@ fn solve_lines<T: Scalar, V: Value<T>>(system: &Collocation<T>, values: &mut [V]
 /// How far `x` is from point `i` of the axis toward point `i + 1`, as a
 /// fraction of their distance: 0 at the one, 1 at the other, and beyond that
 /// range for an `x` the mode lets continue past an end.
+///
+/// On an axis of one point there is nothing to be toward: 0.
 fn fraction<T: Scalar>(axis: &[T], i: usize, x: T) -> T {
-    (x - axis[i]) / (axis[i + 1] - axis[i])
+    match axis.get(i + 1) {
+        Some(next) => (x - axis[i]) / (*next - axis[i]),
+        None => T::zero(),
+    }
 }
 
-/// Whether an axis of finite coordinates, two at least, decreases strictly.
-/// The first two points give the direction.
+/// The place of `x` on an axis of one point: at the point, or `None`.
+///
+/// A query is at the point when it is equal to it. Elsewhere it is outside
+/// the axis, and the mode says what that is: no value, the value at the
+/// point (holding the end, and also continuing it, since one point has no
+/// slope: SciPy's `fill_value=None` gives the same), and no value for a
+/// period, which one point is not.
+fn alone<T: Scalar>(coordinate: T, extrapolate: Extrapolate, x: T) -> Option<(usize, T)> {
+    let held = matches!(extrapolate, Extrapolate::Clamp | Extrapolate::Extend) && !x.is_nan();
+    (x == coordinate || held).then_some((0, coordinate))
+}
+
+/// Whether an axis of finite coordinates decreases strictly. The first two
+/// points give the direction; an axis of one point has none, and is taken
+/// as it is.
 ///
 /// # Errors
 ///
 /// Returns the fault of the first point that is equal to the one before it, or
 /// goes against the direction.
 fn decreases<T: Scalar>(axis: &[T]) -> Result<bool, AxisFault> {
-    let descending = axis[1] < axis[0];
+    let descending = axis.get(1).is_some_and(|second| *second < axis[0]);
     for (i, pair) in axis.windows(2).enumerate() {
         let (before, after) = if descending {
             (pair[1], pair[0])
@@ -917,9 +954,13 @@ impl<T: Scalar, const D: usize, V: Value<T>> Interpolator for RegularGridInterpo
         let mut cell = [(0, T::zero()); D];
         for (d, place) in cell.iter_mut().enumerate() {
             let axis = &self.axes[d];
-            *place = search::eval(axis, self.even[d], self.extrapolate, point[d], |i, x| {
-                (i, x)
-            })?;
+            *place = if let [only] = axis[..] {
+                alone(only, self.extrapolate, point[d])?
+            } else {
+                search::eval(axis, self.even[d], self.extrapolate, point[d], |i, x| {
+                    (i, x)
+                })?
+            };
         }
         Some(self.at(&cell))
     }
