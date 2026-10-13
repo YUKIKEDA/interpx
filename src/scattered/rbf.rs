@@ -98,9 +98,15 @@ pub enum RbfKernel {
     /// what the rounding leaves, and stops improving as points are added.
     /// With `epsilon` 5 on 800 points of the unit square, the error on a
     /// smooth function was between 1e-5 and 1e-4 depending on the order
-    /// the points were given in, where the multiquadric had 1e-6 in any
-    /// order (SciPy has the same errors). A larger `epsilon`, neighbors
-    /// ([`RbfOptions::with_neighbors`]), or another kernel avoids it.
+    /// the points were given in (SciPy's moves in a range that overlaps
+    /// this one), where the multiquadric had 1e-6 in any order.
+    ///
+    /// Raising `epsilon` is not the way out. The system is then better
+    /// conditioned, but the bumps are narrower and no longer reach from one
+    /// point to the next, and the error grows for that reason: on the same
+    /// points an `epsilon` of 20 was about 200 times as far off as 5, and
+    /// 40 worse again. Neighbors ([`RbfOptions::with_neighbors`]) or
+    /// another kernel is the safer choice.
     Gaussian {
         /// What the distance is multiplied by.
         epsilon: f64,
