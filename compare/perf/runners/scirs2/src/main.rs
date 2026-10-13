@@ -24,7 +24,11 @@ fn copy(values: Array1<f64>, out: &mut [f64]) {
 
 fn oned(case: &Case) {
     let (x, y, q) = (case.array("x"), case.array("y"), case.array("q"));
-    let (x, y, q) = (ArrayView1::from(&x), ArrayView1::from(&y), ArrayView1::from(&q));
+    let (x, y, q) = (
+        ArrayView1::from(&x),
+        ArrayView1::from(&y),
+        ArrayView1::from(&q),
+    );
     let basic = |method| {
         run(
             case,
@@ -64,7 +68,9 @@ fn oned(case: &Case) {
 
 fn grid(case: &Case) {
     let dim = case.count("dim");
-    let axes: Vec<Array1<f64>> = (0..dim).map(|d| Array1::from(case.array(&format!("axis{d}")))).collect();
+    let axes: Vec<Array1<f64>> = (0..dim)
+        .map(|d| Array1::from(case.array(&format!("axis{d}"))))
+        .collect();
     if axes.iter().any(|axis| axis[1] < axis[0]) {
         unsupported("axes must increase");
     }
@@ -74,14 +80,23 @@ fn grid(case: &Case) {
         other => unsupported(&format!("no method {other}")),
     };
     let shape: Vec<usize> = axes.iter().map(Array1::len).collect();
-    let values = ArrayD::from_shape_vec(IxDyn(&shape), case.array("values")).expect("the shape of the grid");
+    let values =
+        ArrayD::from_shape_vec(IxDyn(&shape), case.array("values")).expect("the shape of the grid");
     let flat = case.array("q");
     let q = ArrayView2::from_shape((flat.len() / dim, dim), &flat).expect("rows of points");
     run(
         case,
         LIBRARY,
         flat.len() / dim,
-        || RegularGridInterpolator::new(axes.clone(), values.clone(), method, GridExtrapolate::Error).expect("valid"),
+        || {
+            RegularGridInterpolator::new(
+                axes.clone(),
+                values.clone(),
+                method,
+                GridExtrapolate::Error,
+            )
+            .expect("valid")
+        },
         |built, out| copy(built.__call__(&q).expect("in range"), out),
     );
 }
