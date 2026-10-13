@@ -208,6 +208,9 @@ pub struct RegularGridInterpolator<T: Scalar, const D: usize, V: Value<T> = T> {
     strides: [usize; D],
     rule: Rule<T, D, V>,
     extrapolate: Extrapolate,
+    /// Whether each axis is evenly spaced (`search::evenly_spaced`): found at
+    /// construction, and only a matter of how a search starts.
+    even: [bool; D],
 }
 
 impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
@@ -367,12 +370,17 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
             GridMethod::Pchip => slopes_along_last(&axes, &values).map(Rule::Pchip),
         }
         .map_err(|overflow| overflow.into_given(&axes, &strides, &descending))?;
+        let mut even = [false; D];
+        for (even, axis) in even.iter_mut().zip(&axes) {
+            *even = search::evenly_spaced(axis);
+        }
         Ok(Self {
             axes,
             values,
             strides,
             rule,
             extrapolate: Extrapolate::Forbid,
+            even,
         })
     }
 
@@ -908,7 +916,10 @@ impl<T: Scalar, const D: usize, V: Value<T>> Interpolator for RegularGridInterpo
     fn eval(&self, point: &[T; D]) -> Option<V> {
         let mut cell = [(0, T::zero()); D];
         for (d, place) in cell.iter_mut().enumerate() {
-            *place = search::eval(&self.axes[d], self.extrapolate, point[d], |i, x| (i, x))?;
+            let axis = &self.axes[d];
+            *place = search::eval(axis, self.even[d], self.extrapolate, point[d], |i, x| {
+                (i, x)
+            })?;
         }
         Some(self.at(&cell))
     }

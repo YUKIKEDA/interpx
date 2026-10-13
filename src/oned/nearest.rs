@@ -86,6 +86,9 @@ pub struct Nearest1D<T: Scalar, V: Value<T> = T> {
     y: Vec<V>,
     kind: NearestKind,
     extrapolate: Extrapolate,
+    /// Whether the coordinates are evenly spaced (`search::evenly_spaced`): found at
+    /// construction, and only a matter of how a search starts.
+    even: bool,
 }
 
 impl<T: Scalar, V: Value<T>> Nearest1D<T, V> {
@@ -124,6 +127,7 @@ impl<T: Scalar, V: Value<T>> Nearest1D<T, V> {
     pub fn new(x: &[T], y: &[V], kind: NearestKind) -> Result<Self, InterpolateError> {
         validate::coordinates_and_values(x, y, x.len(), 2)?;
         Ok(Self {
+            even: search::evenly_spaced(x),
             x: x.to_vec(),
             y: y.to_vec(),
             kind,
@@ -240,7 +244,9 @@ impl<T: Scalar, V: Value<T>> Interpolator for Nearest1D<T, V> {
     type Output = V;
 
     fn eval(&self, x: &T) -> Option<V> {
-        search::eval(&self.x, self.extrapolate, *x, |i, x| self.pick(i, x))
+        search::eval(&self.x, self.even, self.extrapolate, *x, |i, x| {
+            self.pick(i, x)
+        })
     }
 
     fn eval_batch_into(
@@ -249,8 +255,15 @@ impl<T: Scalar, V: Value<T>> Interpolator for Nearest1D<T, V> {
         out: &mut [V],
         fill: V,
     ) -> Result<(), InterpolateError> {
-        search::eval_batch_into(&self.x, self.extrapolate, points, out, fill, |i, x| {
-            self.pick(i, x)
-        })
+        let even = self.even;
+        search::eval_batch_into(
+            &self.x,
+            even,
+            self.extrapolate,
+            points,
+            out,
+            fill,
+            |i, x| self.pick(i, x),
+        )
     }
 }

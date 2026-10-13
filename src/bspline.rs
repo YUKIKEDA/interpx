@@ -81,6 +81,9 @@ pub struct BSpline<T: Scalar, V: Value<T> = T> {
     /// The last knot interval of positive width in the domain.
     last: usize,
     extrapolate: Extrapolate,
+    /// Whether the knots of the intervals are evenly spaced (`search::evenly_spaced`): found at
+    /// construction, and only a matter of how a search starts.
+    even: bool,
 }
 
 impl<T: Scalar, V: Value<T>> BSpline<T, V> {
@@ -128,6 +131,7 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
     pub fn new(knots: &[T], control_points: &[V], degree: usize) -> Result<Self, InterpolateError> {
         let (first, last) = check(knots, control_points, degree)?;
         Ok(Self {
+            even: search::evenly_spaced(&knots[first..=last + 1]),
             knots: knots.to_vec(),
             control_points: control_points.to_vec(),
             degree,
@@ -162,6 +166,7 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
     ) -> Result<Self, InterpolateError> {
         let (first, last) = check(&knots, &control_points, degree)?;
         Ok(Self {
+            even: search::evenly_spaced(&knots[first..=last + 1]),
             knots,
             control_points,
             degree,
@@ -900,7 +905,7 @@ impl<T: Scalar, V: Value<T>> Interpolator for BSpline<T, V> {
     type Output = V;
 
     fn eval(&self, x: &T) -> Option<V> {
-        search::eval(self.grid(), self.extrapolate, *x, |i, x| {
+        search::eval(self.grid(), self.even, self.extrapolate, *x, |i, x| {
             self.combine(self.first + i, x, 0)
         })
     }
@@ -911,7 +916,8 @@ impl<T: Scalar, V: Value<T>> Interpolator for BSpline<T, V> {
         out: &mut [V],
         fill: V,
     ) -> Result<(), InterpolateError> {
-        search::eval_batch_into(self.grid(), self.extrapolate, points, out, fill, |i, x| {
+        let (grid, even) = (self.grid(), self.even);
+        search::eval_batch_into(grid, even, self.extrapolate, points, out, fill, |i, x| {
             self.combine(self.first + i, x, 0)
         })
     }
