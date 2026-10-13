@@ -19,12 +19,13 @@ OUT = HERE / "out"
 DOCS = HERE.parent.parent / "docs"
 FIGURES = DOCS / "performance"
 
-LIBRARIES = ("interpx", "interpx_owned", "scipy", "scirs2", "ndarray_interp", "interpn")
+LIBRARIES = ("interpx", "interpx_par", "interpx_owned", "scipy", "scirs2", "ndarray_interp", "interpn")
 # The libraries interpx is compared with: not itself built another way.
 OTHERS = ("scipy", "scirs2", "ndarray_interp", "interpn")
 RUST = ("scirs2", "ndarray_interp", "interpn")
 TITLES = {
     "interpx": "interpx",
+    "interpx_par": "interpx, parallel",
     "interpx_owned": "interpx, `from_owned`",
     "scipy": "SciPy",
     "scirs2": "scirs2-interpolate",
@@ -257,6 +258,7 @@ def main() -> None:
         "- The other Rust crates, at the versions in `compare/perf/runners/*/Cargo.toml`: `scirs2-interpolate` (the widest of the Rust crates: one variable, grids, RBF), `ndarray-interp` (the most used for one variable; also bilinear), `interpn` (grids).",
         f"- Every library ran each case in a process of its own, pinned to one core, on one thread, on the same data. The libraries took turns case by case, {rounds} rounds.",
         "- `interpx, from_owned` is interpx built from data that is handed over (`from_owned`) and so not copied. Its column is there for the types that keep their data as it is given (the grid, `NearestNDInterpolator`, `RBFInterpolator`), next to the construction from borrowed data (`new`), which is the one the comparison counts. Each of its samples is given data made just before it, which is not in the nearest cache as the data of the other constructions is: on small grids it reads slower than `new` for that reason.",
+        f"- `interpx, parallel` is interpx evaluated with `eval_batch_into_par` (the `rayon` feature) on {env.get('par_threads', 'several')} threads, not pinned to a core. Every other column is one thread on one core, and the comparison counts those. A parallel batch times its first points and is shared out only when the rest is worth it, so on small cases the column reads as the serial one does.",
         "- A time is that of one call: construction, or the evaluation of all the queries of the case (`eval_batch_into` for interpx, the call with an array for the others). It is the median of the repeats of a process, and then the median of the rounds.",
         f"- interpx is called slower where its median is more than {LOSS:.2f} times another library's and its fastest repeat is slower than that library's fastest.",
         "- Memory is the resident set size of the process, sampled every millisecond from outside it.",

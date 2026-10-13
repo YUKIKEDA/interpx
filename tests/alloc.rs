@@ -348,6 +348,58 @@ fn handed_over() -> Result<(), InterpolateError> {
     Ok(())
 }
 
+/// The parallel batch that writes into a slice allocates nothing of its own.
+///
+/// A batch that is not shared out never reaches `rayon`: it allocates
+/// nothing at all, which is asserted. A batch that is shared out goes through
+/// `rayon`, whose own allocations are not this crate's to count (design
+/// section 3.2); what is counted there is printed and not asserted.
+///
+/// Whether a batch is shared out is decided from the time its first points
+/// take, so it is not the same on every machine or on every run: a batch of
+/// 300 points was shared out by an unoptimized build on a slow runner (#155).
+/// Up to 16 points nothing is timed, and one count is the count. Above that
+/// the least of several counts is taken, of batches short enough to be
+/// shared out only when the thread is held up while their first points are
+/// timed (each of their points would have to take 2 microseconds): what this
+/// crate allocated on the way to the decision would be in every count.
+#[cfg(feature = "rayon")]
+fn parallel() -> Result<(), InterpolateError> {
+    use interpx::{Linear1D, ParInterpolator};
+
+    let x: Vec<f64> = (0..1000).map(f64::from).collect();
+    let line = Linear1D::new(&x, &x)?;
+    let points: Vec<f64> = (0..200_000).map(|i| f64::from(i % 997) + 0.25).collect();
+    let mut out = vec![0.0; points.len()];
+    let mut count = |n: usize| {
+        allocations(|| {
+            let done = line.eval_batch_into_par(&points[..n], &mut out[..n], f64::NAN);
+            std::hint::black_box(done.is_ok());
+        })
+    };
+    for n in [0, 1, 16] {
+        assert_eq!(count(n), 0, "eval_batch_into_par, {n} points, not timed");
+    }
+    for n in [17, 64] {
+        let least = (0..20).map(|_| count(n)).min();
+        assert_eq!(
+            least,
+            Some(0),
+            "eval_batch_into_par, {n} points, not shared out"
+        );
+    }
+    // Once before counting: the pool is started by the first batch shared out.
+    line.eval_batch_into_par(&points, &mut out, f64::NAN)?;
+    let shared = allocations(|| {
+        let done = line.eval_batch_into_par(&points, &mut out, f64::NAN);
+        std::hint::black_box(done.is_ok());
+    });
+    println!(
+        "tests/alloc.rs: a parallel batch that is shared out allocates {shared} times (rayon's own)"
+    );
+    Ok(())
+}
+
 fn main() -> Result<(), InterpolateError> {
     // Inside, outside, and NaN: each takes a different path through `eval`.
     check("Double", &Double, &[0.25, 0.5, 2.0, f64::NAN], f64::NAN);
@@ -850,6 +902,8 @@ fn main() -> Result<(), InterpolateError> {
     scattered()?;
     #[cfg(feature = "scattered")]
     handed_over()?;
+    #[cfg(feature = "rayon")]
+    parallel()?;
 
     // The two that build an object do allocate: the counter sees these calls.
     let n = allocations(|| {

@@ -44,6 +44,8 @@ stats_alloc = "0.1.10"
 default = ["scattered"]
 # Interpolators of scattered data, and the dependencies only they need.
 scattered = ["dep:kiddo", "dep:faer"]
+# `ParInterpolator`: batches evaluated on several threads.
+rayon = ["dep:rayon"]
 
 [dependencies]
 # The dense LU of the RBF interpolator. Without the default features: no rayon,
@@ -52,6 +54,7 @@ faer = { version = "0.24.4", default-features = false, features = ["std"], optio
 # Without the default features: no fixed-point coordinates, no rayon.
 kiddo = { version = "6.3.0", default-features = false, optional = true }
 num-traits = "0.2.19"
+rayon = { version = "1.11", optional = true }
 thiserror = "2"
 
 # The library has no `#[bench]` functions. Without this, `cargo bench -- <args>`
@@ -64,6 +67,12 @@ bench = false
 [[test]]
 name = "alloc"
 harness = false
+
+# The parallel batch: needs the feature it measures, and both kinds of interpolator.
+[[bench]]
+name = "par"
+harness = false
+required-features = ["rayon", "scattered"]
 
 [[bench]]
 name = "ppoly"

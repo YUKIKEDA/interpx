@@ -12,6 +12,18 @@
 //! [`RegularGridInterpolator`] (nearest, linear, cubic, and quintic) for values
 //! on a grid in several dimensions; the others follow.
 //!
+//! # Features
+//!
+//! - `scattered` (on by default): the interpolators of scattered data, and
+//!   the dependencies only they need.
+//! - `rayon`: batches evaluated on several threads, through
+//!   `ParInterpolator`, which every interpolator that is `Sync` then has. The
+//!   results are those of the serial batches bit for bit. A batch times its
+//!   first points and is shared out only when the rest is worth it; for
+//!   batches you know to be small, call the serial forms: a batch of less
+//!   than a tenth of a millisecond of work is not shared out, and deciding
+//!   that has made it up to a third slower than the serial form.
+//!
 //! # Examples
 //!
 //! A piecewise polynomial, evaluated at one point and at a batch:
@@ -68,6 +80,8 @@ mod extrapolate;
 mod grid;
 mod interpolator;
 mod oned;
+#[cfg(feature = "rayon")]
+mod par;
 mod ppoly;
 mod reserve;
 mod scalar;
@@ -89,6 +103,8 @@ pub use oned::{
     Akima1D, AkimaMethod, BSpline1D, CubicHermiteSpline, CubicSpline, Linear1D, Nearest1D,
     NearestKind, PchipInterpolator,
 };
+#[cfg(feature = "rayon")]
+pub use par::ParInterpolator;
 pub use ppoly::PPoly;
 pub use scalar::Scalar;
 #[cfg(feature = "scattered")]
