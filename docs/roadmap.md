@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M5-5 next: what it finds can change how the types that exist are built, so it comes before the features that go on top of them (M5-1 to M5-3). M4 waits for `convx` (see Dependencies). M2-4 changes nothing for a user: it is closed with what was measured, beside this row.
+M5-5 next: what it finds can change how the types that exist are built, so it comes before the features that go on top of them (M5-1 to M5-3). M4 waits for `convx` (see Dependencies).
 
 ## Dependencies
 
@@ -45,7 +45,7 @@ M5-5 next: what it finds can change how the types that exist are built, so it co
 | M2-1 | Feat | `RegularGridInterpolator`: shape, C-order values, `nearest`, `linear`, `Extrapolate`                   | #74   | Done   |
 | M2-2 | Feat | `RegularGridInterpolator`: `cubic`, `quintic` (tensor-product coefficients at construction)            | #79   | Done   |
 | M2-3 | Feat | `RegularGridInterpolator`: `pchip` (last-axis slopes kept, the other axes folded at evaluation)        | #87   | Done   |
-| M2-4 | Task | Grid `eval_batch_into` on a path: close the gap to a loop over `eval_hinted` (does not block M3)       | #90   | Todo   |
+| M2-4 | Task | Grid `eval_batch_into` on a path: close the gap to a loop over `eval_hinted` (does not block M3)       | #90   | Done   |
 
 ## M3: Scattered, without `convx`
 
