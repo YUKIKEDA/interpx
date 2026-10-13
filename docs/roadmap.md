@@ -72,7 +72,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | --- | ------ | ---------------------------------------------------------------------------------------- | ----- | ------ |
 | P-1 | Design | Construction: what it copies and what it checks (grid 180x and more, 1-D 1.3x to 5x)     | #122  | Done   |
 | P-2 | Task   | 1-D evaluation of queries in no order on 10 000 points (2.4x against `ndarray-interp`)   | #123  | Done   |
-| P-3 | Task   | Grid `linear` and `nearest` evaluation (1.1x to 1.6x against `interpn`)                  | #124  | Todo   |
+| P-3 | Task   | Grid `linear` and `nearest` evaluation (1.1x to 1.6x against `interpn`)                  | #124  | Done   |
 | P-4 | Design | Grid: an axis with one point (SciPy builds it; eight cases of SciPy's suite do not run)  | #125  | Done   |
 | P-5 | Task   | RBF `quintic` at 10 points (1.12x against SciPy, one case)                               | #126  | Todo   |
 | P-6 | Feat   | `from_owned` for `NearestNDInterpolator` and `RBFInterpolator` (the types that keep data) | #128  | Done   |
