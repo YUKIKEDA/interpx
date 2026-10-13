@@ -754,7 +754,10 @@ fn scattered_types_come_back_and_a_broken_form_does_not() {
     for none in [f64::NAN, f64::NEG_INFINITY, f64::INFINITY] {
         let mut broken = bytes.clone();
         broken[at..at + 8].copy_from_slice(&none.to_le_bytes());
-        assert!(postcard::from_bytes::<NearestNDInterpolator<2>>(&broken).is_err(), "{none}");
+        assert!(
+            postcard::from_bytes::<NearestNDInterpolator<2>>(&broken).is_err(),
+            "{none}"
+        );
     }
 
     // Without dimensions all points are one point.
