@@ -7,4 +7,6 @@ alwaysApply: true
 
 When a review or a test finds a problem, check the same file, the callees under the same contract, and the paired code for the same kind of problem. Fix them in the same change, or put a roadmap row on the ones left.
 
+"The same kind" is found by searching the whole crate for the form (`rg` for the call or the pattern), not by reading the files the change already touches. In #129 the checks for numbers that are not finite were made faster in the 1-D types and the grid; #136 said it had brought the rest in line, and a review found seven more of the same loop in four files, two of them files that PR had edited.
+
 Examples in this crate: one interpolator validates `NonFinite` and its sibling does not; one boundary condition handles `Periodic` and the paired `Extrapolate` mode does not; one type's `eval_batch_into` checks `out.len()` and another's override does not; `f64` and `f32` instantiations diverge.
