@@ -258,7 +258,8 @@ def real_section(runs: dict) -> list[str]:
     ]
     for case in names:
         by_library = runs[case]
-        first = measured(next(iter(by_library.values())))
+        # From a library that ran it: the sizes are known once the data is read.
+        first = next((rows for rows in map(measured, by_library.values()) if rows), [])
         size = f"{first[0]['n']} points, {first[0]['n_eval']} queries" if first else ""
         doc += [f"`{case}` ({size})", "", "| library | construction | evaluation | largest error | RMS error | no value |", "| :--- | ---: | ---: | ---: | ---: | ---: |"]
         for library in LIBRARIES:
