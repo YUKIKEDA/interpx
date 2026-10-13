@@ -7,10 +7,18 @@ use interpx::{
     GridMethod, Interpolator, Linear1D, Nearest1D, NearestKind, NearestNDInterpolator, PPoly,
     PchipInterpolator, RBFInterpolator, RbfKernel, RbfOptions, RegularGridInterpolator,
 };
-use perf_harness::{run, unsupported, Case};
+use perf_harness::{run, run_given, unsupported, Case};
 use std::cell::RefCell;
 
 const LIBRARY: &str = "interpx";
+/// The same library, built with `from_owned`: the data is handed over and
+/// not copied. Run when the process has `owned` as its second argument, for
+/// the types that have such a constructor.
+const OWNED: &str = "interpx_owned";
+
+fn owned() -> bool {
+    std::env::args().nth(2).as_deref() == Some("owned")
+}
 
 /// Runs a scalar interpolator of one variable over the queries `q`.
 fn scalar<I>(case: &Case, build: impl Fn() -> I)
@@ -78,13 +86,19 @@ fn grid<const D: usize>(case: &Case) {
         "pchip" => GridMethod::Pchip,
         other => unsupported(&format!("no method {other}")),
     };
+    let eval = |built: &RegularGridInterpolator<f64, D>, out: &mut [f64]| {
+        built.eval_batch_into(&q, out, f64::NAN).expect("same length");
+    };
+    if owned() {
+        let make = || (axes.clone(), values.clone());
+        let build = |(axes, values)| RegularGridInterpolator::from_owned(axes, values, method).expect("valid");
+        return run_given(case, OWNED, q.len(), make, build, eval);
+    }
     let build = || {
         let slices: [&[f64]; D] = core::array::from_fn(|d| axes[d].as_slice());
         RegularGridInterpolator::new(slices, &values, method).expect("valid")
     };
-    run(case, LIBRARY, q.len(), build, |built, out| {
-        built.eval_batch_into(&q, out, f64::NAN).expect("same length");
-    });
+    run(case, LIBRARY, q.len(), build, eval);
 }
 
 fn nearest_nd(case: &Case) {
@@ -121,6 +135,9 @@ fn rbf(case: &Case) {
 
 fn main() {
     let case = Case::from_args();
+    if owned() && case.family() != "grid" {
+        unsupported("built with `from_owned` for grids only");
+    }
     match case.family() {
         "oned" => oned(&case),
         "ppoly" => {

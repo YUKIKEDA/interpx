@@ -5,6 +5,7 @@ Run by `run.py`: `python scipy_runner.py CASE_DIR`.
 """
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -24,8 +25,10 @@ from scipy.interpolate import (
 )
 
 LIBRARY = "scipy"
-PAUSE = 0.06
-BUDGET = 0.25
+# The pause after each phase, for the driver to sample the memory of the
+# phase: asked for by the driver for the cases whose memory it reports.
+PAUSE = float(os.environ.get("PERF_PAUSE_MS", "0")) / 1000.0
+BUDGET = 0.05
 # A call shorter than this is repeated inside a sample (the clock has steps).
 SAMPLE = 0.0002
 FEWEST = 5

@@ -12,14 +12,20 @@ import statistics
 from collections import defaultdict
 from pathlib import Path
 
+import cases as case_table
+
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
 DOCS = HERE.parent.parent / "docs"
 FIGURES = DOCS / "performance"
 
-LIBRARIES = ("interpx", "scipy", "scirs2", "ndarray_interp", "interpn")
+LIBRARIES = ("interpx", "interpx_owned", "scipy", "scirs2", "ndarray_interp", "interpn")
+# The libraries interpx is compared with: not itself built another way.
+OTHERS = ("scipy", "scirs2", "ndarray_interp", "interpn")
+RUST = ("scirs2", "ndarray_interp", "interpn")
 TITLES = {
     "interpx": "interpx",
+    "interpx_owned": "interpx, `from_owned`",
     "scipy": "SciPy",
     "scirs2": "scirs2-interpolate",
     "ndarray_interp": "ndarray-interp",
@@ -41,15 +47,8 @@ FAMILIES = (
     ("nearest_nd", "`NearestNDInterpolator`", "`n` points of the unit square, evaluated at the pixels of a square image."),
     ("rbf", "`RBFInterpolator`", "`n` points of a square, evaluated at 1000 points in no order (`scattered`) or at the 10 000 pixels of an image (`image`). `global`: all points; `k50`: the 50 nearest."),
 )
-# The cases whose memory over time is drawn.
-DRAWN = (
-    "rbf/thin_plate_spline/global/n3000/scattered",
-    "rbf/thin_plate_spline/k50/n100000/image",
-    "nearest_nd/n100000/image500",
-    "grid/cubic/2d/each400/eval1000/ascending",
-    "grid/linear/2d/each800/eval10000/ascending",
-    "oned/cubic_spline/n10000/sorted",
-)
+# The cases whose memory over time is reported and drawn.
+DRAWN = case_table.MEMORY
 COLORS = {"loaded": "#888888", "built": "#1f77b4", "evaluated": "#d62728", "timed": "#888888"}
 
 
@@ -95,7 +94,7 @@ def losses(runs: dict) -> list[dict]:
             ours = times(by_library.get("interpx", []), what)
             if ours is None:
                 continue
-            for library in LIBRARIES[1:]:
+            for library in OTHERS:
                 theirs = times(by_library.get(library, []), what)
                 if theirs is None or theirs["median"] <= 0.0:
                     continue
@@ -140,8 +139,8 @@ def tally(runs: dict) -> list[str]:
         names = [case for case, by in runs.items() if case.split("/")[0] == family and times(by.get("interpx", []), "eval")]
         for what in ("eval", "build"):
             to_scipy = sum((case, what, "scipy") in lost for case in names)
-            to_rust = sum(any((case, what, lib) in lost for lib in LIBRARIES[2:]) for case in names)
-            fastest = sum(not any((case, what, lib) in lost for lib in LIBRARIES[1:]) for case in names)
+            to_rust = sum(any((case, what, lib) in lost for lib in RUST) for case in names)
+            fastest = sum(not any((case, what, lib) in lost for lib in OTHERS) for case in names)
             lines.append(f"| {title} | {'evaluation' if what == 'eval' else 'construction'} | {len(names)} | {fastest} | {to_scipy} | {to_rust} |")
     return lines
 
@@ -158,7 +157,7 @@ def table(runs: dict, family: str, what: str) -> list[str]:
                 cells.append("")
                 continue
             cells.append(seconds(got["median"]))
-            if lib != "interpx":
+            if lib in OTHERS:
                 others.append(got["median"])
         ours = times(runs[case].get("interpx", []), what)
         if ours and others and min(others) > 0.0:
@@ -257,6 +256,7 @@ def main() -> None:
         f"- {env['rustc']}; Python {env['python']}, NumPy {env['numpy']}, SciPy {env['scipy']}.",
         "- The other Rust crates, at the versions in `compare/perf/runners/*/Cargo.toml`: `scirs2-interpolate` (the widest of the Rust crates: one variable, grids, RBF), `ndarray-interp` (the most used for one variable; also bilinear), `interpn` (grids).",
         f"- Every library ran each case in a process of its own, pinned to one core, on one thread, on the same data. The libraries took turns case by case, {rounds} rounds.",
+        "- `interpx, from_owned` is interpx built from data that is handed over (`RegularGridInterpolator::from_owned`) and so not copied. Its column is there for the grids, next to the construction from borrowed data (`new`), which is the one the comparison counts. Each of its samples is given data made just before it, which is not in the nearest cache as the data of the other constructions is: on small grids it reads slower than `new` for that reason.",
         "- A time is that of one call: construction, or the evaluation of all the queries of the case (`eval_batch_into` for interpx, the call with an array for the others). It is the median of the repeats of a process, and then the median of the rounds.",
         f"- interpx is called slower where its median is more than {LOSS:.2f} times another library's and its fastest repeat is slower than that library's fastest.",
         "- Memory is the resident set size of the process, sampled every millisecond from outside it.",

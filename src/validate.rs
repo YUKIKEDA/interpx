@@ -26,8 +26,8 @@ pub(crate) fn coordinates_and_values<T: Scalar, V: Value<T>>(
 ) -> Result<(), InterpolateError> {
     length(values, expected_values)?;
     enough(coordinates, required)?;
-    finite(coordinates.iter().map(|c| c.is_finite()))?;
-    finite(values.iter().map(V::all_finite))?;
+    finite(coordinates, |c| c.is_finite())?;
+    finite(values, V::all_finite)?;
     strictly_increasing(coordinates)
 }
 
@@ -44,9 +44,9 @@ pub(crate) fn coordinates_values_and_slopes<T: Scalar, V: Value<T>>(
     length(values, coordinates.len())?;
     length(slopes, coordinates.len())?;
     enough(coordinates, required)?;
-    finite(coordinates.iter().map(|c| c.is_finite()))?;
-    finite(values.iter().map(V::all_finite))?;
-    finite(slopes.iter().map(V::all_finite))?;
+    finite(coordinates, |c| c.is_finite())?;
+    finite(values, V::all_finite)?;
+    finite(slopes, V::all_finite)?;
     strictly_increasing(coordinates)
 }
 
@@ -80,9 +80,27 @@ pub(crate) fn enough<T>(coordinates: &[T], required: usize) -> Result<(), Interp
     }
 }
 
-/// Step 3 for one input, given as whether each entry is finite.
-fn finite(mut entries: impl Iterator<Item = bool>) -> Result<(), InterpolateError> {
-    match entries.position(|is_finite| !is_finite) {
+/// How many entries are looked at without leaving the loop. A loop that may
+/// leave at every entry is compiled one entry at a time; over a run of this
+/// many the compiler takes several at once, and data without a fault, which
+/// is nearly all data, is checked several times as fast (the values of a grid
+/// of 40 x 40 x 40: 11 µs before, measured in #122).
+const RUN: usize = 64;
+
+/// The first entry of `entries` that `holds` is false for.
+pub(crate) fn first_failing<V>(entries: &[V], holds: impl Fn(&V) -> bool) -> Option<usize> {
+    for (run, chunk) in entries.chunks(RUN).enumerate() {
+        if !chunk.iter().fold(true, |all, entry| all & holds(entry)) {
+            let within = chunk.iter().position(|entry| !holds(entry));
+            return within.map(|at| run * RUN + at);
+        }
+    }
+    None
+}
+
+/// Step 3 for one input.
+fn finite<V>(entries: &[V], is_finite: impl Fn(&V) -> bool) -> Result<(), InterpolateError> {
+    match first_failing(entries, is_finite) {
         Some(index) => Err(InterpolateError::NonFinite { index }),
         None => Ok(()),
     }
@@ -90,7 +108,21 @@ fn finite(mut entries: impl Iterator<Item = bool>) -> Result<(), InterpolateErro
 
 /// Checks that finite coordinates increase strictly.
 fn strictly_increasing<T: Scalar>(coordinates: &[T]) -> Result<(), InterpolateError> {
-    for (i, pair) in coordinates.windows(2).enumerate() {
+    // Runs that share their end with the next run, so that every pair is in
+    // one of them.
+    let mut start = 0;
+    while start + 1 < coordinates.len() {
+        let end = (start + RUN).min(coordinates.len() - 1);
+        let run = &coordinates[start..=end];
+        if !run
+            .windows(2)
+            .fold(true, |all, pair| all & (pair[0] < pair[1]))
+        {
+            break;
+        }
+        start = end;
+    }
+    for (i, pair) in coordinates.windows(2).enumerate().skip(start) {
         if pair[0] < pair[1] {
             continue;
         }
@@ -120,6 +152,41 @@ mod tests {
         assert_eq!(check(&[0.0_f32, 1.0], &[[1.0_f32, 2.0]; 2], 2, 2), Ok(()));
         // A single coordinate is in order by definition.
         assert_eq!(check(&[0.0], &[1.0], 1, 1), Ok(()));
+    }
+
+    #[test]
+    fn a_fault_is_found_wherever_it_is_in_a_run() {
+        // The checks go by runs of 64. A fault at every place of 200 entries:
+        // the first and the last of a run, the last entry of all, and a pair
+        // that two runs share.
+        let good: Vec<f64> = (0..200).map(f64::from).collect();
+        assert_eq!(check(&good, &good, 200, 2), Ok(()));
+        assert_eq!(super::first_failing(&good, |v| v.is_finite()), None);
+        assert_eq!(super::first_failing(&[] as &[f64], |v| v.is_finite()), None);
+        for at in 0..200 {
+            let mut bad = good.clone();
+            bad[at] = f64::NAN;
+            assert_eq!(check(&bad, &good, 200, 2), Err(E::NonFinite { index: at }));
+            assert_eq!(check(&good, &bad, 200, 2), Err(E::NonFinite { index: at }));
+            // The first of two faults is the one named.
+            bad[199] = f64::INFINITY;
+            assert_eq!(check(&good, &bad, 200, 2), Err(E::NonFinite { index: at }));
+        }
+        for at in 1..200 {
+            let mut repeated = good.clone();
+            repeated[at] = repeated[at - 1];
+            let fault = E::DuplicatePoints {
+                first: at - 1,
+                second: at,
+            };
+            assert_eq!(check(&repeated, &good, 200, 2), Err(fault));
+            let mut back = good.clone();
+            back[at] = back[at - 1] - 0.5;
+            assert_eq!(check(&back, &good, 200, 2), Err(E::NotSorted { index: at }));
+            // The first of two faults is the one named.
+            back[199] = -1.0;
+            assert_eq!(check(&back, &good, 200, 2), Err(E::NotSorted { index: at }));
+        }
     }
 
     #[test]

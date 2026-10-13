@@ -16,7 +16,7 @@ coverage:
 bench *args:
     cargo bench -- {{args}}
 
-# The comparison with SciPy and other Rust crates (not a gate; about an hour;
+# The comparison with SciPy and other Rust crates (not a gate; long: the skill says what sets the time;
 # `.agents/skills/perf-compare/SKILL.md`). Extra arguments go to the driver,
 # for example `just compare-perf --filter "^grid/"`.
 compare-perf *args:

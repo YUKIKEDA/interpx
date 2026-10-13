@@ -43,7 +43,9 @@ SAMPLE_EVERY = 0.001
 TIME_LIMIT = 900.0
 
 RUST_RUNNERS = ("interpx", "scirs2", "ndarray_interp", "interpn")
-LIBRARIES = ("scipy", *RUST_RUNNERS)
+# interpx again, built with `from_owned` (the data handed over, not copied).
+VARIANTS = {"interpx_owned": ("interpx", "owned")}
+LIBRARIES = ("scipy", *RUST_RUNNERS, *VARIANTS)
 
 
 def executable(runner: str) -> Path:
@@ -53,20 +55,43 @@ def executable(runner: str) -> Path:
 
 def build_runners(libraries: list[str]) -> None:
     for runner in RUST_RUNNERS:
-        if runner in libraries:
+        if runner in libraries or any(VARIANTS.get(name, ("",))[0] == runner for name in libraries):
             manifest = HERE / "runners" / runner / "Cargo.toml"
             subprocess.run(["cargo", "build", "--release", "--manifest-path", str(manifest)], check=True)
+
+
+def supports(library: str, case: dict) -> bool:
+    """Whether the library has the case. A runner says so itself as well
+    (`unsupported`); this saves starting it to hear that."""
+    family, method = case["family"], case.get("method")
+    ascending = not case["name"].endswith("/flipped")
+    if library == "interpx_owned":
+        return family == "grid"
+    if library == "interpn":
+        return family == "grid" and ascending and method in ("linear", "nearest", "cubic")
+    if library == "ndarray_interp":
+        if family == "oned":
+            return method in ("linear", "cubic_spline")
+        return family == "grid" and ascending and method == "linear" and case["dim"] == 2
+    if library == "scirs2":
+        if family == "oned":
+            return method in ("linear", "nearest", "cubic_spline", "pchip", "akima")
+        if family == "grid":
+            return ascending and method in ("linear", "nearest")
+        return family == "rbf" and case["neighbors"] is None and case["kernel"] != "inverse_quadratic"
+    return True
 
 
 def command(library: str, directory: Path) -> list[str]:
     if library == "scipy":
         return [sys.executable, "-X", "utf8", str(HERE / "scipy_runner.py"), str(directory)]
-    return [str(executable(library)), str(directory)]
+    runner, *arguments = VARIANTS.get(library, (library,))
+    return [str(executable(runner)), str(directory), *arguments]
 
 
-def run_one(library: str, directory: Path) -> dict:
+def run_one(library: str, directory: Path, pause: bool) -> dict:
     """One process: its marks, its times, and its memory over time."""
-    env = os.environ | {name: "1" for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "RAYON_NUM_THREADS")}
+    env = os.environ | ({"PERF_PAUSE_MS": str(case_table.PAUSE_MS)} if pause else {}) | {name: "1" for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "RAYON_NUM_THREADS")}
     start_ns = time.time_ns()
     process = subprocess.Popen(command(library, directory), stdout=subprocess.PIPE, text=True, env=env)
     watched = psutil.Process(process.pid)
@@ -213,9 +238,9 @@ def main() -> None:
                 directory = directories[case["name"]]
                 # SciPy first: the others are compared with its values.
                 for library in sorted(libraries, key=lambda name: name != "scipy"):
-                    if (case["name"], library, round_) in have:
+                    if (case["name"], library, round_) in have or not supports(library, case):
                         continue
-                    run = run_one(library, directory)
+                    run = run_one(library, directory, case["name"] in case_table.MEMORY)
                     row = {"case": case["name"], "library": library, "round": round_}
                     row |= {key: value for key, value in case.items() if key not in ("arrays", "name")}
                     if "marks_ns" in run:
