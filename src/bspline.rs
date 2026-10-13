@@ -32,6 +32,10 @@ const MAX_DEGREE: usize = BSPLINE_MAX_DEGREE;
 /// zero on an interval.
 pub(crate) const MAX_ORDER: usize = MAX_DEGREE + 1;
 
+/// The orders the values of a spline are worked out in a small array for:
+/// degrees 1 to 3, which are nearly all the splines there are.
+const LOW_ORDER: usize = 4;
+
 /// A spline in the B-spline basis.
 ///
 /// SciPy's `BSpline`. With `n` control points `c` and degree `k`, the knots are
@@ -165,7 +169,35 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
         degree: usize,
     ) -> Result<Self, InterpolateError> {
         let (first, last) = check(&knots, &control_points, degree)?;
-        Ok(Self {
+        Ok(Self::from_parts(knots, control_points, degree, first, last))
+    }
+
+    /// Builds a spline from parts a constructor of this crate has checked
+    /// already: finite knots in order around a domain of positive width, and
+    /// the finite control points that go with them.
+    ///
+    /// [`BSpline::from_owned`] would check them a second time, which for a
+    /// spline through data whose control points are the data (degree 1) is
+    /// most of the construction.
+    pub(crate) fn from_checked(knots: Vec<T>, control_points: Vec<V>, degree: usize) -> Self {
+        debug_assert!(
+            check(&knots, &control_points, degree).is_ok(),
+            "the caller checked the parts"
+        );
+        let (lo, hi) = (knots[degree], knots[control_points.len()]);
+        let first = knots.partition_point(|t| *t <= lo) - 1;
+        let last = knots.partition_point(|t| *t < hi) - 1;
+        Self::from_parts(knots, control_points, degree, first, last)
+    }
+
+    fn from_parts(
+        knots: Vec<T>,
+        control_points: Vec<V>,
+        degree: usize,
+        first: usize,
+        last: usize,
+    ) -> Self {
+        Self {
             even: search::evenly_spaced(&knots[first..=last + 1]),
             knots,
             control_points,
@@ -173,7 +205,7 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
             first,
             last,
             extrapolate: Extrapolate::Extend,
-        })
+        }
     }
 
     /// Builds the B-spline that equals a piecewise polynomial.
@@ -673,12 +705,22 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
     /// The derivative of order `derivative` (0 for the value) at `x`, taking `x`
     /// to be in knot interval `span`, or on its polynomial continued.
     fn combine(&self, span: usize, x: T, derivative: usize) -> V {
+        let points = &self.control_points[span - self.degree..=span];
+        if derivative == 0 && self.degree < LOW_ORDER {
+            // The same recurrence in arrays of four numbers and not of
+            // sixteen: clearing the room for degree 15 at every point was
+            // half the time of an evaluation of degree 1 (#130).
+            let basis: [T; LOW_ORDER] = basis_values(&self.knots, self.degree, span, x);
+            return basis
+                .iter()
+                .zip(points)
+                .fold(V::zero(), |sum, (b, c)| sum.axpy(*b, *c));
+        }
         let basis: [T; MAX_ORDER] = if derivative == 0 {
             basis_values(&self.knots, self.degree, span, x)
         } else {
             basis_derivatives(&self.knots, self.degree, span, x, derivative)
         };
-        let points = &self.control_points[span - self.degree..=span];
         basis
             .iter()
             .zip(points)
@@ -920,5 +962,40 @@ impl<T: Scalar, V: Value<T>> Interpolator for BSpline<T, V> {
         search::eval_batch_into(grid, even, self.extrapolate, points, out, fill, |i, x| {
             self.combine(self.first + i, x, 0)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{basis_values, BSpline, LOW_ORDER, MAX_ORDER};
+    use crate::Interpolator;
+
+    #[test]
+    fn low_degrees_in_a_small_array_are_the_same_numbers() {
+        // Knots at uneven distances, with repeats at the ends as a clamped
+        // spline has them.
+        let knots = [0.0, 0.0, 0.0, 0.0, 0.7, 1.0, 2.5, 2.6, 4.0, 4.0, 4.0, 4.0];
+        for degree in 1..LOW_ORDER {
+            for span in 3..8 {
+                for step in 0..=8 {
+                    let share = f64::from(step) / 8.0;
+                    let x = knots[span] + share * (knots[span + 1] - knots[span]);
+                    let small: [f64; LOW_ORDER] = basis_values(&knots, degree, span, x);
+                    let large: [f64; MAX_ORDER] = basis_values(&knots, degree, span, x);
+                    assert_eq!(
+                        small.map(f64::to_bits)[..],
+                        large.map(f64::to_bits)[..LOW_ORDER],
+                        "degree {degree}, span {span}, x = {x}"
+                    );
+                    assert!(large[LOW_ORDER..].iter().all(|b| b.to_bits() == 0));
+                }
+            }
+        }
+        // Degree 4 is the first that takes the large array: its values are
+        // those of the recurrence too, and they add up to one.
+        let control = [1.0; 7];
+        let quartic = BSpline::new(&knots, &control, 4).expect("valid");
+        let at = quartic.eval(&1.7).expect("inside");
+        assert!((at - 1.0).abs() < 1e-15, "{at}");
     }
 }
