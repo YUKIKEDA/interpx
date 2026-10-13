@@ -298,6 +298,81 @@ fn the_constructors_report_each_fault_in_the_order_of_the_design() {
 // --- The rules ------------------------------------------------------------------
 
 #[test]
+fn values_handed_over_give_the_interpolant_of_values_copied() {
+    // Points given twice, values of two columns, a query on a point and ones
+    // between: the same answers, plain and rescaled.
+    let points = [
+        [0.0, 0.0],
+        [1000.0, 0.0],
+        [0.0, 1.0],
+        [1000.0, 0.0],
+        [400.0, 0.5],
+    ];
+    let values = [
+        [1.0, -1.0],
+        [2.0, -2.0],
+        [3.0, -3.0],
+        [9.0, -9.0],
+        [5.0, -5.0],
+    ];
+    // The first query has another nearest point once the axes are rescaled.
+    let queries = [
+        [300.0, 0.0],
+        [400.0, 0.3],
+        [1000.0, 0.0],
+        [600.0, 0.9],
+        [f64::NAN, 0.0],
+    ];
+    let pairs = [
+        (
+            Nearest::new(&points, &values),
+            Nearest::from_owned(&points, values.to_vec()),
+        ),
+        (
+            Nearest::rescaled(&points, &values),
+            Nearest::rescaled_from_owned(&points, values.to_vec()),
+        ),
+    ];
+    let mut first = Vec::new();
+    for (copied, moved) in pairs {
+        let (copied, moved) = (copied.expect("valid"), moved.expect("valid"));
+        assert_eq!(moved.len(), copied.len());
+        assert_eq!(moved.values(), copied.values());
+        assert_eq!(moved.eval_batch(&queries), copied.eval_batch(&queries));
+        first.push(moved.eval(&queries[0]));
+    }
+    assert_eq!(first, [Some([5.0, -5.0]), Some([1.0, -1.0])]);
+    // The same faults, in the same order.
+    let short = Nearest::from_owned(&points, vec![[0.0, 0.0]; 4]);
+    assert_eq!(
+        short.err(),
+        Some(E::LengthMismatch {
+            expected: 5,
+            actual: 4
+        })
+    );
+    let mut bad = values.to_vec();
+    bad[3][1] = f64::INFINITY;
+    assert_eq!(
+        Nearest::from_owned(&points, bad.clone()).err(),
+        Some(E::NonFinite { index: 3 })
+    );
+    assert_eq!(
+        Nearest::rescaled_from_owned(&points, bad).err(),
+        Some(E::NonFinite { index: 3 })
+    );
+    let none: [[f64; 2]; 0] = [];
+    let empty = Nearest::from_owned(&none, Vec::<f64>::new());
+    assert_eq!(
+        empty.err(),
+        Some(E::InsufficientPoints {
+            required: 1,
+            actual: 0
+        })
+    );
+}
+
+#[test]
 fn points_given_more_than_once_count_once_with_the_value_given_first() {
     // The same point at places 1, 3, and 4, and one more twice with zeros of
     // both signs.
