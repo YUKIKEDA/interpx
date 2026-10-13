@@ -2,7 +2,7 @@
 
 <!-- Written by compare/perf/report.py from a run of compare/perf/run.py. Do not edit by hand: run it again. -->
 
-Measured on 2026-10-13, at commit `78050eaa9b` with uncommitted changes.
+Measured on 2026-10-13, at commit `3df6c32b8d` with uncommitted changes.
 
 ## How it was measured
 
@@ -14,7 +14,7 @@ Measured on 2026-10-13, at commit `78050eaa9b` with uncommitted changes.
 - A time is that of one call: construction, or the evaluation of all the queries of the case (`eval_batch_into` for interpx, the call with an array for the others). It is the median of the repeats of a process, and then the median of the rounds.
 - interpx is called slower where its median is more than 1.10 times another library's and its fastest repeat is slower than that library's fastest.
 - Memory is the resident set size of the process, sampled every millisecond from outside it.
-- Command: `perf/run.py --rounds 3 --filter ^(oned|grid)/`.
+- Command: `perf/run.py --rounds 3 --filter grid/linear/4d/max10/`.
 
 ## Where interpx is slower
 
@@ -28,8 +28,8 @@ Measured on 2026-10-13, at commit `78050eaa9b` with uncommitted changes.
 | `BSpline` | construction | 4 | 4 | 0 | 0 |
 | `BSplineCurve` | evaluation | 2 | 2 | 0 | 0 |
 | `BSplineCurve` | construction | 2 | 2 | 0 | 0 |
-| Regular grid | evaluation | 79 | 50 | 0 | 29 |
-| Regular grid | construction | 79 | 18 | 37 | 43 |
+| Regular grid | evaluation | 87 | 58 | 0 | 29 |
+| Regular grid | construction | 87 | 26 | 37 | 43 |
 | `NearestNDInterpolator` | evaluation | 15 | 15 | 0 | 0 |
 | `NearestNDInterpolator` | construction | 15 | 15 | 0 | 0 |
 | `RBFInterpolator` | evaluation | 53 | 52 | 1 | 0 |
@@ -279,29 +279,13 @@ Measured on 2026-10-13, at commit `78050eaa9b` with uncommitted changes.
 | case | library | how |
 | :--- | :--- | :--- |
 | `grid/linear/4d/max10/eval10/ascending` | interpn | exit code 101 |
-| `grid/linear/4d/max10/eval10/ascending` | interpx | exit code 101 |
-| `grid/linear/4d/max10/eval10/ascending` | interpx, `from_owned` | exit code 101 |
 | `grid/linear/4d/max10/eval10/ascending` | scirs2-interpolate | exit code 101 |
-| `grid/linear/4d/max10/eval10/flipped` | interpx | exit code 101 |
-| `grid/linear/4d/max10/eval10/flipped` | interpx, `from_owned` | exit code 101 |
 | `grid/linear/4d/max10/eval100/ascending` | interpn | exit code 101 |
-| `grid/linear/4d/max10/eval100/ascending` | interpx | exit code 101 |
-| `grid/linear/4d/max10/eval100/ascending` | interpx, `from_owned` | exit code 101 |
 | `grid/linear/4d/max10/eval100/ascending` | scirs2-interpolate | exit code 101 |
-| `grid/linear/4d/max10/eval100/flipped` | interpx | exit code 101 |
-| `grid/linear/4d/max10/eval100/flipped` | interpx, `from_owned` | exit code 101 |
 | `grid/linear/4d/max10/eval1000/ascending` | interpn | exit code 101 |
-| `grid/linear/4d/max10/eval1000/ascending` | interpx | exit code 101 |
-| `grid/linear/4d/max10/eval1000/ascending` | interpx, `from_owned` | exit code 101 |
 | `grid/linear/4d/max10/eval1000/ascending` | scirs2-interpolate | exit code 101 |
-| `grid/linear/4d/max10/eval1000/flipped` | interpx | exit code 101 |
-| `grid/linear/4d/max10/eval1000/flipped` | interpx, `from_owned` | exit code 101 |
 | `grid/linear/4d/max10/eval10000/ascending` | interpn | exit code 101 |
-| `grid/linear/4d/max10/eval10000/ascending` | interpx | exit code 101 |
-| `grid/linear/4d/max10/eval10000/ascending` | interpx, `from_owned` | exit code 101 |
 | `grid/linear/4d/max10/eval10000/ascending` | scirs2-interpolate | exit code 101 |
-| `grid/linear/4d/max10/eval10000/flipped` | interpx | exit code 101 |
-| `grid/linear/4d/max10/eval10000/flipped` | interpx, `from_owned` | exit code 101 |
 
 ## One variable
 
@@ -659,14 +643,6 @@ Points in no order inside the grid. `maxN`: the first axis has `N` points and ea
 | `linear/3d/max200/eval1000/flipped` | 28.1 µs | 28 µs | 187 µs |  |  |  | 6.7x faster |
 | `linear/3d/max200/eval10000/ascending` | 280 µs | 281 µs | 1.94 ms | 4.8 ms |  | 262 µs | **1.1x slower** |
 | `linear/3d/max200/eval10000/flipped` | 286 µs | 280 µs | 1.88 ms |  |  |  | 6.6x faster |
-| `linear/4d/max10/eval10/ascending` |  |  | 95.9 µs |  |  |  |  |
-| `linear/4d/max10/eval10/flipped` |  |  | 95.7 µs |  |  |  |  |
-| `linear/4d/max10/eval100/ascending` |  |  | 115 µs |  |  |  |  |
-| `linear/4d/max10/eval100/flipped` |  |  | 116 µs |  |  |  |  |
-| `linear/4d/max10/eval1000/ascending` |  |  | 224 µs |  |  |  |  |
-| `linear/4d/max10/eval1000/flipped` |  |  | 227 µs |  |  |  |  |
-| `linear/4d/max10/eval10000/ascending` |  |  | 1.88 ms |  |  |  |  |
-| `linear/4d/max10/eval10000/flipped` |  |  | 1.81 ms |  |  |  |  |
 | `linear/4d/max40/eval10/ascending` | 480 ns | 481 ns | 97.6 µs | 6.31 µs |  | 270 ns | **1.8x slower** |
 | `linear/4d/max40/eval10/flipped` | 440 ns | 456 ns | 104 µs |  |  |  | 2.4e+02x faster |
 | `linear/4d/max40/eval100/ascending` | 4.72 µs | 4.73 µs | 107 µs | 63.4 µs |  | 2.93 µs | **1.6x slower** |
@@ -698,6 +674,14 @@ Points in no order inside the grid. `maxN`: the first axis has `N` points and ea
 | `quintic/2d/each40/eval1000/ascending` | 65.3 µs | 65.5 µs | 237 µs |  |  |  | 3.6x faster |
 | `linear/2d/each400/eval10000/ascending` | 220 µs | 221 µs | 980 µs | 4.2 ms | 545 µs | 217 µs | **1x slower** |
 | `linear/2d/each800/eval10000/ascending` | 241 µs | 241 µs | 1.09 ms | 8.11 ms | 587 µs | 243 µs | 1x faster |
+| `linear/4d/max10/eval10/ascending` | 378 ns | 378 ns | 94.5 µs |  |  |  | 2.5e+02x faster |
+| `linear/4d/max10/eval10/flipped` | 378 ns | 378 ns | 94.5 µs |  |  |  | 2.5e+02x faster |
+| `linear/4d/max10/eval100/ascending` | 4.05 µs | 3.69 µs | 105 µs |  |  |  | 26x faster |
+| `linear/4d/max10/eval100/flipped` | 3.62 µs | 3.69 µs | 106 µs |  |  |  | 29x faster |
+| `linear/4d/max10/eval1000/ascending` | 37.4 µs | 37.4 µs | 209 µs |  |  |  | 5.6x faster |
+| `linear/4d/max10/eval1000/flipped` | 37.3 µs | 37.4 µs | 209 µs |  |  |  | 5.6x faster |
+| `linear/4d/max10/eval10000/ascending` | 374 µs | 375 µs | 1.79 ms |  |  |  | 4.8x faster |
+| `linear/4d/max10/eval10000/flipped` | 375 µs | 382 µs | 1.8 ms |  |  |  | 4.8x faster |
 
 ### Construction
 
@@ -751,14 +735,6 @@ Points in no order inside the grid. `maxN`: the first axis has `N` points and ea
 | `linear/3d/max200/eval1000/flipped` | 3.11 ms | 1.89 ms | 15.9 µs |  |  |  | **2e+02x slower** |
 | `linear/3d/max200/eval10000/ascending` | 1.78 ms | 613 µs | 7.61 µs | 1.23 ms |  | 0 | **1.8e+06x slower** |
 | `linear/3d/max200/eval10000/flipped` | 3.15 ms | 1.94 ms | 16 µs |  |  |  | **2e+02x slower** |
-| `linear/4d/max10/eval10/ascending` |  |  | 9.67 µs |  |  |  |  |
-| `linear/4d/max10/eval10/flipped` |  |  | 17.8 µs |  |  |  |  |
-| `linear/4d/max10/eval100/ascending` |  |  | 10.6 µs |  |  |  |  |
-| `linear/4d/max10/eval100/flipped` |  |  | 19.5 µs |  |  |  |  |
-| `linear/4d/max10/eval1000/ascending` |  |  | 9.77 µs |  |  |  |  |
-| `linear/4d/max10/eval1000/flipped` |  |  | 19.6 µs |  |  |  |  |
-| `linear/4d/max10/eval10000/ascending` |  |  | 9.79 µs |  |  |  |  |
-| `linear/4d/max10/eval10000/flipped` |  |  | 17.8 µs |  |  |  |  |
 | `linear/4d/max40/eval10/ascending` | 14.3 µs | 38.5 µs | 9.52 µs | 5.91 µs |  | 1.17 ns | **1.2e+04x slower** |
 | `linear/4d/max40/eval10/flipped` | 53 µs | 70.7 µs | 21.4 µs |  |  |  | **2.5x slower** |
 | `linear/4d/max40/eval100/ascending` | 13.4 µs | 31.7 µs | 9.5 µs | 5.84 µs |  | 1.27 ns | **1.1e+04x slower** |
@@ -790,6 +766,14 @@ Points in no order inside the grid. `maxN`: the first axis has `N` points and ea
 | `quintic/2d/each40/eval1000/ascending` | 12.4 µs | 12.3 µs | 7.47 ms |  |  |  | 6.1e+02x faster |
 | `linear/2d/each400/eval10000/ascending` | 302 µs | 102 µs | 5.99 µs | 271 µs | 1.14 µs | 0 | **4.4e+05x slower** |
 | `linear/2d/each800/eval10000/ascending` | 1.02 ms | 414 µs | 6.33 µs | 812 µs | 2.32 µs | 0 | **1.5e+06x slower** |
+| `linear/4d/max10/eval10/ascending` | 216 ns | 208 ns | 9.68 µs |  |  |  | 45x faster |
+| `linear/4d/max10/eval10/flipped` | 330 ns | 337 ns | 17.5 µs |  |  |  | 53x faster |
+| `linear/4d/max10/eval100/ascending` | 217 ns | 224 ns | 9.58 µs |  |  |  | 44x faster |
+| `linear/4d/max10/eval100/flipped` | 329 ns | 332 ns | 18 µs |  |  |  | 55x faster |
+| `linear/4d/max10/eval1000/ascending` | 215 ns | 214 ns | 9.64 µs |  |  |  | 45x faster |
+| `linear/4d/max10/eval1000/flipped` | 338 ns | 332 ns | 17.7 µs |  |  |  | 52x faster |
+| `linear/4d/max10/eval10000/ascending` | 236 ns | 211 ns | 9.54 µs |  |  |  | 40x faster |
+| `linear/4d/max10/eval10000/flipped` | 334 ns | 332 ns | 17.6 µs |  |  |  | 53x faster |
 
 ## `NearestNDInterpolator`
 
