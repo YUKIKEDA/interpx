@@ -9,6 +9,10 @@ Deferral is an exception. Do not ship "temporary", "for now", "until M3", or "in
 
 A row says when. A promise to file an Issue later does not.
 
+A recommendation to drop or to defer work is not argued from what its result would be. "The real data will not change the comparison" is a result nobody has: the work exists to find it out. What may be put to the owner is what the work costs and what it is for; a guess at its outcome is not a reason on either side. On #157 the agent recommended dropping the real-world data of the comparison from v0.1.0 because the synthetic cases "had settled it"; the owner kept it in: a guess that something is fine is usually wrong.
+
+A row that is `Done` did everything its design section gives it. M5-5 was closed while section 8.4.7 still said "chosen in M5-5"; the audit of a later row found it. Before a row is closed, search the design for its ID.
+
 Not allowed:
 
 - "Temporary until the next milestone" when that milestone's row does not name the split.
