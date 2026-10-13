@@ -43,17 +43,23 @@ impl Case {
 
     /// A parameter that is a string.
     pub fn text(&self, key: &str) -> &str {
-        self.spec[key].as_str().unwrap_or_else(|| panic!("{key} is a string"))
+        self.spec[key]
+            .as_str()
+            .unwrap_or_else(|| panic!("{key} is a string"))
     }
 
     /// A parameter that is a count.
     pub fn count(&self, key: &str) -> usize {
-        self.spec[key].as_u64().unwrap_or_else(|| panic!("{key} is a count")) as usize
+        self.spec[key]
+            .as_u64()
+            .unwrap_or_else(|| panic!("{key} is a count")) as usize
     }
 
     /// A parameter that is a number.
     pub fn number(&self, key: &str) -> f64 {
-        self.spec[key].as_f64().unwrap_or_else(|| panic!("{key} is a number"))
+        self.spec[key]
+            .as_f64()
+            .unwrap_or_else(|| panic!("{key} is a number"))
     }
 
     /// A parameter that is a count or absent.
@@ -70,7 +76,7 @@ impl Case {
     pub fn rows<const D: usize>(&self, name: &str) -> Vec<[f64; D]> {
         let flat = self.array(name);
         assert_eq!(flat.len() % D, 0, "{name} holds rows of {D}");
-        flat.chunks_exact(D).map(|row| core::array::from_fn(|d| row[d])).collect()
+        flat.as_chunks::<D>().0.to_vec()
     }
 
     /// Where this library's values go.
@@ -82,8 +88,10 @@ impl Case {
 fn read(path: &Path) -> Vec<f64> {
     let bytes = fs::read(path).unwrap_or_else(|_| panic!("{} is there", path.display()));
     bytes
-        .chunks_exact(8)
-        .map(|chunk| f64::from_ne_bytes(chunk.try_into().expect("eight bytes")))
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|chunk| f64::from_ne_bytes(*chunk))
         .collect()
 }
 
@@ -94,14 +102,29 @@ pub fn unsupported(why: &str) -> ! {
 }
 
 fn mark(name: &str) {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("after 1970");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("after 1970");
     println!("{}", json!({ "mark": name, "t_ns": now.as_nanos() as u64 }));
 }
 
-/// Long enough for the driver to sample the memory of a phase a few times.
-const PAUSE: Duration = Duration::from_millis(60);
-/// The time one of the two timed loops takes at least.
-const BUDGET: Duration = Duration::from_millis(250);
+/// The time one of the two timed loops takes at least. With samples of
+/// [`SAMPLE`] this is 250 samples of a short call. (It was five times as
+/// long at first, and a run of all the cases took two hours, most of it in
+/// these loops and in the pauses.)
+const BUDGET: Duration = Duration::from_millis(50);
+
+/// The pause after each phase: long enough for the driver to sample the
+/// memory of the phase a few times. The driver asks for it (`PERF_PAUSE_MS`)
+/// for the cases whose memory it reports, and for no others.
+fn pause() {
+    let asked = std::env::var("PERF_PAUSE_MS")
+        .ok()
+        .and_then(|ms| ms.parse().ok());
+    if let Some(ms) = asked {
+        std::thread::sleep(Duration::from_millis(ms));
+    }
+}
 const FEWEST: usize = 5;
 const MOST: usize = 2000;
 
@@ -143,6 +166,37 @@ fn time(mut run: impl FnMut()) -> Vec<f64> {
     seconds
 }
 
+/// [`time`] for a call that takes its input by value: the inputs of a sample
+/// are made before the sample starts, so that the time is that of the call
+/// alone.
+fn time_given<I>(make: impl Fn() -> I, mut run: impl FnMut(I)) -> Vec<f64> {
+    let start = Instant::now();
+    run(make());
+    let first = start.elapsed();
+    let mut calls = 1_usize;
+    loop {
+        let inputs: Vec<I> = (0..calls).map(|_| make()).collect();
+        let start = Instant::now();
+        inputs.into_iter().for_each(&mut run);
+        // The inputs of one sample are all in memory at once, so a sample
+        // has no more than this many calls.
+        if start.elapsed() >= SAMPLE || calls >= 1 << 10 {
+            break;
+        }
+        calls *= 2;
+    }
+    let fewest = if first > BUDGET { 3 } else { FEWEST };
+    let mut seconds = Vec::new();
+    let begun = Instant::now();
+    while seconds.len() < fewest || (begun.elapsed() < BUDGET && seconds.len() < MOST) {
+        let inputs: Vec<I> = (0..calls).map(|_| make()).collect();
+        let start = Instant::now();
+        inputs.into_iter().for_each(&mut run);
+        seconds.push(start.elapsed().as_secs_f64() / calls as f64);
+    }
+    seconds
+}
+
 /// Goes through the phases for one library: `build` makes the interpolator,
 /// `eval` writes the value at every query into its second argument, which has
 /// `values` numbers.
@@ -153,27 +207,43 @@ pub fn run<B>(
     build: impl Fn() -> B,
     eval: impl Fn(&B, &mut [f64]),
 ) {
+    run_given(case, library, values, || (), |()| build(), eval);
+}
+
+/// [`run`] for a construction that takes its data by value: `make` gives the
+/// data (a copy of what was read), outside the time of `build`.
+pub fn run_given<I, B>(
+    case: &Case,
+    library: &str,
+    values: usize,
+    make: impl Fn() -> I,
+    build: impl Fn(I) -> B,
+    eval: impl Fn(&B, &mut [f64]),
+) {
     mark("loaded");
-    std::thread::sleep(PAUSE);
-    let built = build();
+    pause();
+    let built = build(make());
     mark("built");
-    std::thread::sleep(PAUSE);
+    pause();
     let mut out = vec![0.0_f64; values];
     eval(&built, &mut out);
     mark("evaluated");
-    std::thread::sleep(PAUSE);
+    pause();
     let bytes: Vec<u8> = out.iter().flat_map(|v| v.to_ne_bytes()).collect();
     fs::write(case.values_path(library), bytes).expect("the values are written");
     drop(built);
 
-    let build_s = time(|| {
-        black_box(build());
+    let build_s = time_given(&make, |input| {
+        black_box(build(input));
     });
-    let built = build();
+    let built = build(make());
     let eval_s = time(|| {
         eval(black_box(&built), &mut out);
         black_box(&out);
     });
     mark("timed");
-    println!("{}", json!({ "mark": "result", "build_s": build_s, "eval_s": eval_s }));
+    println!(
+        "{}",
+        json!({ "mark": "result", "build_s": build_s, "eval_s": eval_s })
+    );
 }

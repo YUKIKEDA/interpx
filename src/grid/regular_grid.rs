@@ -3,7 +3,7 @@
 use crate::bspline::basis_values;
 use crate::error::AxisFault;
 use crate::oned::{hermite, pchip, Collocation};
-use crate::{search, Extrapolate, Hint, InterpolateError, Interpolator, Scalar, Value};
+use crate::{search, validate, Extrapolate, Hint, InterpolateError, Interpolator, Scalar, Value};
 
 /// How a [`RegularGridInterpolator`] interpolates between the points of its
 /// grid.
@@ -335,11 +335,11 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
             }
         }
         for (d, axis) in axes.iter().enumerate() {
-            if let Some(index) = axis.iter().position(|c| !c.is_finite()) {
+            if let Some(index) = validate::first_failing(axis, |c| c.is_finite()) {
                 return Err(on_axis(d)(AxisFault::NonFinite { index }));
             }
         }
-        if let Some(index) = values.iter().position(|v| !v.all_finite()) {
+        if let Some(index) = validate::first_failing(&values, V::all_finite) {
             return Err(InterpolateError::NonFinite { index });
         }
         let mut descending = [false; D];
@@ -886,6 +886,13 @@ fn decreases<T: Scalar>(axis: &[T]) -> Result<bool, AxisFault> {
 /// Reverses the order of the values along one axis of `n` points, whose
 /// neighbors are `stride` apart.
 fn reverse_along<V>(values: &mut [V], n: usize, stride: usize) {
+    if stride == 1 {
+        // The last axis: its lines are slices, turned around in place. As
+        // blocks of one value each, the loop below took four times as long
+        // (#122).
+        values.chunks_exact_mut(n).for_each(<[V]>::reverse);
+        return;
+    }
     for block in values.chunks_exact_mut(n * stride) {
         for i in 0..n / 2 {
             let (head, tail) = block.split_at_mut((n - 1 - i) * stride);

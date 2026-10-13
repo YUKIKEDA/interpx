@@ -89,15 +89,18 @@ impl<T: Scalar, V: Value<T>> Linear1D<T, V> {
     /// ```
     pub fn new(x: &[T], y: &[V]) -> Result<Self, InterpolateError> {
         validate::coordinates_and_values(x, y, x.len(), 2)?;
-        let mut coefficients = Vec::with_capacity(2 * (x.len() - 1));
-        for (i, (xs, ys)) in x.windows(2).zip(y.windows(2)).enumerate() {
+        // Every slope first, then one look at them all: a loop that may leave
+        // at every slope is compiled one slope at a time.
+        let mut coefficients = vec![V::zero(); 2 * (x.len() - 1)];
+        let pairs = x.windows(2).zip(y.windows(2));
+        for (piece, (xs, ys)) in coefficients.as_chunks_mut::<2>().0.iter_mut().zip(pairs) {
             let rise = ys[1].axpy(-T::one(), ys[0]);
-            let slope = V::zero().axpy((xs[1] - xs[0]).recip(), rise);
-            if !slope.all_finite() {
-                return Err(InterpolateError::NonFinite { index: i + 1 });
-            }
-            coefficients.push(slope);
-            coefficients.push(ys[0]);
+            piece[0] = V::zero().axpy((xs[1] - xs[0]).recip(), rise);
+            piece[1] = ys[0];
+        }
+        // The values are finite, so a coefficient that is not is a slope.
+        if let Some(at) = validate::first_failing(&coefficients, V::all_finite) {
+            return Err(InterpolateError::NonFinite { index: at / 2 + 1 });
         }
         // The coordinates passed the checks above, and every slope is finite.
         let poly =

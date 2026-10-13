@@ -137,21 +137,26 @@ impl<T: Scalar, V: Value<T>> Akima1D<T, V> {
         let n = x.len();
         let intervals = n - 1;
         // The slopes go where the coefficients will be (`hermite::into_ppoly`).
-        // Until then the secants are kept behind them in the same buffer, which
-        // has four entries per interval: room for both.
-        let mut buffer = vec![V::zero(); 4 * intervals];
+        // Until then the secants are kept behind them in the same buffer, with
+        // two made-up ones before the first and two after the last
+        // (`continue_past_the_ends`): `n + 3` in all. Four entries per interval
+        // are room for both from four points on; three points take one more.
+        let mut buffer = vec![V::zero(); (4 * intervals).max(2 * n + 3)];
         let mut per_width = vec![T::zero(); intervals];
         for i in 0..intervals {
-            buffer[n + i] = secant(x, y, i, &mut per_width)?;
+            buffer[n + 2 + i] = secant(x, y, i, &mut per_width)?;
         }
         if n == 2 {
             // The line through the two points.
-            buffer[0] = buffer[n];
-            buffer[1] = buffer[n];
+            buffer[0] = buffer[n + 2];
+            buffer[1] = buffer[n + 2];
         } else {
             let (slopes, secants) = buffer.split_at_mut(n);
-            write_slopes(&secants[..intervals], method, slopes);
+            let secants = &mut secants[..n + 3];
+            continue_past_the_ends(secants);
+            write_slopes(secants, method, slopes);
         }
+        buffer.truncate(4 * intervals);
         Ok(Self {
             poly: hermite::into_ppoly(x, y, buffer, &per_width)?
                 .with_extrapolate(Extrapolate::Forbid),
@@ -271,64 +276,49 @@ fn weight<T: Scalar>(method: AkimaMethod, a: T, b: T) -> T {
     }
 }
 
-/// Calls `visit(i, around, before, after)` for every data point `i`, in order:
-/// the four secants around the point, the weight of the two before it, and the
-/// weight of the two after it. `secants` are those of the intervals between
-/// the points, three points at least.
-///
-/// Past each end two secants are made up by continuing the last two in a line,
-/// as SciPy does: with them there are `n + 3` secants for `n` points, and point
-/// `i` has the secants `i..i + 4` around it.
-///
-/// A weight belongs to two neighboring secants, and each is used by two points
-/// (as the weight after one, and before the one two further on). So the secants
-/// are walked in order, with the last four of them and the last three weights
-/// at hand, and every weight is computed once in a walk.
-fn walk<T: Scalar, V: Value<T>>(
-    secants: &[V],
-    method: AkimaMethod,
-    mut visit: impl FnMut(usize, [V; 4], V, V),
-) {
-    let last = secants.len() - 1;
-    // The secants before the first one, then those after the last one.
-    let before = continued(secants[0], secants[1]);
-    let front = [continued(before, secants[0]), before];
-    let after = continued(secants[last], secants[last - 1]);
-    let back = [after, continued(after, secants[last])];
-    let all = front.iter().chain(secants).chain(&back);
-
-    let mut around = [V::zero(); 4];
-    let mut weights = [V::zero(); 3];
-    for (j, secant) in all.enumerate() {
-        around.rotate_left(1);
-        around[3] = *secant;
-        // The weight of secants `j - 1` and `j`.
-        weights.rotate_left(1);
-        weights[2] = around[2].zip_with(around[3], |a, b| weight(method, a, b));
-        if j >= 3 {
-            visit(j - 3, around, weights[0], weights[2]);
-        }
-    }
+/// Fills the two secants before the first and the two after the last of
+/// `secants`, by continuing the nearest two in a line, as SciPy does. The
+/// secants of the intervals are in `secants[2..len - 2]`, two at least. With
+/// these there are `n + 3` secants for `n` points, and point `i` has the
+/// secants `i..i + 4` around it.
+fn continue_past_the_ends<T: Scalar, V: Value<T>>(secants: &mut [V]) {
+    let last = secants.len() - 3;
+    secants[1] = continued(secants[2], secants[3]);
+    secants[0] = continued(secants[1], secants[2]);
+    secants[last + 1] = continued(secants[last], secants[last - 1]);
+    secants[last + 2] = continued(secants[last + 1], secants[last]);
 }
 
-/// Writes the slope at every data point to `slopes`, from the secants of the
-/// intervals between them. There are three points at least.
+/// Writes the slope at every data point to `slopes`, from the secants around
+/// the points ([`continue_past_the_ends`]): those of point `i` are
+/// `secants[i..i + 4]`.
 ///
-/// The secants are walked twice: once to find, column by column, the largest
-/// sum of weights, which sets the cutoff under which a sum counts as zero, and
-/// once to write the slopes.
+/// The weight of two neighboring secants says how much the secant changes
+/// between them. A point has the weight of the two secants before it and of
+/// the two after it. The secants are gone through twice: once to find, column
+/// by column, the largest sum of the two weights, which sets the cutoff under
+/// which a sum counts as zero, and once to write the slopes. Each time the
+/// loop reads four secants next to each other and nothing it wrote before, so
+/// that several points are worked on at once. (Carrying the last four secants
+/// and three weights from point to point, each weight computed once, took
+/// 19 ns a point; this takes a third of it. #122.)
 fn write_slopes<T: Scalar, V: Value<T>>(secants: &[V], method: AkimaMethod, slopes: &mut [V]) {
+    let weigh = |a: V, b: V| a.zip_with(b, |a, b| weight(method, a, b));
     let mut largest = V::zero();
-    walk(secants, method, |_, _, before, after| {
+    for around in secants.windows(4) {
+        let (before, after) = (weigh(around[0], around[1]), weigh(around[2], around[3]));
         largest = largest.zip_with(before.axpy(T::one(), after), T::max);
-    });
+    }
     // SciPy's `break_mult`: a sum of weights under this share of the largest one
     // is taken for zero.
     let cutoff = count::<T>(10).powi(-9);
     let half = (T::one() + T::one()).recip();
-    walk(secants, method, |i, [m1, m2, m3, m4], before, after| {
-        slopes[i] = V::combine(
-            [m1, m2, m3, m4, before, after, largest],
+    for (slope, around) in slopes.iter_mut().zip(secants.windows(4)) {
+        let (before, after) = (weigh(around[0], around[1]), weigh(around[2], around[3]));
+        *slope = V::combine(
+            [
+                around[0], around[1], around[2], around[3], before, after, largest,
+            ],
             |[m1, m2, m3, m4, f2, f1, largest]| {
                 let f12 = f1 + f2;
                 if f12 > cutoff * largest {
@@ -340,7 +330,7 @@ fn write_slopes<T: Scalar, V: Value<T>>(secants: &[V], method: AkimaMethod, slop
                 }
             },
         );
-    });
+    }
 }
 
 impl<T: Scalar, V: Value<T>> Interpolator for Akima1D<T, V> {

@@ -23,6 +23,21 @@ from common.bench_cases import RUST_ONLY, SCIPY  # noqa: E402
 
 SEED = 20261013
 
+# The cases whose memory over time is reported and drawn: the large ones. A
+# runner pauses after each phase of these, so that the phase can be told
+# apart in the samples; for the rest memory is a few megabytes whatever the
+# library, and the pauses were most of the time of a run.
+MEMORY = (
+    "rbf/thin_plate_spline/global/n3000/scattered",
+    "rbf/thin_plate_spline/k50/n100000/image",
+    "nearest_nd/n100000/image500",
+    "grid/cubic/2d/each400/eval1000/ascending",
+    "grid/linear/2d/each800/eval10000/ascending",
+    "grid/linear/4d/max200/eval10000/ascending",
+    "oned/cubic_spline/n10000/sorted",
+)
+PAUSE_MS = 60
+
 ONED_METHODS = (
     "linear",
     "nearest",
