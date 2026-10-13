@@ -593,10 +593,16 @@ mod tests {
     /// A banded matrix as dense rows, with its shape and a right-hand side.
     type System = (Band, Vec<Vec<f64>>, Vec<f64>);
 
-    /// A random matrix with the given bands. With `dominant`, its diagonal
-    /// exceeds the sum of the other entries of its row, so that it is well
-    /// conditioned; without, the pivots are wherever the entries are large, and
-    /// rows are exchanged.
+    /// A random matrix with the given bands. With `dominant`, each entry of
+    /// its diagonal exceeds the sum of the other entries of its row and of
+    /// its column, so that it is well conditioned and no rows are exchanged;
+    /// without, the pivots are wherever the entries are large, and rows are
+    /// exchanged.
+    ///
+    /// By columns as well as by rows: the elimination takes the largest entry
+    /// of a column, and it is dominance by columns that it keeps from one
+    /// step to the next. With rows alone, one system in some hundred thousand
+    /// had a pivot off its diagonal (#143).
     fn systems(dominant: bool) -> impl Strategy<Value = System> {
         (1..24_usize, 0..5_usize, 0..5_usize)
             .prop_flat_map(move |(n, lower, upper)| {
@@ -614,11 +620,14 @@ mod tests {
                             *entry = 0.0;
                         }
                     }
+                }
+                for i in 0..if dominant { band.n } else { 0 } {
                     let (margin, negative) = margins[i];
-                    let others: f64 = row.iter().map(|v| v.abs()).sum::<f64>() - row[i].abs();
-                    if dominant {
-                        row[i] = if negative { -1.0 } else { 1.0 } * (others + margin);
-                    }
+                    let along_row: f64 = a[i].iter().map(|v| v.abs()).sum::<f64>() - a[i][i].abs();
+                    let along_column: f64 =
+                        a.iter().map(|row| row[i].abs()).sum::<f64>() - a[i][i].abs();
+                    let sign = if negative { -1.0 } else { 1.0 };
+                    a[i][i] = sign * (along_row.max(along_column) + margin);
                 }
                 (band, a, rhs)
             })

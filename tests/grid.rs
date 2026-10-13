@@ -463,6 +463,58 @@ fn values_are_in_c_order_with_the_last_axis_fastest() {
 }
 
 #[test]
+fn five_dimensions_take_the_corners_as_four_do() {
+    // Up to four dimensions the corners of a cell are laid out at once, from
+    // five on one by one. A grid of five axes whose last has one point is the
+    // grid of the first four: the same corners with the same weights in the
+    // same order, and nothing else but a weight of zero. So the two ways are
+    // held against each other bit for bit.
+    let axes = [
+        vec![0.0, 1.0, 2.5],
+        vec![-1.0, 0.5],
+        vec![0.0, 2.0, 3.0, 7.0],
+        vec![1.0, 1.5, 4.0],
+    ];
+    let count: u32 = 3 * 2 * 4 * 3;
+    let values: Vec<f64> = (0..count)
+        .map(|n| f64::from(n * 37 % 101) / 7.0 - 5.0)
+        .collect();
+    let four: [&[f64]; 4] = core::array::from_fn(|d| axes[d].as_slice());
+    let alone = [9.0];
+    let five = [four[0], four[1], four[2], four[3], &alone[..]];
+    let flat = Grid::new(four, &values, GridMethod::Linear).expect("valid");
+    let deep = Grid::new(five, &values, GridMethod::Linear).expect("valid");
+    for n in 0..200_u32 {
+        let at = |d: usize, k: u32| {
+            let axis = &axes[d];
+            let share = f64::from((n * k + 3 * k) % 97) / 96.0;
+            axis[0] + share * (axis[axis.len() - 1] - axis[0])
+        };
+        let point = [at(0, 5), at(1, 11), at(2, 17), at(3, 23)];
+        let lifted = [point[0], point[1], point[2], point[3], 9.0];
+        let value = flat.eval(&point);
+        assert!(value.is_some());
+        assert_eq!(bits(deep.eval(&lifted)), bits(value), "{point:?}");
+    }
+    // And five axes of two points each give back a function that is linear in
+    // each coordinate.
+    let side = [0.0, 1.0];
+    let corners: Vec<f64> = (0..32_u32)
+        .map(|c| {
+            (0..5)
+                .map(|d| f64::from(c >> (4 - d) & 1) * f64::from(d + 1))
+                .sum::<f64>()
+        })
+        .collect();
+    let cube = Grid::new([&side[..]; 5], &corners, GridMethod::Linear).expect("valid");
+    let got = cube.eval(&[0.5, 0.25, 0.75, 0.125, 1.0]).expect("inside");
+    assert!(
+        (got - (0.5 + 0.5 + 2.25 + 0.5 + 5.0)).abs() < 1e-14,
+        "{got}"
+    );
+}
+
+#[test]
 fn the_corners_are_added_with_the_first_axis_outermost() {
     // At the center of a cell every corner weighs a quarter. The values are
     // chosen so that the order of the sum shows: (0, 0), (0, 1), (1, 0), (1, 1)

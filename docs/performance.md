@@ -14,13 +14,13 @@ Measured on 2026-10-13, at commit `e904233c88` with uncommitted changes.
 - A time is that of one call: construction, or the evaluation of all the queries of the case (`eval_batch_into` for interpx, the call with an array for the others). It is the median of the repeats of a process, and then the median of the rounds.
 - interpx is called slower where its median is more than 1.10 times another library's and its fastest repeat is slower than that library's fastest.
 - Memory is the resident set size of the process, sampled every millisecond from outside it.
-- Command: `perf/run.py --rounds 3 --libraries scipy,interpx --filter ^(oned/bspline|bspline/|curve/)`.
+- Command: `perf/run.py --rounds 3 --filter ^grid/`.
 
 ## Where interpx is slower
 
 | family | operation | cases | interpx fastest | slower than SciPy | slower than a Rust crate |
 | :--- | :--- | ---: | ---: | ---: | ---: |
-| One variable | evaluation | 112 | 111 | 0 | 1 |
+| One variable | evaluation | 112 | 110 | 1 | 1 |
 | One variable | construction | 112 | 76 | 8 | 32 |
 | `PPoly` | evaluation | 4 | 4 | 0 | 0 |
 | `PPoly` | construction | 4 | 4 | 0 | 0 |
@@ -35,7 +35,7 @@ Measured on 2026-10-13, at commit `e904233c88` with uncommitted changes.
 | `RBFInterpolator` | evaluation | 53 | 52 | 1 | 0 |
 | `RBFInterpolator` | construction | 53 | 53 | 0 | 0 |
 
-190 comparisons (a case, an operation, and a library), by method. "Same values" says whether that library's values are SciPy's up to rounding: where they are not, it computes another interpolant under the same name, and its time is not that of the same work.
+191 comparisons (a case, an operation, and a library), by method. "Same values" says whether that library's values are SciPy's up to rounding: where they are not, it computes another interpolant under the same name, and its time is not that of the same work.
 
 | method | operation | against | same values | cases | slower by | the largest |
 | :--- | :--- | :--- | :--- | ---: | ---: | :--- |
@@ -47,7 +47,7 @@ Measured on 2026-10-13, at commit `e904233c88` with uncommitted changes.
 | `grid/pchip` | construction | SciPy | yes | 1 | 53.9x | `grid/pchip/3d/each40/eval10000/ascending`: 469 µs against 8.7 µs |
 | `oned/linear` | construction | ndarray-interp | yes | 14 | 1.35x to 7.18x | `oned/linear/n10000/sorted`: 107 µs against 14.9 µs |
 | `grid/linear` | construction | scirs2-interpolate | yes | 24 | 1.13x to 5.96x | `grid/linear/3d/max40/eval10000/ascending`: 17 µs against 2.85 µs |
-| `oned/bspline1` | construction | SciPy | yes | 2 | 2.82x to 2.9x | `oned/bspline1/n10000/shuffled`: 68.9 µs against 23.7 µs |
+| `oned/bspline1` | construction | SciPy | yes | 2 | 3.32x to 3.35x | `oned/bspline1/n10000/sorted`: 81.3 µs against 24.3 µs |
 | `oned/pchip` | construction | scirs2-interpolate | yes | 8 | 1.46x to 2.74x | `oned/pchip/n1000/shuffled`: 12.5 µs against 4.58 µs |
 | `grid/nearest` | construction | SciPy | yes | 1 | 2.59x | `grid/nearest/3d/each40/eval10000/ascending`: 21.3 µs against 8.21 µs |
 | `oned/cubic_spline` | construction | scirs2-interpolate | no | 4 | 1.13x to 2.5x | `oned/cubic_spline/n1000/shuffled`: 43.1 µs against 17.2 µs |
@@ -60,6 +60,7 @@ Measured on 2026-10-13, at commit `e904233c88` with uncommitted changes.
 | `oned/nearest` | construction | SciPy | yes | 2 | 1.24x to 1.3x | `oned/nearest/n10000/sorted`: 70.4 µs against 54.2 µs |
 | `rbf/quintic` | evaluation | SciPy | yes | 1 | 1.12x | `rbf/quintic/global/n10/scattered`: 75 µs against 66.8 µs |
 | `oned/nearest` | evaluation | scirs2-interpolate | yes | 1 | 1.12x | `oned/nearest/n10/shuffled`: 302 ns against 270 ns |
+| `oned/bspline1` | evaluation | SciPy | yes | 1 | 1.11x | `oned/bspline1/n10000/sorted`: 316 µs against 284 µs |
 
 <details><summary>Every comparison where interpx is slower</summary>
 
@@ -140,12 +141,12 @@ Measured on 2026-10-13, at commit `e904233c88` with uncommitted changes.
 | `oned/linear/n10000/shuffled` | construction | ndarray-interp | 102 µs | 14.9 µs | 6.86x | 0e+00 |
 | `grid/linear/3d/max40/eval10000/ascending` | construction | scirs2-interpolate | 17 µs | 2.85 µs | 5.96x | 2e-16 |
 | `grid/linear/2d/max200/eval10000/flipped` | construction | SciPy | 61.2 µs | 12.5 µs | 4.91x |  |
+| `oned/bspline1/n10000/sorted` | construction | SciPy | 81.3 µs | 24.3 µs | 3.35x |  |
+| `oned/bspline1/n10000/shuffled` | construction | SciPy | 77.5 µs | 23.4 µs | 3.32x |  |
 | `grid/linear/3d/max40/eval1000/ascending` | construction | scirs2-interpolate | 18.7 µs | 6.28 µs | 2.98x | 2e-16 |
 | `oned/linear/n10000/sorted-uneven` | construction | ndarray-interp | 99 µs | 33.4 µs | 2.97x | 0e+00 |
 | `oned/linear/n10000/shuffled-uneven` | construction | ndarray-interp | 97.5 µs | 33.2 µs | 2.94x | 0e+00 |
-| `oned/bspline1/n10000/shuffled` | construction | SciPy | 68.9 µs | 23.7 µs | 2.90x |  |
 | `grid/linear/4d/max40/eval100/flipped` | construction | SciPy | 56.8 µs | 19.8 µs | 2.86x |  |
-| `oned/bspline1/n10000/sorted` | construction | SciPy | 70.2 µs | 24.9 µs | 2.82x |  |
 | `grid/linear/4d/max40/eval10/flipped` | construction | SciPy | 56.1 µs | 20.3 µs | 2.77x |  |
 | `oned/pchip/n1000/shuffled` | construction | scirs2-interpolate | 12.5 µs | 4.58 µs | 2.74x | 2e-16 |
 | `grid/linear/4d/max40/eval1000/flipped` | construction | SciPy | 54.7 µs | 20 µs | 2.73x |  |
@@ -257,6 +258,7 @@ Measured on 2026-10-13, at commit `e904233c88` with uncommitted changes.
 | `oned/linear/n10/shuffled` | construction | scirs2-interpolate | 94.9 ns | 84.5 ns | 1.12x | 0e+00 |
 | `rbf/quintic/global/n10/scattered` | evaluation | SciPy | 75 µs | 66.8 µs | 1.12x |  |
 | `oned/nearest/n10/shuffled` | evaluation | scirs2-interpolate | 302 ns | 270 ns | 1.12x | 0e+00 |
+| `oned/bspline1/n10000/sorted` | evaluation | SciPy | 316 µs | 284 µs | 1.11x |  |
 
 </details>
 
@@ -287,6 +289,12 @@ Data of `n` points, evaluated at `4 n` points: in order (`sorted`) and in no ord
 | `nearest/n10/shuffled` | 302 ns | 9.43 µs | 270 ns |  | **1.1x slower** |
 | `previous/n10/sorted` | 160 ns | 11.6 µs |  |  | 73x faster |
 | `previous/n10/shuffled` | 286 ns | 11.1 µs |  |  | 39x faster |
+| `bspline1/n10/sorted` | 299 ns | 2.8 µs |  |  | 9.4x faster |
+| `bspline1/n10/shuffled` | 654 ns | 2.77 µs |  |  | 4.2x faster |
+| `bspline2/n10/sorted` | 402 ns | 3.13 µs |  |  | 7.8x faster |
+| `bspline2/n10/shuffled` | 456 ns | 3.13 µs |  |  | 6.9x faster |
+| `bspline3/n10/sorted` | 576 ns | 3.87 µs |  |  | 6.7x faster |
+| `bspline3/n10/shuffled` | 607 ns | 3.99 µs |  |  | 6.6x faster |
 | `cubic_spline/n10/sorted` | 153 ns | 3.98 µs | 283 ns | 354 ns | 1.9x faster |
 | `cubic_spline/n10/shuffled` | 223 ns | 3.74 µs | 303 ns | 356 ns | 1.4x faster |
 | `pchip/n10/sorted` | 151 ns | 3.73 µs | 301 ns |  | 2x faster |
@@ -301,6 +309,12 @@ Data of `n` points, evaluated at `4 n` points: in order (`sorted`) and in no ord
 | `nearest/n50/shuffled` | 1.58 µs | 11.3 µs | 1.73 µs |  | 1.1x faster |
 | `previous/n50/sorted` | 758 ns | 12.5 µs |  |  | 17x faster |
 | `previous/n50/shuffled` | 1.36 µs | 13.1 µs |  |  | 9.6x faster |
+| `bspline1/n50/sorted` | 1.51 µs | 3.96 µs |  |  | 2.6x faster |
+| `bspline1/n50/shuffled` | 3.38 µs | 5.07 µs |  |  | 1.5x faster |
+| `bspline2/n50/sorted` | 1.98 µs | 6.1 µs |  |  | 3.1x faster |
+| `bspline2/n50/shuffled` | 2.72 µs | 6.87 µs |  |  | 2.5x faster |
+| `bspline3/n50/sorted` | 2.64 µs | 8.67 µs |  |  | 3.3x faster |
+| `bspline3/n50/shuffled` | 3.49 µs | 9.54 µs |  |  | 2.7x faster |
 | `cubic_spline/n50/sorted` | 704 ns | 5.16 µs | 4.34 µs | 1.68 µs | 2.4x faster |
 | `cubic_spline/n50/shuffled` | 980 ns | 5.47 µs | 4.47 µs | 1.6 µs | 1.6x faster |
 | `pchip/n50/sorted` | 722 ns | 5.15 µs | 4.32 µs |  | 6x faster |
@@ -315,6 +329,12 @@ Data of `n` points, evaluated at `4 n` points: in order (`sorted`) and in no ord
 | `nearest/n100/shuffled` | 3.14 µs | 13.7 µs | 3.55 µs |  | 1.1x faster |
 | `previous/n100/sorted` | 1.69 µs | 15 µs |  |  | 8.9x faster |
 | `previous/n100/shuffled` | 2.72 µs | 15.4 µs |  |  | 5.6x faster |
+| `bspline1/n100/sorted` | 3.21 µs | 5.49 µs |  |  | 1.7x faster |
+| `bspline1/n100/shuffled` | 6.19 µs | 11.9 µs |  |  | 1.9x faster |
+| `bspline2/n100/sorted` | 4.01 µs | 9.99 µs |  |  | 2.5x faster |
+| `bspline2/n100/shuffled` | 5.61 µs | 12.6 µs |  |  | 2.2x faster |
+| `bspline3/n100/sorted` | 5.32 µs | 15.1 µs |  |  | 2.8x faster |
+| `bspline3/n100/shuffled` | 7.4 µs | 18 µs |  |  | 2.4x faster |
 | `cubic_spline/n100/sorted` | 1.42 µs | 7.18 µs | 17.2 µs | 3.19 µs | 2.3x faster |
 | `cubic_spline/n100/shuffled` | 1.98 µs | 8.03 µs | 17.6 µs | 3.21 µs | 1.6x faster |
 | `pchip/n100/sorted` | 1.48 µs | 7.41 µs | 17.3 µs |  | 5x faster |
@@ -329,6 +349,12 @@ Data of `n` points, evaluated at `4 n` points: in order (`sorted`) and in no ord
 | `nearest/n1000/shuffled` | 32.1 µs | 200 µs | 232 µs |  | 6.2x faster |
 | `previous/n1000/sorted` | 14.9 µs | 61.7 µs |  |  | 4.1x faster |
 | `previous/n1000/shuffled` | 27.4 µs | 203 µs |  |  | 7.4x faster |
+| `bspline1/n1000/sorted` | 31 µs | 31.5 µs |  |  | 1x faster |
+| `bspline1/n1000/shuffled` | 67.6 µs | 578 µs |  |  | 8.5x faster |
+| `bspline2/n1000/sorted` | 41.2 µs | 75.9 µs |  |  | 1.8x faster |
+| `bspline2/n1000/shuffled` | 72.5 µs | 591 µs |  |  | 8.1x faster |
+| `bspline3/n1000/sorted` | 53 µs | 129 µs |  |  | 2.4x faster |
+| `bspline3/n1000/shuffled` | 96.7 µs | 580 µs |  |  | 6x faster |
 | `cubic_spline/n1000/sorted` | 14.1 µs | 40.4 µs | 1.55 ms | 34.5 µs | 2.4x faster |
 | `cubic_spline/n1000/shuffled` | 19.5 µs | 219 µs | 1.43 ms | 31.9 µs | 1.6x faster |
 | `pchip/n1000/sorted` | 14 µs | 38.6 µs | 1.24 ms |  | 2.8x faster |
@@ -343,6 +369,12 @@ Data of `n` points, evaluated at `4 n` points: in order (`sorted`) and in no ord
 | `nearest/n10000/shuffled` | 419 µs | 3.17 ms | 3.08 ms |  | 7.3x faster |
 | `previous/n10000/sorted` | 165 µs | 604 µs |  |  | 3.7x faster |
 | `previous/n10000/shuffled` | 341 µs | 3 ms |  |  | 8.8x faster |
+| `bspline1/n10000/sorted` | 316 µs | 284 µs |  |  | **1.1x slower** |
+| `bspline1/n10000/shuffled` | 682 µs | 48.3 ms |  |  | 71x faster |
+| `bspline2/n10000/sorted` | 422 µs | 762 µs |  |  | 1.8x faster |
+| `bspline2/n10000/shuffled` | 1.05 ms | 48.4 ms |  |  | 46x faster |
+| `bspline3/n10000/sorted` | 593 µs | 1.37 ms |  |  | 2.3x faster |
+| `bspline3/n10000/shuffled` | 1.28 ms | 49.8 ms |  |  | 39x faster |
 | `cubic_spline/n10000/sorted` | 154 µs | 380 µs | 148 ms | 343 µs | 2.2x faster |
 | `cubic_spline/n10000/shuffled` | 237 µs | 3.7 ms | 147 ms | 365 µs | 1.5x faster |
 | `pchip/n10000/sorted` | 160 µs | 391 µs | 122 ms |  | 2.5x faster |
@@ -363,36 +395,6 @@ Data of `n` points, evaluated at `4 n` points: in order (`sorted`) and in no ord
 | `cubic_spline/n10000/shuffled-uneven` | 796 µs | 3.67 ms | 149 ms | 1.97 ms | 2.5x faster |
 | `pchip/n10000/sorted-uneven` | 232 µs | 466 µs | 123 ms |  | 2x faster |
 | `pchip/n10000/shuffled-uneven` | 741 µs | 3.69 ms | 120 ms |  | 5x faster |
-| `bspline1/n10/sorted` | 229 ns | 2.72 µs |  |  | 12x faster |
-| `bspline1/n10/shuffled` | 526 ns | 2.79 µs |  |  | 5.3x faster |
-| `bspline2/n10/sorted` | 271 ns | 3.09 µs |  |  | 11x faster |
-| `bspline2/n10/shuffled` | 342 ns | 3.13 µs |  |  | 9.2x faster |
-| `bspline3/n10/sorted` | 345 ns | 3.6 µs |  |  | 10x faster |
-| `bspline3/n10/shuffled` | 450 ns | 3.65 µs |  |  | 8.1x faster |
-| `bspline1/n50/sorted` | 1.11 µs | 3.89 µs |  |  | 3.5x faster |
-| `bspline1/n50/shuffled` | 2.78 µs | 4.99 µs |  |  | 1.8x faster |
-| `bspline2/n50/sorted` | 1.35 µs | 6.21 µs |  |  | 4.6x faster |
-| `bspline2/n50/shuffled` | 2.21 µs | 7.44 µs |  |  | 3.4x faster |
-| `bspline3/n50/sorted` | 1.83 µs | 9.46 µs |  |  | 5.2x faster |
-| `bspline3/n50/shuffled` | 2.81 µs | 9.3 µs |  |  | 3.3x faster |
-| `bspline1/n100/sorted` | 2.14 µs | 5.55 µs |  |  | 2.6x faster |
-| `bspline1/n100/shuffled` | 6.11 µs | 12.7 µs |  |  | 2.1x faster |
-| `bspline2/n100/sorted` | 2.9 µs | 10.3 µs |  |  | 3.5x faster |
-| `bspline2/n100/shuffled` | 4.86 µs | 12.8 µs |  |  | 2.6x faster |
-| `bspline3/n100/sorted` | 3.62 µs | 15 µs |  |  | 4.1x faster |
-| `bspline3/n100/shuffled` | 6.18 µs | 19.6 µs |  |  | 3.2x faster |
-| `bspline1/n1000/sorted` | 26.2 µs | 33.1 µs |  |  | 1.3x faster |
-| `bspline1/n1000/shuffled` | 61.7 µs | 579 µs |  |  | 9.4x faster |
-| `bspline2/n1000/sorted` | 31.9 µs | 85.1 µs |  |  | 2.7x faster |
-| `bspline2/n1000/shuffled` | 63.8 µs | 543 µs |  |  | 8.5x faster |
-| `bspline3/n1000/sorted` | 36 µs | 139 µs |  |  | 3.9x faster |
-| `bspline3/n1000/shuffled` | 79.2 µs | 586 µs |  |  | 7.4x faster |
-| `bspline1/n10000/sorted` | 262 µs | 304 µs |  |  | 1.2x faster |
-| `bspline1/n10000/shuffled` | 657 µs | 49.5 ms |  |  | 75x faster |
-| `bspline2/n10000/sorted` | 329 µs | 768 µs |  |  | 2.3x faster |
-| `bspline2/n10000/shuffled` | 914 µs | 50.8 ms |  |  | 56x faster |
-| `bspline3/n10000/sorted` | 400 µs | 1.39 ms |  |  | 3.5x faster |
-| `bspline3/n10000/shuffled` | 1.22 ms | 50.5 ms |  |  | 41x faster |
 
 ### Construction
 
@@ -404,6 +406,12 @@ Data of `n` points, evaluated at `4 n` points: in order (`sorted`) and in no ord
 | `nearest/n10/shuffled` | 67.2 ns | 9.58 µs | 88.9 ns |  | 1.3x faster |
 | `previous/n10/sorted` | 70.3 ns | 9.23 µs |  |  | 1.3e+02x faster |
 | `previous/n10/shuffled` | 71.4 ns | 9.49 µs |  |  | 1.3e+02x faster |
+| `bspline1/n10/sorted` | 116 ns | 16.8 µs |  |  | 1.5e+02x faster |
+| `bspline1/n10/shuffled` | 122 ns | 17.2 µs |  |  | 1.4e+02x faster |
+| `bspline2/n10/sorted` | 513 ns | 39 µs |  |  | 76x faster |
+| `bspline2/n10/shuffled` | 508 ns | 37.9 µs |  |  | 75x faster |
+| `bspline3/n10/sorted` | 566 ns | 38.1 µs |  |  | 67x faster |
+| `bspline3/n10/shuffled` | 559 ns | 37.9 µs |  |  | 68x faster |
 | `cubic_spline/n10/sorted` | 257 ns | 93.2 µs | 425 ns | 513 ns | 1.7x faster |
 | `cubic_spline/n10/shuffled` | 235 ns | 86.8 µs | 389 ns | 512 ns | 1.7x faster |
 | `pchip/n10/sorted` | 194 ns | 110 µs | 199 ns |  | 1x faster |
@@ -418,6 +426,12 @@ Data of `n` points, evaluated at `4 n` points: in order (`sorted`) and in no ord
 | `nearest/n50/shuffled` | 104 ns | 9.68 µs | 143 ns |  | 1.4x faster |
 | `previous/n50/sorted` | 95 ns | 10.3 µs |  |  | 1.1e+02x faster |
 | `previous/n50/shuffled` | 95 ns | 10.5 µs |  |  | 1.1e+02x faster |
+| `bspline1/n50/sorted` | 219 ns | 17 µs |  |  | 78x faster |
+| `bspline1/n50/shuffled` | 218 ns | 17 µs |  |  | 78x faster |
+| `bspline2/n50/sorted` | 2.01 µs | 42.8 µs |  |  | 21x faster |
+| `bspline2/n50/shuffled` | 1.84 µs | 42.2 µs |  |  | 23x faster |
+| `bspline3/n50/sorted` | 2.23 µs | 41.5 µs |  |  | 19x faster |
+| `bspline3/n50/shuffled` | 2.23 µs | 39.8 µs |  |  | 18x faster |
 | `cubic_spline/n50/sorted` | 838 ns | 94.6 µs | 937 ns | 1.08 µs | 1.1x faster |
 | `cubic_spline/n50/shuffled` | 848 ns | 87.5 µs | 874 ns | 1.18 µs | 1x faster |
 | `pchip/n50/sorted` | 543 ns | 102 µs | 356 ns |  | **1.5x slower** |
@@ -432,6 +446,12 @@ Data of `n` points, evaluated at `4 n` points: in order (`sorted`) and in no ord
 | `nearest/n100/shuffled` | 167 ns | 10 µs | 190 ns |  | 1.1x faster |
 | `previous/n100/sorted` | 166 ns | 9.92 µs |  |  | 60x faster |
 | `previous/n100/shuffled` | 167 ns | 9.77 µs |  |  | 59x faster |
+| `bspline1/n100/sorted` | 319 ns | 16.9 µs |  |  | 53x faster |
+| `bspline1/n100/shuffled` | 323 ns | 16.9 µs |  |  | 52x faster |
+| `bspline2/n100/sorted` | 3.87 µs | 45.6 µs |  |  | 12x faster |
+| `bspline2/n100/shuffled` | 3.87 µs | 46.5 µs |  |  | 12x faster |
+| `bspline3/n100/sorted` | 4.32 µs | 43.3 µs |  |  | 10x faster |
+| `bspline3/n100/shuffled` | 3.95 µs | 43.3 µs |  |  | 11x faster |
 | `cubic_spline/n100/sorted` | 1.58 µs | 95.7 µs | 1.53 µs | 1.88 µs | **1x slower** |
 | `cubic_spline/n100/shuffled` | 1.72 µs | 87.6 µs | 1.67 µs | 1.88 µs | **1x slower** |
 | `pchip/n100/sorted` | 968 ns | 110 µs | 584 ns |  | **1.7x slower** |
@@ -446,6 +466,12 @@ Data of `n` points, evaluated at `4 n` points: in order (`sorted`) and in no ord
 | `nearest/n1000/shuffled` | 997 ns | 16 µs | 1.28 µs |  | 1.3x faster |
 | `previous/n1000/sorted` | 1.05 µs | 16.4 µs |  |  | 16x faster |
 | `previous/n1000/shuffled` | 994 ns | 17.7 µs |  |  | 18x faster |
+| `bspline1/n1000/sorted` | 2.27 µs | 18.3 µs |  |  | 8.1x faster |
+| `bspline1/n1000/shuffled` | 2.19 µs | 18.6 µs |  |  | 8.5x faster |
+| `bspline2/n1000/sorted` | 35.7 µs | 108 µs |  |  | 3x faster |
+| `bspline2/n1000/shuffled` | 37.7 µs | 117 µs |  |  | 3.1x faster |
+| `bspline3/n1000/sorted` | 69.4 µs | 125 µs |  |  | 1.8x faster |
+| `bspline3/n1000/shuffled` | 75.6 µs | 129 µs |  |  | 1.7x faster |
 | `cubic_spline/n1000/sorted` | 42.2 µs | 122 µs | 18.8 µs | 17.4 µs | **2.4x slower** |
 | `cubic_spline/n1000/shuffled` | 43.1 µs | 112 µs | 17.2 µs | 16 µs | **2.7x slower** |
 | `pchip/n1000/sorted` | 11.8 µs | 124 µs | 4.55 µs |  | **2.6x slower** |
@@ -460,6 +486,12 @@ Data of `n` points, evaluated at `4 n` points: in order (`sorted`) and in no ord
 | `nearest/n10000/shuffled` | 70.2 µs | 56.6 µs | 63.8 µs |  | **1.2x slower** |
 | `previous/n10000/sorted` | 69.2 µs | 75.6 µs |  |  | 1.1x faster |
 | `previous/n10000/shuffled` | 68.2 µs | 76.7 µs |  |  | 1.1x faster |
+| `bspline1/n10000/sorted` | 81.3 µs | 24.3 µs |  |  | **3.4x slower** |
+| `bspline1/n10000/shuffled` | 77.5 µs | 23.4 µs |  |  | **3.3x slower** |
+| `bspline2/n10000/sorted` | 525 µs | 807 µs |  |  | 1.5x faster |
+| `bspline2/n10000/shuffled` | 538 µs | 746 µs |  |  | 1.4x faster |
+| `bspline3/n10000/sorted` | 648 µs | 984 µs |  |  | 1.5x faster |
+| `bspline3/n10000/shuffled` | 653 µs | 950 µs |  |  | 1.5x faster |
 | `cubic_spline/n10000/sorted` | 258 µs | 745 µs | 295 µs | 400 µs | 1.1x faster |
 | `cubic_spline/n10000/shuffled` | 259 µs | 800 µs | 294 µs | 394 µs | 1.1x faster |
 | `pchip/n10000/sorted` | 91.7 µs | 258 µs | 178 µs |  | 1.9x faster |
@@ -480,36 +512,6 @@ Data of `n` points, evaluated at `4 n` points: in order (`sorted`) and in no ord
 | `cubic_spline/n10000/shuffled-uneven` | 259 µs | 799 µs | 318 µs | 399 µs | 1.2x faster |
 | `pchip/n10000/sorted-uneven` | 93.5 µs | 259 µs | 180 µs |  | 1.9x faster |
 | `pchip/n10000/shuffled-uneven` | 99.6 µs | 257 µs | 178 µs |  | 1.8x faster |
-| `bspline1/n10/sorted` | 112 ns | 15.7 µs |  |  | 1.4e+02x faster |
-| `bspline1/n10/shuffled` | 113 ns | 17.1 µs |  |  | 1.5e+02x faster |
-| `bspline2/n10/sorted` | 508 ns | 38.1 µs |  |  | 75x faster |
-| `bspline2/n10/shuffled` | 475 ns | 37.7 µs |  |  | 79x faster |
-| `bspline3/n10/sorted` | 567 ns | 36.7 µs |  |  | 65x faster |
-| `bspline3/n10/shuffled` | 513 ns | 35.7 µs |  |  | 70x faster |
-| `bspline1/n50/sorted` | 145 ns | 17.1 µs |  |  | 1.2e+02x faster |
-| `bspline1/n50/shuffled` | 158 ns | 17 µs |  |  | 1.1e+02x faster |
-| `bspline2/n50/sorted` | 1.99 µs | 42.3 µs |  |  | 21x faster |
-| `bspline2/n50/shuffled` | 1.99 µs | 41.7 µs |  |  | 21x faster |
-| `bspline3/n50/sorted` | 2.02 µs | 42.6 µs |  |  | 21x faster |
-| `bspline3/n50/shuffled` | 2.12 µs | 41.8 µs |  |  | 20x faster |
-| `bspline1/n100/sorted` | 215 ns | 15.8 µs |  |  | 74x faster |
-| `bspline1/n100/shuffled` | 215 ns | 17.2 µs |  |  | 80x faster |
-| `bspline2/n100/sorted` | 3.81 µs | 47.5 µs |  |  | 12x faster |
-| `bspline2/n100/shuffled` | 3.81 µs | 42.9 µs |  |  | 11x faster |
-| `bspline3/n100/sorted` | 3.9 µs | 43.4 µs |  |  | 11x faster |
-| `bspline3/n100/shuffled` | 4.26 µs | 48.2 µs |  |  | 11x faster |
-| `bspline1/n1000/sorted` | 1.13 µs | 17.3 µs |  |  | 15x faster |
-| `bspline1/n1000/shuffled` | 1.14 µs | 18.7 µs |  |  | 16x faster |
-| `bspline2/n1000/sorted` | 37.1 µs | 120 µs |  |  | 3.2x faster |
-| `bspline2/n1000/shuffled` | 37.6 µs | 110 µs |  |  | 2.9x faster |
-| `bspline3/n1000/sorted` | 73.6 µs | 131 µs |  |  | 1.8x faster |
-| `bspline3/n1000/shuffled` | 73.2 µs | 130 µs |  |  | 1.8x faster |
-| `bspline1/n10000/sorted` | 70.2 µs | 24.9 µs |  |  | **2.8x slower** |
-| `bspline1/n10000/shuffled` | 68.9 µs | 23.7 µs |  |  | **2.9x slower** |
-| `bspline2/n10000/sorted` | 535 µs | 825 µs |  |  | 1.5x faster |
-| `bspline2/n10000/shuffled` | 545 µs | 804 µs |  |  | 1.5x faster |
-| `bspline3/n10000/sorted` | 657 µs | 1.01 ms |  |  | 1.5x faster |
-| `bspline3/n10000/shuffled` | 662 µs | 954 µs |  |  | 1.4x faster |
 
 ## `PPoly`
 
@@ -541,19 +543,19 @@ A cubic B-spline of 55 intervals, evaluated at points in no order.
 
 | case | interpx | SciPy | interpx against the fastest other |
 | :--- | ---: | ---: | ---: |
-| `intervals55/eval10` | 145 ns | 2.97 µs | 20x faster |
-| `intervals55/eval100` | 1.56 µs | 5.82 µs | 3.7x faster |
-| `intervals55/eval1000` | 14.2 µs | 41.5 µs | 2.9x faster |
-| `intervals55/eval10000` | 156 µs | 366 µs | 2.3x faster |
+| `intervals55/eval10` | 196 ns | 2.99 µs | 15x faster |
+| `intervals55/eval100` | 1.9 µs | 5.96 µs | 3.1x faster |
+| `intervals55/eval1000` | 18.9 µs | 38.6 µs | 2x faster |
+| `intervals55/eval10000` | 191 µs | 393 µs | 2.1x faster |
 
 ### Construction
 
 | case | interpx | SciPy | interpx against the fastest other |
 | :--- | ---: | ---: | ---: |
-| `intervals55/eval10` | 173 ns | 10.1 µs | 58x faster |
-| `intervals55/eval100` | 163 ns | 10.2 µs | 63x faster |
-| `intervals55/eval1000` | 173 ns | 9.27 µs | 54x faster |
-| `intervals55/eval10000` | 174 ns | 9.47 µs | 55x faster |
+| `intervals55/eval10` | 135 ns | 10.6 µs | 78x faster |
+| `intervals55/eval100` | 131 ns | 9.66 µs | 74x faster |
+| `intervals55/eval1000` | 138 ns | 9.81 µs | 71x faster |
+| `intervals55/eval10000` | 133 ns | 10 µs | 75x faster |
 
 ## `BSplineCurve`
 
@@ -563,15 +565,15 @@ A cubic curve through `n` points of the plane, evaluated at `4 n` parameters in 
 
 | case | interpx | SciPy | interpx against the fastest other |
 | :--- | ---: | ---: | ---: |
-| `degree3/n100` | 4.19 µs | 15.9 µs | 3.8x faster |
-| `degree3/n10000` | 490 µs | 1.35 ms | 2.8x faster |
+| `degree3/n100` | 5.78 µs | 17.3 µs | 3x faster |
+| `degree3/n10000` | 622 µs | 1.45 ms | 2.3x faster |
 
 ### Construction
 
 | case | interpx | SciPy | interpx against the fastest other |
 | :--- | ---: | ---: | ---: |
-| `degree3/n100` | 4.65 µs | 46.5 µs | 10x faster |
-| `degree3/n10000` | 575 µs | 1.42 ms | 2.5x faster |
+| `degree3/n100` | 4.39 µs | 48.5 µs | 11x faster |
+| `degree3/n10000` | 581 µs | 1.21 ms | 2.1x faster |
 
 ## Regular grid
 

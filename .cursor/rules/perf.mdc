@@ -10,7 +10,7 @@ The hot path is evaluation: `eval`, `eval_or`, `eval_batch_into`, and the `_par`
 ## Allocation
 
 - The evaluation APIs do not allocate. No `Vec::new`, `vec![]`, `clone`, `to_owned`, `collect`, `Box`, or `String` inside them or their callees. A buffer is passed in by the caller or sized at construction.
-- `eval_batch` returns a `Vec` and so allocates by definition. `_par` forms add no allocation of their own (`rayon` internals are out of count).
+- `eval_batch` returns a `Vec` and so allocates by definition. `eval_batch_into_par` adds no allocation of its own (`rayon` internals are out of count). `eval_batch_par` allocates the result and one `Vec` for each chunk, which is what the serial `eval_batch` it calls returns (`docs/design.ja.md` §3.2).
 - `tests/alloc.rs` asserts zero allocations for these APIs on every interpolator. Adding an exception needs an Issue and a design entry.
   - One exception stands (#105, `docs/design.ja.md` §3.2 and §6.3): the `neighbors` mode of `RBFInterpolator` solves a small system at every evaluation, in a working space each thread keeps. The space is allocated at the first evaluation on a thread, and widened when an interpolator with more neighbors is first evaluated there. No evaluation after that allocates, and `tests/alloc.rs` asserts that. A working space is not a way around the rule for a type that can size its buffers at construction.
 - A function that allocates is named `to_*` or returns an owned value.
@@ -44,8 +44,8 @@ A loop whose every step needs the result of the step before it (a running sum, a
 
 - Explicit SIMD is not in v0.1.0 unless a measurement shows a bottleneck. If added, it uses a safe crate (`wide` or similar), and its result is bit for bit the scalar path's result. FMA is used only when the error bound includes it.
 - A type has two batch methods, `eval_batch` and `eval_batch_into`. When one is overridden for speed, read where the other goes, and send both through one path. In #116 only `eval_batch_into` was overridden, and the PR body said both took the same path without that having been read.
-- `rayon` appears only in the outermost `eval_batch_*_par`. No nested `par_iter` inside a parallel region. Use a minimum chunk size so small batches stay serial.
-- `eval_batch_par` and `eval_batch_into_par` return results bit for bit equal to the serial forms: each point is independent and the reduction order is fixed. A test compares them.
+- `rayon` appears only in the outermost `eval_batch_*_par`. No nested `par_iter` inside a parallel region. Whether a batch is shared out, and in chunks of what length, is decided from the time its first points take, not from a fixed number of points: no fixed chunk fits an evaluation of 5 ns and one of 5 µs (`docs/design.ja.md` §3.2 has the measurements).
+- `eval_batch_par` and `eval_batch_into_par` return results bit for bit equal to the serial forms: each chunk is a call of the serial batch, whose results are those of `eval` whatever the chunk. A test compares them, with one thread and with several.
 
 ## Claims
 
