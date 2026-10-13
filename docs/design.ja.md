@@ -31,7 +31,6 @@ Rust の科学計算エコシステムにおける最大の課題は「断片化
 | **空間近傍探索**     | **`kiddo`**      | k-d tree（const generic 次元）。`NearestND`・Jump・RBF 局所近傍。`scattered` のみ。                            |
 | **スカラー抽象化**   | **`num-traits`** | 1D / curve / grid の `Float` ジェネリクス（f32 / f64）。                                                       |
 | **並列処理 (opt)**   | **`rayon`**      | 並列バッチ評価。                                                                                               |
-| **配列連携 (opt)**   | **`ndarray`**    | データ受け渡し。                                                                                               |
 | **直列化 (opt)**     | **`serde`**      | 補間器の保存・復元（§6.5）。                                                                                   |
 | **エラー定義**       | **`thiserror`**  | エラー型。                                                                                                     |
 
@@ -149,6 +148,7 @@ pub enum EndCondition<V> { NotAKnot, FirstDerivative(V), SecondDerivative(V) }
 * すべての補間器は **owned** で、ライフタイム引数を持たない。`T: 'static` の制約は課さない。
 * コンストラクタは `::new(&[...])`（借用から構築）を提供する。渡されたデータをそのまま持つ型は、`::from_owned(...)`（ゼロコピー移動）も提供する: `PPoly`、`BSpline`、`RegularGridInterpolator`、`NearestNDInterpolator`、`RBFInterpolator`（後の 2 つは P-6、#128 で足した）。移すのは、型がそのまま持つ配列だけである: `NearestNDInterpolator::from_owned(points: &[..], values: Vec<V>)` は値を移し、点は借りる（点は木に入り、渡された配列は持たない）。`RBFInterpolator::from_owned(points: Vec<..>, values: Vec<V>, kernel, &options)` は点を移し、近傍モードでは値も移す（全域では、値は解く系に入って残らない）。この 2 型では、構築の時間は変わらない（木の組み立てと求解が占める。$10^5$ 点の `NearestNDInterpolator` で 9.2 ms と 8.5 ms）。得るものは、大きい配列を 2 つ持たずに済むことである。1 次元の各型と曲線は、データから係数を作り、座標のほかは持たないので、`from_owned` を持たない（省けるのは座標の複製 1 回だけである）。
   * **構築が複製し、検査すること**（P-1、#122。オーナーの決定）: 他のライブラリとの比較（§8.3）で、構築がいちばん負けていた。相手（`interpn`、`ndarray-interp`、SciPy）はデータを借りるだけで、検査もしないからである。次のとおり決めた。
+    * **検査をしない入口は足さない**（#146。通しの測定のあとで確かめた決定）: グリッドの構築は、`from_owned` で複製をなくしても、87 ケース中 36 で SciPy より、43 中 43 で `interpn` より遅い（200 MB の格子で、`new` 56 ms、`from_owned` 18 ms、SciPy 0.009 ms）。残っているのは値の検査である。検査を外す入口（`from_owned_unchecked` のようなもの）を足せば同じ桁になるが、NaN の入ったデータで評価が黙って NaN を返す入口ができる。構築が効くのは大きい格子を短い間隔で作り直す使い方に限られるので、約束のほうを取る。比較の表では、この差は「検査の分」として残る。
     * **借りる形は足さない。** 補間器はデータを所有し、ライフタイムを持たない（`Send + Sync + 'static` で持ち回れる）。複製を避けたい呼び出し側は `from_owned` を使う。ライフタイムつきの型や `Arc` の入口は足さない（型が 2 系統になる、入口が 3 つになる）。
     * **値の有限性の検査は残す。** NaN と無限大を構築時に `NonFinite { index }` で返すのは、この crate の約束である（SciPy は検査せず、評価で NaN が出る）。
     * **API を変えずに詰める。** 検査は 64 個ずつまとめて見る（途中で抜けないループにすると、コンパイラが複数個を同時に見る）。有限性の検査は、どの型でも同じ関数（`validate::first_failing`）を通す: 1 次元の型とグリッド（P-1）、散布点の点と値、`BSpline` の結び目と制御点、曲線の点、グリッドの傾きと係数（P-6 のレビューで揃えた）。残っているのは `BSpline` の結び目の順の検査だけで、これは隣り合う 2 つを比べる形なので別である。`Linear1D` の傾き、`Akima1D` の傾き、降順の最後の軸の並べ替えも、同じ考えで直した。
@@ -934,9 +934,9 @@ scattered = ["dep:convx", "dep:kiddo", "dep:faer"]   # 外せば散乱系と重�
 
 # opt-in
 rayon   = ["dep:rayon"]
-ndarray = ["dep:ndarray"]
 serde   = ["dep:serde"]
 ```
+* **`ndarray` の feature は v0.1.0 に入れない**（#146。オーナーの決定）。API はスライスを受け取るので、`ndarray` の配列は `as_slice()` でそのまま渡せる（グリッドの値の並びは `ndarray` の標準レイアウトと同じ。結果は `eval_batch_into` で利用者の配列に書ける）。専用の入口が足すのは `ArrayView` を直接受け取る利便性だけで、速度には効かない。ビューを複製せずに受けるには補間器がデータを借りる形が要り、それは持ち方の決定（§3）を変える話なので、要るという利用が出てから決める（ロードマップの A-12）。
 * `std` feature は設けない（常に `std`）。`convx` / `faer` / `kiddo` を個別の公開 feature としては出さない。
 * `scattered` の中身は、依存を使う行が足していく（上は v0.1.0 の形）。M3-1 では `scattered = ["dep:kiddo"]` で、`faer` は M3-3（`["dep:kiddo", "dep:faer"]`）、`convx` は M4 が足す。
 * `kiddo` は `default-features = false`（既定の `fixed`（固定小数点の座標）と `multi-threaded`（`rayon`）を外す。並列は M5-1 で `interpx` の `rayon` feature から入れる）。推移的な依存は、この形で 29 クレートである（M3-1 の設計時）。
@@ -964,7 +964,7 @@ serde   = ["dep:serde"]
 ### 8.3 ベンチマーク
 * ルート crate は単一 crate（workspace なし）。比較用の資材はルート直下の `compare/`（`pyproject.toml`、`uv.lock`、`generate_*.py`、`goldens/`、`perf/`）に置く。`compare/perf/` の Rust ランナーは、他クレートに依存する独立した Cargo パッケージ（自前の `[workspace]`）とし、`interpx` 本体の依存に比較対象を混ぜない。
 * 比較実行は手動で、CI のゲートではない（生の結果は `compare/perf/out/`、gitignore 対象）。まとめは `docs/performance.md` で、`compare/perf/report.py` が書く（手では直さない）。`criterion` ベンチは `benches/` に置く。
-* **比較の位置づけ**（M5-5、#120）: 既存のライブラリより遅いライブラリには存在する理由がない。比較は、型の上に載る機能（`rayon`・`ndarray`・`serde`）より先に行い、同じものを計算する相手に負けている箇所は、それらの機能より前に直す（直せないものは、数字と理由をここに書く）。型が増えたら（M4）、その行で同じ仕組みに足す。
+* **比較の位置づけ**（M5-5、#120）: 既存のライブラリより遅いライブラリには存在する理由がない。比較は、型の上に載る機能（`rayon`・`serde`）より先に行い、同じものを計算する相手に負けている箇所は、それらの機能より前に直す（直せないものは、数字と理由をここに書く）。型が増えたら（M4）、その行で同じ仕組みに足す。
 * **進め方**: ケースごと・ライブラリごとに 1 プロセスで、1 コアに固定し、1 スレッドで動かす。全ライブラリが同じデータのファイルを読む。ライブラリはケースごとに交代し、全体を 3 巡する。各プロセスは同じ段を踏む（データを読む → 1 度構築する → 1 度評価して値を書き出す → 構築と評価をそれぞれ繰り返して測る）。
 * **所要時間**: 決めるのは測る仕事ではなく、プロセスの数（ケース × ライブラリ × 巡）、繰り返し計測に与える時間（1 つ 50 ms）、Python と SciPy の起動（1 プロセス 0.7 秒）である。最初は 250 ms を与え、全ケースの全段のあとで 60 ms 待ち、対応しない組も起動していて、全ケースで 2 時間かかった（P-1 で直した）。
 * **速度**: 1 回の呼び出しの時間（構築と、ケースの全問い合わせの評価を別々に）。interpx は逐次の `eval_batch_into`、相手は配列を渡す呼び出し。200 µs より短い呼び出しは、1 つの標本の中で繰り返して割る（時計の刻みが 100 ns のため）。プロセス内の標本の中央値を取り、その 3 巡の中央値を報告する。
@@ -1142,7 +1142,7 @@ serde   = ["dep:serde"]
   - [ ] `LinearNDInterpolator`（Delaunay + Jump-and-Walk、§6.2）
   - [ ] `CloughTocher2DInterpolator`（勾配推定 + Bernstein-Bézier）
 - [ ] **M5: 統合と品質**
-  - [ ] `rayon` 並列バッチ評価、`ndarray` 相互運用、`serde`
+  - [ ] `rayon` 並列バッチ評価、`serde`（`ndarray` の相互運用は v0.1.0 のあと。§7）
   - [ ] SciPy 1.18 golden テストスイート、`proptest`
   - [ ] 比較ベンチ（SciPy・既存 Rust クレート、速度・メモリ）
   - [ ] docs（推奨次元、RBF メモリ、重複点の扱い 等）、CI

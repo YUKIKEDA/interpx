@@ -17,7 +17,7 @@ Correctness comes first. A performance claim comes with a measurement in the sam
 
 ## Rules
 
-- The comparison comes before the features that are put on top of the types (`rayon`, `ndarray`, `serde`). Where interpx is slower than a library that computes the same thing, that is a row with an Issue, worked before those features, the largest ratio first; or it is written in the design with the numbers and the reason it stays.
+- The comparison comes before the features that are put on top of the types (`rayon`, `serde`). Where interpx is slower than a library that computes the same thing, that is a row with an Issue, worked before those features, the largest ratio first; or it is written in the design with the numbers and the reason it stays.
 - No speed target before the comparison is measured. The other crates are chosen when the row starts: maintained, pure Rust. A category with no comparable crate says so in the table.
 - Profile before a speed row, and write on the Issue where the time goes. Order rows by the profile, not by roadmap number. Skill: `.agents/skills/cpu-profile/SKILL.md`.
 - Compare both sides with the same profile and flags, the same data, the same queries, pinned to one core when timing a serial path, and interleaved. Stop leftover processes from earlier runs. A difference inside the spread is not a result; "spread" means the statistics of repeated runs.
