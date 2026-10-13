@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-The rows of P (below) that are not done, in this order: P-4 and P-6 first (what SciPy builds and interpx cannot; a constructor the design names and the code lacks), then the speed rows by the size of the loss: P-3, P-7, P-8, P-5, P-10 and P-11 (what P-9 and P-3 left open: no result depends on them). They come before M5-1 to M5-3, which are put on top of the types these rows may change (`.cursor/rules/pace.mdc`, `.cursor/rules/bench.mdc`). M4 waits for `convx` (see Dependencies).
+The rows of P (below) that are not done, in this order: P-4 and P-6 first (what SciPy builds and interpx cannot; a constructor the design names and the code lacks), then the speed rows by the size of the loss: P-3, P-7, P-8, P-5, P-10 and P-11 (what P-9 and P-3 left open: no result depends on them). They come before M5-1 and M5-3, which are put on top of the types these rows may change (`.cursor/rules/pace.mdc`, `.cursor/rules/bench.mdc`). M4 waits for `convx` (see Dependencies).
 
 ## Dependencies
 
@@ -87,7 +87,6 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | ID    | Kind | Title                                                                       | Issue | Status |
 | ----- | ---- | --------------------------------------------------------------------------- | ----- | ------ |
 | M5-1  | Feat | `rayon` features: `eval_batch_par`, `eval_batch_into_par`                   |       | Todo   |
-| M5-2  | Feat | `ndarray` interoperability                                                  |       | Todo   |
 | M5-3  | Feat | `serde` for all interpolators (topology stored, format version, validation) |       | Todo   |
 | M5-4  | Test | Property tests (`proptest`) and the SciPy 1.18 golden suite for every type  |       | Todo   |
 | M5-5  | Task | `compare/perf`: SciPy and other pure-Rust crates, time and memory           | #120  | Done   |
@@ -114,6 +113,7 @@ Named so that no deferral is anonymous. Each becomes a roadmap row with an Issue
 | A-9  | Feat | `BSpline::from_ppoly`: lower the knot multiplicity where the pieces join smoothly                       |       | Todo   |
 | A-10 | Feat | `BSpline1D`: several derivatives at an end (`bc_type` as lists of pairs), and knots given by the caller |       | Todo   |
 | A-11 | Feat | `RBFInterpolator`: a smoothing value for each point                                                     |       | Todo   |
+| A-12 | Feat | `ndarray` interoperability: constructors and batches that take `ArrayView` (was M5-2; needs data that is borrowed) |       | Todo   |
 
 ## Intentionally out of scope
 

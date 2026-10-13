@@ -11,7 +11,7 @@ README and comparison pages are read by someone who has only the crate. They nev
 ## README order
 
 1. What the crate does, in one or two sentences, with the SciPy baseline.
-2. The `Cargo.toml` dependency block for the published version, and the features (`scattered` is default; `rayon`, `ndarray`, `serde` are opt-in).
+2. The `Cargo.toml` dependency block for the published version, and the features (`scattered` is default; `rayon` and `serde` are opt-in).
 3. A copy-and-paste example that uses `?`, not `unwrap`.
 4. What a caller must know: owned types and `Send + Sync`; `f64` only for scattered; C-order grid `values`; `NaN` handling; RBF memory is O(N²); 0.x minor releases may break the API; out-of-scope list.
 5. One link to the comparison page.
