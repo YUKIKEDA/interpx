@@ -32,6 +32,19 @@ How long a run takes is set by three things, not by the work measured: the numbe
 
 A run that was stopped goes on where it stopped (`out/results.jsonl` says what is done). Delete `compare/perf/out/` to start over. Nothing else that takes a core runs meanwhile: no build, no test, no second comparison.
 
+## Real-world data
+
+```text
+just compare-fetch                      # fetch into compare/perf/out/real/, and check
+just compare-perf --filter "auckland|ghcn"
+```
+
+`compare/perf/real.py` has the two data sets, what is taken of each, and how each is divided into data and points held out; `docs/design.ja.md` section 8.4.7 has why. The rules were fixed before anything was measured and are not changed after a result. The cases are in the table once the data is fetched, with the families of the other cases (`grid/.../auckland-ba32-0401/...`, `nearest_nd/ghcn-.../...`, `rbf/.../ghcn-.../...`), so every runner takes them as it is; the driver also holds every library's values against the values held out (`error` in `results.jsonl`).
+
+- The elevation tile does not change, and its checksum is the one its source publishes. The weather files are written again every day: the script records the version and the checksums of what it fetched (`out/real/weather.json`) and stops when a later fetch differs. To take the newer files on purpose, delete `out/real/` and say in the PR that the data changed.
+- A call of two seconds or more is timed once. A run stopped by the time limit (15 minutes for one library on one case) is recorded as stopped and not started again in a later round.
+- The data is not cut down to make a run shorter or a method fit. A method that cannot take all of it is reported as that.
+
 ## Method
 
 1. One process for one case and one library, pinned to one core, with the thread counts of BLAS and `rayon` set to one. The one exception is `interpx_par`, interpx with its parallel batch: every core and `PAR_THREADS` threads (`run.py`), named in the report. It is a column to read, not one the comparison counts. The libraries take turns case by case, and the list is gone through three times.

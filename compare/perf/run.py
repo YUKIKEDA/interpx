@@ -41,6 +41,8 @@ CORE = min(4, (os.cpu_count() or 1) - 1)
 SAMPLE_EVERY = 0.001
 # One library on one case: longer than this is a fault, not a result.
 TIME_LIMIT = 900.0
+# How a run that the time limit stopped is recorded (`failed`).
+STOPPED = "stopped at the time limit"
 
 RUST_RUNNERS = ("interpx", "scirs2", "ndarray_interp", "interpn")
 # interpx again, built with `from_owned` (the data handed over, not copied).
@@ -119,7 +121,13 @@ def run_one(library: str, directory: Path, pause: bool) -> dict:
     sampler = threading.Thread(target=sample, daemon=True)
     sampler.start()
     marks, result = {}, {}
-    killer = threading.Timer(TIME_LIMIT, process.kill)
+    stopped = threading.Event()
+
+    def stop() -> None:
+        stopped.set()
+        process.kill()
+
+    killer = threading.Timer(TIME_LIMIT, stop)
     killer.start()
     try:
         for line in process.stdout:
@@ -131,6 +139,8 @@ def run_one(library: str, directory: Path, pause: bool) -> dict:
                 result = message
             elif message["mark"] == "unsupported":
                 result = {"unsupported": message["why"]}
+            elif message["mark"] == "failed":
+                result = {"failed": message["why"]}
             else:
                 marks[message["mark"]] = message["t_ns"] - start_ns
         code = process.wait()
@@ -138,6 +148,10 @@ def run_one(library: str, directory: Path, pause: bool) -> dict:
         killer.cancel()
         done.set()
         sampler.join()
+    if stopped.is_set():
+        return {"failed": f"{STOPPED} of {TIME_LIMIT / 60:.0f} minutes"}
+    if "failed" in result:
+        return result
     if code != 0 or not result:
         return {"failed": f"exit code {code}"}
     if "unsupported" in result:
@@ -184,6 +198,26 @@ def agreement(directory: Path, library: str) -> float | None:
     return float(np.nanmax(np.abs(a - b)) / scale) if a.size else 0.0
 
 
+def held_out(directory: Path, library: str) -> dict | None:
+    """For a case on real data: how far the library's values are from the
+    values that were held out, and how many queries it gave no value."""
+    ours, truth = directory / f"values.{library}.f64", directory / "truth.f64"
+    if not ours.exists() or not truth.exists():
+        return None
+    got, want = np.fromfile(ours), np.fromfile(truth)
+    if got.shape != want.shape:
+        return {"shape": list(got.shape)}
+    has = np.isfinite(got)
+    off = got[has] - want[has]
+    if not off.size:
+        return {"without_a_value": int(got.size)}
+    return {
+        "max": float(np.abs(off).max()),
+        "rms": float(np.sqrt(np.mean(off * off))),
+        "without_a_value": int((~has).sum()),
+    }
+
+
 def environment() -> dict:
     def version(*args: str) -> str:
         try:
@@ -220,6 +254,8 @@ def main() -> None:
     args = parser.parse_args()
 
     chosen = [case for case in case_table.all_cases() if re.search(args.filter, case["name"])]
+    if not case_table.real.available():
+        print("The real-world data is not fetched (`just compare-fetch`): its cases are left out.", flush=True)
     if args.list:
         print("\n".join(case["name"] for case in chosen))
         print(f"{len(chosen)} cases")
@@ -238,6 +274,10 @@ def main() -> None:
         for line in (OUT / "results.jsonl").read_text(encoding="utf-8").splitlines():
             row = json.loads(line)
             have.add((row["case"], row["library"], row["round"]))
+            if str(row.get("failed", "")).startswith(STOPPED):
+                # Not started again in a later round: it would be stopped
+                # again, a quarter of an hour later.
+                have |= {(row["case"], row["library"], later) for later in range(args.rounds)}
 
     with (OUT / "results.jsonl").open("a", encoding="utf-8") as results:
         for round_ in range(args.rounds):
@@ -258,6 +298,10 @@ def main() -> None:
                             "marks_ns": run["marks_ns"],
                             "apart": agreement(directory, library),
                         }
+                        if "real" in case:
+                            row["error"] = held_out(directory, library)
+                            # What the case table could not say before the data was read.
+                            row |= {key: json.loads((directory / "case.json").read_text(encoding="utf-8"))[key] for key in ("n", "n_eval")}
                         series = OUT / "series" / f"{case['name'].replace('/', '__')}.{library}.{round_}.csv"
                         series.write_text("".join(f"{at},{rss}\n" for at, rss in run["samples"]), encoding="utf-8")
                         shown = f"build {row['build']['median']:.3e} s  eval {row['eval']['median']:.3e} s"
@@ -266,6 +310,8 @@ def main() -> None:
                         shown = str(run)
                     results.write(json.dumps(row) + "\n")
                     results.flush()
+                    if str(row.get("failed", "")).startswith(STOPPED):
+                        have |= {(case["name"], library, later) for later in range(args.rounds)}
                     print(f"[{round_ + 1}/{args.rounds} {number}/{len(chosen)}] {case['name']:58} {library:10} {shown}", flush=True)
 
 

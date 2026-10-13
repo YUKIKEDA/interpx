@@ -8,8 +8,15 @@ and a few larger ones.
 
 An array is a file of 64-bit floats in the byte order of the machine
 (`NAME.f64`), rows in C order.
+
+The cases on real-world data (`real.py`, design section 8.4.7) are in the
+table when the data has been fetched. They have the families and the arrays
+of the other cases, so every runner takes them as it takes those, and one
+array more: `truth`, the values at the queries, which are points of the data
+that were held out.
 """
 
+import functools
 import json
 import sys
 from pathlib import Path
@@ -20,6 +27,8 @@ from scipy.interpolate import CubicSpline, make_interp_spline
 # `common` is next to this directory (`compare/common`).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from common.bench_cases import RUST_ONLY, SCIPY  # noqa: E402
+
+import real  # noqa: E402  (next to this file)
 
 SEED = 20261013
 
@@ -179,6 +188,60 @@ def rbf(n: int, kernel: str, neighbors: int | None, queries: str) -> dict:
     }
 
 
+# The grid methods run on the elevation tile: all of them.
+REAL_GRID_METHODS = ("nearest", "linear", "cubic", "quintic", "pchip")
+# The kernels run on the stations: those without a shape parameter. A
+# parameter would be ours to choose, and the result would follow the choice.
+REAL_KERNELS = ("linear", "thin_plate_spline", "cubic", "quintic")
+REAL_NEIGHBORS = (None, 50)
+
+
+@functools.cache
+def elevation_arrays() -> dict:
+    return real.elevation_split()
+
+
+@functools.cache
+def weather_arrays() -> dict:
+    return real.weather_split()
+
+
+def real_cases() -> list[dict]:
+    """The cases on real-world data. Their arrays are read when a case is
+    written, not when the table is made: the tile is a quarter of a gigabyte
+    of queries."""
+    tile, day = real.ELEVATION["name"], real.WEATHER["name"]
+    # The sizes, without reading the data: they are those of the sources.
+    rows, columns = len(real.kept(7200)), len(real.kept(4800))
+    cases = []
+    for method in REAL_GRID_METHODS:
+        cases.append({
+            "name": f"grid/{method}/2d/{tile}/heldout/ascending",
+            "family": "grid",
+            "method": method,
+            "dim": 2,
+            "shape": [rows, columns],
+            "n": rows * columns,
+            "n_eval": 7200 * 4800 - rows * columns,
+            "real": tile,
+            "arrays": elevation_arrays,
+        })
+    cases.append({"name": f"nearest_nd/{day}/heldout", "family": "nearest_nd", "real": day, "arrays": weather_arrays})
+    for kernel in REAL_KERNELS:
+        for neighbors in REAL_NEIGHBORS:
+            mode = "global" if neighbors is None else f"k{neighbors}"
+            cases.append({
+                "name": f"rbf/{kernel}/{mode}/{day}/heldout",
+                "family": "rbf",
+                "kernel": kernel,
+                "epsilon": 1.0,
+                "neighbors": neighbors,
+                "real": day,
+                "arrays": weather_arrays,
+            })
+    return cases
+
+
 def all_cases() -> list[dict]:
     cases = []
     for n in SCIPY["interp1d"]["n_samples"]:
@@ -228,6 +291,8 @@ def all_cases() -> list[dict]:
     for n in RUST_ONLY["rbf_neighbors"]["n_samples"]:
         for queries in ("scattered", "image"):
             cases.append(rbf(n, "thin_plate_spline", RUST_ONLY["rbf_neighbors"]["neighbors"], queries))
+    if real.available():
+        cases += real_cases()
     names = [case["name"] for case in cases]
     assert len(names) == len(set(names)), "case names are unique"
     return cases
@@ -237,9 +302,13 @@ def write(case: dict, root: Path) -> Path:
     """Writes the case under `root`, and returns its directory."""
     directory = root / case["name"]
     directory.mkdir(parents=True, exist_ok=True)
-    for name, array in case["arrays"].items():
+    # The arrays of a case on real data are read here, when they are needed.
+    arrays = case["arrays"]() if callable(case["arrays"]) else case["arrays"]
+    for name, array in arrays.items():
         np.ascontiguousarray(array, dtype=np.float64).tofile(directory / f"{name}.f64")
     spec = {key: value for key, value in case.items() if key != "arrays"}
-    spec["shapes"] = {name: list(np.shape(array)) for name, array in case["arrays"].items()}
+    spec["shapes"] = {name: list(np.shape(array)) for name, array in arrays.items()}
+    if "points" in arrays:
+        spec |= {"n": len(arrays["points"]), "n_eval": len(arrays["q"])}
     (directory / "case.json").write_text(json.dumps(spec, indent=1), encoding="utf-8")
     return directory
