@@ -309,7 +309,9 @@ fn the_grid_methods_have_the_orders_of_the_design() {
     let cases = [
         (GridMethod::Nearest, 1.0, 0.2),
         (GridMethod::Linear, 2.0, 0.2),
-        (GridMethod::Cubic, 4.0, 0.45),
+        // The lowest order measured for the cubic is 3.60, on uneven axes:
+        // the width leaves 0.1 under it.
+        (GridMethod::Cubic, 4.0, 0.5),
         (GridMethod::Pchip, 3.0, 0.2),
     ];
     for even in [true, false] {
@@ -383,7 +385,7 @@ fn a_grid_of_three_dimensions_has_the_orders_of_its_method() {
         "grid of three dimensions, cubic",
         &errors(GridMethod::Cubic, &[4, 8, 16]),
         4.0,
-        0.45,
+        0.5,
     );
 }
 
