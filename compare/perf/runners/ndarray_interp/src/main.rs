@@ -14,15 +14,27 @@ const LIBRARY: &str = "ndarray_interp";
 
 fn oned(case: &Case) {
     let (x, y, q) = (case.array("x"), case.array("y"), case.array("q"));
-    let (x, y, q) = (ArrayView1::from(&x), ArrayView1::from(&y), ArrayView1::from(&q));
+    let (x, y, q) = (
+        ArrayView1::from(&x),
+        ArrayView1::from(&y),
+        ArrayView1::from(&q),
+    );
     match case.text("method") {
         "linear" => run(
             case,
             LIBRARY,
             q.len(),
-            || Interp1DBuilder::new(y).x(x).strategy(Linear::new()).build().expect("valid"),
+            || {
+                Interp1DBuilder::new(y)
+                    .x(x)
+                    .strategy(Linear::new())
+                    .build()
+                    .expect("valid")
+            },
             |built, out| {
-                built.interp_array_into(&q, ArrayViewMut1::from(out)).expect("in range");
+                built
+                    .interp_array_into(&q, ArrayViewMut1::from(out))
+                    .expect("in range");
             },
         ),
         "cubic_spline" => run(
@@ -31,10 +43,16 @@ fn oned(case: &Case) {
             q.len(),
             || {
                 let strategy = CubicSpline::new().boundary(BoundaryCondition::NotAKnot);
-                Interp1DBuilder::new(y).x(x).strategy(strategy).build().expect("valid")
+                Interp1DBuilder::new(y)
+                    .x(x)
+                    .strategy(strategy)
+                    .build()
+                    .expect("valid")
             },
             |built, out| {
-                built.interp_array_into(&q, ArrayViewMut1::from(out)).expect("in range");
+                built
+                    .interp_array_into(&q, ArrayViewMut1::from(out))
+                    .expect("in range");
             },
         ),
         other => unsupported(&format!("no method {other}")),
@@ -45,7 +63,11 @@ fn grid(case: &Case) {
     if case.count("dim") != 2 || case.text("method") != "linear" {
         unsupported("bilinear on two axes only");
     }
-    let (ax, ay, values) = (case.array("axis0"), case.array("axis1"), case.array("values"));
+    let (ax, ay, values) = (
+        case.array("axis0"),
+        case.array("axis1"),
+        case.array("values"),
+    );
     if ax[1] < ax[0] {
         unsupported("axes must increase");
     }
@@ -53,15 +75,25 @@ fn grid(case: &Case) {
     let qx: Vec<f64> = rows.iter().map(|row| row[0]).collect();
     let qy: Vec<f64> = rows.iter().map(|row| row[1]).collect();
     let (qx, qy) = (ArrayView1::from(&qx), ArrayView1::from(&qy));
-    let data = ArrayView2::from_shape((ax.len(), ay.len()), &values).expect("the shape of the grid");
+    let data =
+        ArrayView2::from_shape((ax.len(), ay.len()), &values).expect("the shape of the grid");
     let (ax, ay) = (ArrayView1::from(&ax), ArrayView1::from(&ay));
     run(
         case,
         LIBRARY,
         rows.len(),
-        || Interp2DBuilder::new(data).x(ax).y(ay).strategy(Bilinear::new()).build().expect("valid"),
+        || {
+            Interp2DBuilder::new(data)
+                .x(ax)
+                .y(ay)
+                .strategy(Bilinear::new())
+                .build()
+                .expect("valid")
+        },
         |built, out| {
-            built.interp_array_into(&qx, &qy, ArrayViewMut1::from(out)).expect("in range");
+            built
+                .interp_array_into(&qx, &qy, ArrayViewMut1::from(out))
+                .expect("in range");
         },
     );
 }

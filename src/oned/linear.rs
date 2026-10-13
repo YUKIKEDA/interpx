@@ -93,7 +93,7 @@ impl<T: Scalar, V: Value<T>> Linear1D<T, V> {
         // at every slope is compiled one slope at a time.
         let mut coefficients = vec![V::zero(); 2 * (x.len() - 1)];
         let pairs = x.windows(2).zip(y.windows(2));
-        for (piece, (xs, ys)) in coefficients.chunks_exact_mut(2).zip(pairs) {
+        for (piece, (xs, ys)) in coefficients.as_chunks_mut::<2>().0.iter_mut().zip(pairs) {
             let rise = ys[1].axpy(-T::one(), ys[0]);
             piece[0] = V::zero().axpy((xs[1] - xs[0]).recip(), rise);
             piece[1] = ys[0];
