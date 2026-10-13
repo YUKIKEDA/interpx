@@ -349,6 +349,8 @@ impl<'a, const D: usize> Terms<'a, D> {
 /// (#126). For 0, 1, and 2 the result is exactly `1`, `x`, and `x * x`; from
 /// 3 on it can be a rounding away from what `powi` gives.
 fn power(x: f64, p: i32) -> f64 {
+    // A power below zero would come back as 1, not as a reciprocal.
+    debug_assert!(p >= 0, "the power of a monomial is not negative");
     let (mut result, mut square, mut left) = (1.0, x, p);
     while left > 0 {
         if left & 1 == 1 {
