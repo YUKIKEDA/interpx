@@ -76,8 +76,8 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | P-4 | Design | Grid: an axis with one point (SciPy builds it; eight cases of SciPy's suite do not run)  | #125  | Done   |
 | P-5 | Task   | RBF `quintic` at 10 points (1.12x against SciPy, one case)                               | #126  | Todo   |
 | P-6 | Feat   | `from_owned` for `NearestNDInterpolator` and `RBFInterpolator` (the types that keep data) | #128  | Done   |
-| P-7 | Task   | `BSpline1D` of degree 1 on 10 000 points: evaluation in order (1.14x), construction (3x) | #130  | Done   |
-| P-8 | Task   | `Linear1D` and `Nearest1D`: construction on 10 000 points (1.9x and 1.1x against SciPy)  | #131  | Todo   |
+| P-7 | Task   | `BSpline1D` of degree 1 on 10 000 points: evaluation in order (1.14x against SciPy)      | #130  | Done   |
+| P-8 | Task   | Construction on 10 000 points: `Linear1D` 1.9x, `Nearest1D` 1.1x, `BSpline1D` degree 1 2.9x | #131  | Todo   |
 | P-9 | Task   | Search: the time for points in no order moves twofold with where it is built in          | #132  | Done   |
 | P-10 | Task  | Search: the cause of P-9 in the disassembly, the five cases it made slower, a two-place check | #138  | Todo   |
 

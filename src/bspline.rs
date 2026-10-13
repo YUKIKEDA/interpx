@@ -33,7 +33,7 @@ const MAX_DEGREE: usize = BSPLINE_MAX_DEGREE;
 pub(crate) const MAX_ORDER: usize = MAX_DEGREE + 1;
 
 /// The orders the values of a spline are worked out in a small array for:
-/// degrees 1 to 3, which are nearly all the splines there are.
+/// degrees 0 to 3, which are nearly all the splines there are.
 const LOW_ORDER: usize = 4;
 
 /// A spline in the B-spline basis.
@@ -184,9 +184,7 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
             check(&knots, &control_points, degree).is_ok(),
             "the caller checked the parts"
         );
-        let (lo, hi) = (knots[degree], knots[control_points.len()]);
-        let first = knots.partition_point(|t| *t <= lo) - 1;
-        let last = knots.partition_point(|t| *t < hi) - 1;
+        let (first, last) = intervals(&knots, degree, control_points.len());
         Self::from_parts(knots, control_points, degree, first, last)
     }
 
@@ -841,11 +839,18 @@ fn check<T: Scalar, V: Value<T>>(
             second: n,
         });
     }
-    // The last knot equal to `lo` starts the first interval of positive width,
-    // and the last knot below `hi` starts the last one.
+    Ok(intervals(knots, degree, n))
+}
+
+/// The first and the last knot interval of positive width inside the domain
+/// of a spline of `n` control points, whose knots were checked ([`check`]).
+/// The last knot equal to the low end of the domain starts the first one, and
+/// the last knot below its high end starts the last one.
+fn intervals<T: Scalar>(knots: &[T], degree: usize, n: usize) -> (usize, usize) {
+    let (lo, hi) = (knots[degree], knots[n]);
     let first = knots.partition_point(|t| *t <= lo) - 1;
     let last = knots.partition_point(|t| *t < hi) - 1;
-    Ok((first, last))
+    (first, last)
 }
 
 /// The derivatives of order `derivative` (1 or more) at `x` of the `degree + 1`
