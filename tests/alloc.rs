@@ -281,6 +281,73 @@ fn scattered() -> Result<(), InterpolateError> {
     Ok(())
 }
 
+/// What is handed over is kept and not copied: a construction from owned data
+/// allocates once less for each array the interpolator keeps as it was given.
+#[cfg(feature = "scattered")]
+fn handed_over() -> Result<(), InterpolateError> {
+    use interpx::{NearestNDInterpolator, RBFInterpolator, RbfKernel, RbfOptions};
+
+    let points: Vec<[f64; 2]> = (0..300_u32)
+        .map(|n| [f64::from(n * 37 % 101), f64::from(n * 61 % 211)])
+        .collect();
+    let values: Vec<f64> = (0..300).map(f64::from).collect();
+
+    // NearestNDInterpolator keeps the values (the points go into its tree).
+    for rescale in [false, true] {
+        let copied = allocations(|| {
+            let built = if rescale {
+                NearestNDInterpolator::rescaled(&points, &values)
+            } else {
+                NearestNDInterpolator::new(&points, &values)
+            };
+            std::hint::black_box(built.is_ok());
+        });
+        let given = values.clone();
+        let from = given.as_ptr();
+        let mut kept = None;
+        let moved = allocations(|| {
+            kept = if rescale {
+                NearestNDInterpolator::rescaled_from_owned(&points, given).ok()
+            } else {
+                NearestNDInterpolator::from_owned(&points, given).ok()
+            };
+        });
+        let kept = kept.ok_or(InterpolateError::NonFinite { index: 0 })?;
+        assert_eq!(
+            kept.values().as_ptr(),
+            from,
+            "the values are the ones handed over"
+        );
+        assert_eq!(
+            moved + 1,
+            copied,
+            "NearestNDInterpolator, rescale: {rescale}"
+        );
+    }
+
+    // RBFInterpolator keeps the points, and with neighbors the values too.
+    for (options, arrays) in [
+        (RbfOptions::new(), 1),
+        (RbfOptions::new().with_neighbors(12), 2),
+    ] {
+        let kernel = RbfKernel::ThinPlateSpline;
+        // Once before counting: the first solve on a thread allocates what
+        // later ones use again.
+        RBFInterpolator::with_options(&points, &values, kernel, &options)?;
+        let copied = allocations(|| {
+            let built = RBFInterpolator::with_options(&points, &values, kernel, &options);
+            std::hint::black_box(built.is_ok());
+        });
+        let given = (points.clone(), values.clone());
+        let moved = allocations(|| {
+            let built = RBFInterpolator::from_owned(given.0, given.1, kernel, &options);
+            std::hint::black_box(built.is_ok());
+        });
+        assert_eq!(moved + arrays, copied, "RBFInterpolator, {options:?}");
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), InterpolateError> {
     // Inside, outside, and NaN: each takes a different path through `eval`.
     check("Double", &Double, &[0.25, 0.5, 2.0, f64::NAN], f64::NAN);
@@ -781,6 +848,8 @@ fn main() -> Result<(), InterpolateError> {
 
     #[cfg(feature = "scattered")]
     scattered()?;
+    #[cfg(feature = "scattered")]
+    handed_over()?;
 
     // The two that build an object do allocate: the counter sees these calls.
     let n = allocations(|| {

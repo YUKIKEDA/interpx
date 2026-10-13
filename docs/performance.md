@@ -2,19 +2,19 @@
 
 <!-- Written by compare/perf/report.py from a run of compare/perf/run.py. Do not edit by hand: run it again. -->
 
-Measured on 2026-10-13, at commit `3df6c32b8d` with uncommitted changes.
+Measured on 2026-10-13, at commit `7b20393a17` with uncommitted changes.
 
 ## How it was measured
 
 - Machine: Intel64 Family 6 Model 191 Stepping 2, GenuineIntel, 16 logical cores, 48 GB. Windows-11-10.0.26300-SP0.
-- rustc 1.97.1 (8bab26f4f 2026-07-14); Python 3.13.1, NumPy 2.5.4, SciPy 1.18.1.
+- rustc 1.99.0 (b940084d7 2026-09-28); Python 3.13.1, NumPy 2.5.4, SciPy 1.18.1.
 - The other Rust crates, at the versions in `compare/perf/runners/*/Cargo.toml`: `scirs2-interpolate` (the widest of the Rust crates: one variable, grids, RBF), `ndarray-interp` (the most used for one variable; also bilinear), `interpn` (grids).
 - Every library ran each case in a process of its own, pinned to one core, on one thread, on the same data. The libraries took turns case by case, 3 rounds.
-- `interpx, from_owned` is interpx built from data that is handed over (`RegularGridInterpolator::from_owned`) and so not copied. Its column is there for the grids, next to the construction from borrowed data (`new`), which is the one the comparison counts. Each of its samples is given data made just before it, which is not in the nearest cache as the data of the other constructions is: on small grids it reads slower than `new` for that reason.
+- `interpx, from_owned` is interpx built from data that is handed over (`from_owned`) and so not copied. Its column is there for the types that keep their data as it is given (the grid, `NearestNDInterpolator`, `RBFInterpolator`), next to the construction from borrowed data (`new`), which is the one the comparison counts. Each of its samples is given data made just before it, which is not in the nearest cache as the data of the other constructions is: on small grids it reads slower than `new` for that reason.
 - A time is that of one call: construction, or the evaluation of all the queries of the case (`eval_batch_into` for interpx, the call with an array for the others). It is the median of the repeats of a process, and then the median of the rounds.
 - interpx is called slower where its median is more than 1.10 times another library's and its fastest repeat is slower than that library's fastest.
 - Memory is the resident set size of the process, sampled every millisecond from outside it.
-- Command: `perf/run.py --rounds 3 --filter grid/linear/4d/max10/`.
+- Command: `perf/run.py --rounds 3 --libraries interpx_owned --filter ^(nearest_nd|rbf)/`.
 
 ## Where interpx is slower
 
@@ -781,43 +781,43 @@ Points in no order inside the grid. `maxN`: the first axis has `N` points and ea
 
 ### Evaluation
 
-| case | interpx | SciPy | interpx against the fastest other |
-| :--- | ---: | ---: | ---: |
-| `n10/image50` | 113 µs | 473 µs | 4.2x faster |
-| `n10/image100` | 458 µs | 1.86 ms | 4.1x faster |
-| `n10/image500` | 12.5 ms | 46.7 ms | 3.7x faster |
-| `n100/image50` | 211 µs | 593 µs | 2.8x faster |
-| `n100/image100` | 802 µs | 2.37 ms | 3x faster |
-| `n100/image500` | 18.8 ms | 58.4 ms | 3.1x faster |
-| `n1000/image50` | 340 µs | 859 µs | 2.5x faster |
-| `n1000/image100` | 1.26 ms | 3.2 ms | 2.5x faster |
-| `n1000/image500` | 25.9 ms | 71.8 ms | 2.8x faster |
-| `n10000/image50` | 398 µs | 1.08 ms | 2.7x faster |
-| `n10000/image100` | 1.5 ms | 4.13 ms | 2.7x faster |
-| `n10000/image500` | 35 ms | 90.1 ms | 2.6x faster |
-| `n100000/image50` | 514 µs | 1.48 ms | 2.9x faster |
-| `n100000/image100` | 1.99 ms | 5.68 ms | 2.9x faster |
-| `n100000/image500` | 47.2 ms | 130 ms | 2.8x faster |
+| case | interpx | interpx, `from_owned` | SciPy | interpx against the fastest other |
+| :--- | ---: | ---: | ---: | ---: |
+| `n10/image50` | 113 µs | 125 µs | 473 µs | 4.2x faster |
+| `n10/image100` | 458 µs | 495 µs | 1.86 ms | 4.1x faster |
+| `n10/image500` | 12.5 ms | 12.1 ms | 46.7 ms | 3.7x faster |
+| `n100/image50` | 211 µs | 186 µs | 593 µs | 2.8x faster |
+| `n100/image100` | 802 µs | 766 µs | 2.37 ms | 3x faster |
+| `n100/image500` | 18.8 ms | 18.1 ms | 58.4 ms | 3.1x faster |
+| `n1000/image50` | 340 µs | 331 µs | 859 µs | 2.5x faster |
+| `n1000/image100` | 1.26 ms | 1.18 ms | 3.2 ms | 2.5x faster |
+| `n1000/image500` | 25.9 ms | 23.7 ms | 71.8 ms | 2.8x faster |
+| `n10000/image50` | 398 µs | 325 µs | 1.08 ms | 2.7x faster |
+| `n10000/image100` | 1.5 ms | 1.34 ms | 4.13 ms | 2.7x faster |
+| `n10000/image500` | 35 ms | 32.6 ms | 90.1 ms | 2.6x faster |
+| `n100000/image50` | 514 µs | 472 µs | 1.48 ms | 2.9x faster |
+| `n100000/image100` | 1.99 ms | 1.81 ms | 5.68 ms | 2.9x faster |
+| `n100000/image500` | 47.2 ms | 45.5 ms | 130 ms | 2.8x faster |
 
 ### Construction
 
-| case | interpx | SciPy | interpx against the fastest other |
-| :--- | ---: | ---: | ---: |
-| `n10/image50` | 552 ns | 10.7 µs | 19x faster |
-| `n10/image100` | 565 ns | 10.8 µs | 19x faster |
-| `n10/image500` | 537 ns | 10.6 µs | 20x faster |
-| `n100/image50` | 3.31 µs | 15.2 µs | 4.6x faster |
-| `n100/image100` | 3.33 µs | 15.6 µs | 4.7x faster |
-| `n100/image500` | 3.41 µs | 15.7 µs | 4.6x faster |
-| `n1000/image50` | 34.5 µs | 127 µs | 3.7x faster |
-| `n1000/image100` | 36.6 µs | 125 µs | 3.4x faster |
-| `n1000/image500` | 37 µs | 123 µs | 3.3x faster |
-| `n10000/image50` | 703 µs | 1.8 ms | 2.6x faster |
-| `n10000/image100` | 663 µs | 1.81 ms | 2.7x faster |
-| `n10000/image500` | 654 µs | 1.79 ms | 2.7x faster |
-| `n100000/image50` | 8.53 ms | 26.7 ms | 3.1x faster |
-| `n100000/image100` | 8.75 ms | 26.2 ms | 3x faster |
-| `n100000/image500` | 9.23 ms | 26.5 ms | 2.9x faster |
+| case | interpx | interpx, `from_owned` | SciPy | interpx against the fastest other |
+| :--- | ---: | ---: | ---: | ---: |
+| `n10/image50` | 552 ns | 561 ns | 10.7 µs | 19x faster |
+| `n10/image100` | 565 ns | 570 ns | 10.8 µs | 19x faster |
+| `n10/image500` | 537 ns | 566 ns | 10.6 µs | 20x faster |
+| `n100/image50` | 3.31 µs | 3.71 µs | 15.2 µs | 4.6x faster |
+| `n100/image100` | 3.33 µs | 3.65 µs | 15.6 µs | 4.7x faster |
+| `n100/image500` | 3.41 µs | 3.65 µs | 15.7 µs | 4.6x faster |
+| `n1000/image50` | 34.5 µs | 53.2 µs | 127 µs | 3.7x faster |
+| `n1000/image100` | 36.6 µs | 43.2 µs | 125 µs | 3.4x faster |
+| `n1000/image500` | 37 µs | 53.9 µs | 123 µs | 3.3x faster |
+| `n10000/image50` | 703 µs | 653 µs | 1.8 ms | 2.6x faster |
+| `n10000/image100` | 663 µs | 727 µs | 1.81 ms | 2.7x faster |
+| `n10000/image500` | 654 µs | 663 µs | 1.79 ms | 2.7x faster |
+| `n100000/image50` | 8.53 ms | 8.66 ms | 26.7 ms | 3.1x faster |
+| `n100000/image100` | 8.75 ms | 8.62 ms | 26.2 ms | 3x faster |
+| `n100000/image500` | 9.23 ms | 8.48 ms | 26.5 ms | 2.9x faster |
 
 ## `RBFInterpolator`
 
@@ -825,119 +825,119 @@ Points in no order inside the grid. `maxN`: the first axis has `N` points and ea
 
 ### Evaluation
 
-| case | interpx | SciPy | scirs2-interpolate | interpx against the fastest other |
-| :--- | ---: | ---: | ---: | ---: |
-| `linear/global/n10/scattered` | 24.1 µs | 61.6 µs | 182 µs | 2.6x faster |
-| `linear/k50/n10/scattered` | 24.2 µs | 1.38 ms |  | 57x faster |
-| `thin_plate_spline/global/n10/scattered` | 92 µs | 116 µs | 303 µs | 1.3x faster |
-| `thin_plate_spline/k50/n10/scattered` | 89.8 µs | 1.52 ms |  | 17x faster |
-| `cubic/global/n10/scattered` | 40.6 µs | 59.4 µs | 198 µs | 1.5x faster |
-| `cubic/k50/n10/scattered` | 40.9 µs | 1.37 ms |  | 33x faster |
-| `quintic/global/n10/scattered` | 75 µs | 66.8 µs | 216 µs | **1.1x slower** |
-| `quintic/k50/n10/scattered` | 72.5 µs | 1.54 ms |  | 21x faster |
-| `multiquadric/global/n10/scattered` | 40.6 µs | 53.3 µs | 236 µs | 1.3x faster |
-| `multiquadric/k50/n10/scattered` | 40.6 µs | 1.43 ms |  | 35x faster |
-| `inverse_multiquadric/global/n10/scattered` | 47.6 µs | 56.9 µs | 291 µs | 1.2x faster |
-| `inverse_multiquadric/k50/n10/scattered` | 51.2 µs | 1.46 ms |  | 28x faster |
-| `inverse_quadratic/global/n10/scattered` | 33.1 µs | 47.4 µs |  | 1.4x faster |
-| `inverse_quadratic/k50/n10/scattered` | 33.8 µs | 1.5 ms |  | 44x faster |
-| `gaussian/global/n10/scattered` | 79.6 µs | 88.8 µs | 358 µs | 1.1x faster |
-| `gaussian/k50/n10/scattered` | 85 µs | 1.51 ms |  | 18x faster |
-| `linear/global/n100/scattered` | 153 µs | 292 µs | 1.8 ms | 1.9x faster |
-| `linear/k50/n100/scattered` | 14.7 ms | 21.4 ms |  | 1.5x faster |
-| `thin_plate_spline/global/n100/scattered` | 748 µs | 900 µs | 3.15 ms | 1.2x faster |
-| `thin_plate_spline/k50/n100/scattered` | 25.8 ms | 26.5 ms |  | 1x faster |
-| `cubic/global/n100/scattered` | 163 µs | 302 µs | 2.06 ms | 1.9x faster |
-| `cubic/k50/n100/scattered` | 16.7 ms | 21.4 ms |  | 1.3x faster |
-| `quintic/global/n100/scattered` | 232 µs | 314 µs | 2.16 ms | 1.4x faster |
-| `quintic/k50/n100/scattered` | 20.4 ms | 23.9 ms |  | 1.2x faster |
-| `multiquadric/global/n100/scattered` | 291 µs | 311 µs | 2.38 ms | 1.1x faster |
-| `multiquadric/k50/n100/scattered` | 16.8 ms | 21.4 ms |  | 1.3x faster |
-| `inverse_multiquadric/global/n100/scattered` | 381 µs | 398 µs | 2.77 ms | 1x faster |
-| `inverse_multiquadric/k50/n100/scattered` | 17.8 ms | 21.6 ms |  | 1.2x faster |
-| `inverse_quadratic/global/n100/scattered` | 239 µs | 288 µs |  | 1.2x faster |
-| `inverse_quadratic/k50/n100/scattered` | 15.7 ms | 20.2 ms |  | 1.3x faster |
-| `gaussian/global/n100/scattered` | 634 µs | 732 µs | 3.71 ms | 1.2x faster |
-| `gaussian/k50/n100/scattered` | 21.8 ms | 23.9 ms |  | 1.1x faster |
-| `linear/global/n1000/scattered` | 1.51 ms | 3.9 ms | 18.7 ms | 2.6x faster |
-| `linear/k50/n1000/scattered` | 15.5 ms | 36.7 ms |  | 2.4x faster |
-| `thin_plate_spline/global/n1000/scattered` | 7.95 ms | 10.6 ms | 31.9 ms | 1.3x faster |
-| `thin_plate_spline/k50/n1000/scattered` | 24.7 ms | 46 ms |  | 1.9x faster |
-| `cubic/global/n1000/scattered` | 1.5 ms | 3.99 ms | 20.1 ms | 2.7x faster |
-| `cubic/k50/n1000/scattered` | 17.7 ms | 39.6 ms |  | 2.2x faster |
-| `quintic/global/n1000/scattered` | 1.7 ms | 3.94 ms | 22.6 ms | 2.3x faster |
-| `quintic/k50/n1000/scattered` | 21 ms | 44.3 ms |  | 2.1x faster |
-| `multiquadric/global/n1000/scattered` | 2.83 ms | 4.25 ms | 25.2 ms | 1.5x faster |
-| `multiquadric/k50/n1000/scattered` | 18.2 ms | 38.2 ms |  | 2.1x faster |
-| `inverse_multiquadric/global/n1000/scattered` | 3.9 ms | 5.45 ms | 28.7 ms | 1.4x faster |
-| `inverse_multiquadric/k50/n1000/scattered` | 19.7 ms | 40.4 ms |  | 2x faster |
-| `inverse_quadratic/global/n1000/scattered` | 2.47 ms | 3.94 ms |  | 1.6x faster |
-| `inverse_quadratic/k50/n1000/scattered` | 17.4 ms | 37.8 ms |  | 2.2x faster |
-| `gaussian/global/n1000/scattered` | 6.73 ms | 8.58 ms | 37.9 ms | 1.3x faster |
-| `gaussian/k50/n1000/scattered` | 24.7 ms | 45.4 ms |  | 1.8x faster |
-| `thin_plate_spline/global/n3000/scattered` | 23.1 ms | 31.8 ms | 97.6 ms | 1.4x faster |
-| `thin_plate_spline/k50/n10000/scattered` | 25.2 ms | 47.5 ms |  | 1.9x faster |
-| `thin_plate_spline/k50/n10000/image` | 250 ms | 491 ms |  | 2x faster |
-| `thin_plate_spline/k50/n100000/scattered` | 26.3 ms | 50 ms |  | 1.9x faster |
-| `thin_plate_spline/k50/n100000/image` | 262 ms | 484 ms |  | 1.8x faster |
+| case | interpx | interpx, `from_owned` | SciPy | scirs2-interpolate | interpx against the fastest other |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| `linear/global/n10/scattered` | 24.1 µs | 26.8 µs | 61.6 µs | 182 µs | 2.6x faster |
+| `linear/k50/n10/scattered` | 24.2 µs | 27 µs | 1.38 ms |  | 57x faster |
+| `thin_plate_spline/global/n10/scattered` | 92 µs | 97.3 µs | 116 µs | 303 µs | 1.3x faster |
+| `thin_plate_spline/k50/n10/scattered` | 89.8 µs | 97.5 µs | 1.52 ms |  | 17x faster |
+| `cubic/global/n10/scattered` | 40.6 µs | 40.8 µs | 59.4 µs | 198 µs | 1.5x faster |
+| `cubic/k50/n10/scattered` | 40.9 µs | 43.3 µs | 1.37 ms |  | 33x faster |
+| `quintic/global/n10/scattered` | 75 µs | 78.5 µs | 66.8 µs | 216 µs | **1.1x slower** |
+| `quintic/k50/n10/scattered` | 72.5 µs | 78.3 µs | 1.54 ms |  | 21x faster |
+| `multiquadric/global/n10/scattered` | 40.6 µs | 43.4 µs | 53.3 µs | 236 µs | 1.3x faster |
+| `multiquadric/k50/n10/scattered` | 40.6 µs | 43.6 µs | 1.43 ms |  | 35x faster |
+| `inverse_multiquadric/global/n10/scattered` | 47.6 µs | 50.8 µs | 56.9 µs | 291 µs | 1.2x faster |
+| `inverse_multiquadric/k50/n10/scattered` | 51.2 µs | 50.7 µs | 1.46 ms |  | 28x faster |
+| `inverse_quadratic/global/n10/scattered` | 33.1 µs | 33.9 µs | 47.4 µs |  | 1.4x faster |
+| `inverse_quadratic/k50/n10/scattered` | 33.8 µs | 34.2 µs | 1.5 ms |  | 44x faster |
+| `gaussian/global/n10/scattered` | 79.6 µs | 85.4 µs | 88.8 µs | 358 µs | 1.1x faster |
+| `gaussian/k50/n10/scattered` | 85 µs | 85.2 µs | 1.51 ms |  | 18x faster |
+| `linear/global/n100/scattered` | 153 µs | 152 µs | 292 µs | 1.8 ms | 1.9x faster |
+| `linear/k50/n100/scattered` | 14.7 ms | 14.5 ms | 21.4 ms |  | 1.5x faster |
+| `thin_plate_spline/global/n100/scattered` | 748 µs | 743 µs | 900 µs | 3.15 ms | 1.2x faster |
+| `thin_plate_spline/k50/n100/scattered` | 25.8 ms | 23.9 ms | 26.5 ms |  | 1x faster |
+| `cubic/global/n100/scattered` | 163 µs | 178 µs | 302 µs | 2.06 ms | 1.9x faster |
+| `cubic/k50/n100/scattered` | 16.7 ms | 16.7 ms | 21.4 ms |  | 1.3x faster |
+| `quintic/global/n100/scattered` | 232 µs | 215 µs | 314 µs | 2.16 ms | 1.4x faster |
+| `quintic/k50/n100/scattered` | 20.4 ms | 19.5 ms | 23.9 ms |  | 1.2x faster |
+| `multiquadric/global/n100/scattered` | 291 µs | 284 µs | 311 µs | 2.38 ms | 1.1x faster |
+| `multiquadric/k50/n100/scattered` | 16.8 ms | 16.3 ms | 21.4 ms |  | 1.3x faster |
+| `inverse_multiquadric/global/n100/scattered` | 381 µs | 379 µs | 398 µs | 2.77 ms | 1x faster |
+| `inverse_multiquadric/k50/n100/scattered` | 17.8 ms | 16.9 ms | 21.6 ms |  | 1.2x faster |
+| `inverse_quadratic/global/n100/scattered` | 239 µs | 261 µs | 288 µs |  | 1.2x faster |
+| `inverse_quadratic/k50/n100/scattered` | 15.7 ms | 15.5 ms | 20.2 ms |  | 1.3x faster |
+| `gaussian/global/n100/scattered` | 634 µs | 636 µs | 732 µs | 3.71 ms | 1.2x faster |
+| `gaussian/k50/n100/scattered` | 21.8 ms | 22.4 ms | 23.9 ms |  | 1.1x faster |
+| `linear/global/n1000/scattered` | 1.51 ms | 1.39 ms | 3.9 ms | 18.7 ms | 2.6x faster |
+| `linear/k50/n1000/scattered` | 15.5 ms | 15.7 ms | 36.7 ms |  | 2.4x faster |
+| `thin_plate_spline/global/n1000/scattered` | 7.95 ms | 7.35 ms | 10.6 ms | 31.9 ms | 1.3x faster |
+| `thin_plate_spline/k50/n1000/scattered` | 24.7 ms | 25.8 ms | 46 ms |  | 1.9x faster |
+| `cubic/global/n1000/scattered` | 1.5 ms | 1.38 ms | 3.99 ms | 20.1 ms | 2.7x faster |
+| `cubic/k50/n1000/scattered` | 17.7 ms | 17.9 ms | 39.6 ms |  | 2.2x faster |
+| `quintic/global/n1000/scattered` | 1.7 ms | 1.72 ms | 3.94 ms | 22.6 ms | 2.3x faster |
+| `quintic/k50/n1000/scattered` | 21 ms | 21 ms | 44.3 ms |  | 2.1x faster |
+| `multiquadric/global/n1000/scattered` | 2.83 ms | 2.91 ms | 4.25 ms | 25.2 ms | 1.5x faster |
+| `multiquadric/k50/n1000/scattered` | 18.2 ms | 17.5 ms | 38.2 ms |  | 2.1x faster |
+| `inverse_multiquadric/global/n1000/scattered` | 3.9 ms | 4.01 ms | 5.45 ms | 28.7 ms | 1.4x faster |
+| `inverse_multiquadric/k50/n1000/scattered` | 19.7 ms | 18.8 ms | 40.4 ms |  | 2x faster |
+| `inverse_quadratic/global/n1000/scattered` | 2.47 ms | 2.47 ms | 3.94 ms |  | 1.6x faster |
+| `inverse_quadratic/k50/n1000/scattered` | 17.4 ms | 16.8 ms | 37.8 ms |  | 2.2x faster |
+| `gaussian/global/n1000/scattered` | 6.73 ms | 6.46 ms | 8.58 ms | 37.9 ms | 1.3x faster |
+| `gaussian/k50/n1000/scattered` | 24.7 ms | 23.8 ms | 45.4 ms |  | 1.8x faster |
+| `thin_plate_spline/global/n3000/scattered` | 23.1 ms | 23.7 ms | 31.8 ms | 97.6 ms | 1.4x faster |
+| `thin_plate_spline/k50/n10000/scattered` | 25.2 ms | 25.5 ms | 47.5 ms |  | 1.9x faster |
+| `thin_plate_spline/k50/n10000/image` | 250 ms | 245 ms | 491 ms |  | 2x faster |
+| `thin_plate_spline/k50/n100000/scattered` | 26.3 ms | 26.5 ms | 50 ms |  | 1.9x faster |
+| `thin_plate_spline/k50/n100000/image` | 262 ms | 253 ms | 484 ms |  | 1.8x faster |
 
 ### Construction
 
-| case | interpx | SciPy | scirs2-interpolate | interpx against the fastest other |
-| :--- | ---: | ---: | ---: | ---: |
-| `linear/global/n10/scattered` | 1.29 µs | 12.6 µs | 5.58 µs | 4.3x faster |
-| `linear/k50/n10/scattered` | 1.27 µs | 17 µs |  | 13x faster |
-| `thin_plate_spline/global/n10/scattered` | 1.89 µs | 13.7 µs | 6.66 µs | 3.5x faster |
-| `thin_plate_spline/k50/n10/scattered` | 1.89 µs | 17.1 µs |  | 9x faster |
-| `cubic/global/n10/scattered` | 1.66 µs | 13.6 µs | 6.11 µs | 3.7x faster |
-| `cubic/k50/n10/scattered` | 1.66 µs | 18 µs |  | 11x faster |
-| `quintic/global/n10/scattered` | 2.38 µs | 15.6 µs | 5.83 µs | 2.5x faster |
-| `quintic/k50/n10/scattered` | 2.46 µs | 17.9 µs |  | 7.3x faster |
-| `multiquadric/global/n10/scattered` | 1.36 µs | 13.2 µs | 6.64 µs | 4.9x faster |
-| `multiquadric/k50/n10/scattered` | 1.35 µs | 17.1 µs |  | 13x faster |
-| `inverse_multiquadric/global/n10/scattered` | 1.41 µs | 12.1 µs | 7.02 µs | 5x faster |
-| `inverse_multiquadric/k50/n10/scattered` | 1.38 µs | 17.1 µs |  | 12x faster |
-| `inverse_quadratic/global/n10/scattered` | 1.39 µs | 12.6 µs |  | 9x faster |
-| `inverse_quadratic/k50/n10/scattered` | 1.32 µs | 17.4 µs |  | 13x faster |
-| `gaussian/global/n10/scattered` | 1.48 µs | 12.3 µs | 7.86 µs | 5.3x faster |
-| `gaussian/k50/n10/scattered` | 1.52 µs | 17 µs |  | 11x faster |
-| `linear/global/n100/scattered` | 44.3 µs | 82.7 µs | 802 µs | 1.9x faster |
-| `linear/k50/n100/scattered` | 3.33 µs | 23.6 µs |  | 7.1x faster |
-| `thin_plate_spline/global/n100/scattered` | 78.2 µs | 117 µs | 916 µs | 1.5x faster |
-| `thin_plate_spline/k50/n100/scattered` | 3.77 µs | 24.1 µs |  | 6.4x faster |
-| `cubic/global/n100/scattered` | 51.6 µs | 83.2 µs | 764 µs | 1.6x faster |
-| `cubic/k50/n100/scattered` | 3.33 µs | 24.4 µs |  | 7.3x faster |
-| `quintic/global/n100/scattered` | 55.6 µs | 101 µs | 819 µs | 1.8x faster |
-| `quintic/k50/n100/scattered` | 3.29 µs | 25.8 µs |  | 7.8x faster |
-| `multiquadric/global/n100/scattered` | 52.4 µs | 84.5 µs | 664 µs | 1.6x faster |
-| `multiquadric/k50/n100/scattered` | 3.41 µs | 23 µs |  | 6.7x faster |
-| `inverse_multiquadric/global/n100/scattered` | 56.1 µs | 83.3 µs | 888 µs | 1.5x faster |
-| `inverse_multiquadric/k50/n100/scattered` | 3.24 µs | 23.3 µs |  | 7.2x faster |
-| `inverse_quadratic/global/n100/scattered` | 48.3 µs | 75.6 µs |  | 1.6x faster |
-| `inverse_quadratic/k50/n100/scattered` | 3.31 µs | 22.2 µs |  | 6.7x faster |
-| `gaussian/global/n100/scattered` | 67.4 µs | 97.9 µs | 828 µs | 1.5x faster |
-| `gaussian/k50/n100/scattered` | 3.15 µs | 22.1 µs |  | 7x faster |
-| `linear/global/n1000/scattered` | 17.6 ms | 62.9 ms | 197 ms | 3.6x faster |
-| `linear/k50/n1000/scattered` | 37.7 µs | 135 µs |  | 3.6x faster |
-| `thin_plate_spline/global/n1000/scattered` | 21.1 ms | 66.5 ms | 212 ms | 3.2x faster |
-| `thin_plate_spline/k50/n1000/scattered` | 38.3 µs | 141 µs |  | 3.7x faster |
-| `cubic/global/n1000/scattered` | 17.9 ms | 62.2 ms | 196 ms | 3.5x faster |
-| `cubic/k50/n1000/scattered` | 38.1 µs | 139 µs |  | 3.6x faster |
-| `quintic/global/n1000/scattered` | 18.9 ms | 61.7 ms | 198 ms | 3.3x faster |
-| `quintic/k50/n1000/scattered` | 36.3 µs | 140 µs |  | 3.9x faster |
-| `multiquadric/global/n1000/scattered` | 19.5 ms | 61.7 ms | 201 ms | 3.2x faster |
-| `multiquadric/k50/n1000/scattered` | 37.8 µs | 131 µs |  | 3.5x faster |
-| `inverse_multiquadric/global/n1000/scattered` | 18.9 ms | 65.4 ms | 210 ms | 3.5x faster |
-| `inverse_multiquadric/k50/n1000/scattered` | 38 µs | 139 µs |  | 3.7x faster |
-| `inverse_quadratic/global/n1000/scattered` | 18.8 ms | 60.2 ms |  | 3.2x faster |
-| `inverse_quadratic/k50/n1000/scattered` | 38.4 µs | 132 µs |  | 3.4x faster |
-| `gaussian/global/n1000/scattered` | 20.5 ms | 64 ms | 211 ms | 3.1x faster |
-| `gaussian/k50/n1000/scattered` | 38.2 µs | 136 µs |  | 3.6x faster |
-| `thin_plate_spline/global/n3000/scattered` | 423 ms | 1.92 s | 6.18 s | 4.5x faster |
-| `thin_plate_spline/k50/n10000/scattered` | 720 µs | 1.71 ms |  | 2.4x faster |
-| `thin_plate_spline/k50/n10000/image` | 765 µs | 1.73 ms |  | 2.3x faster |
-| `thin_plate_spline/k50/n100000/scattered` | 8.99 ms | 26.1 ms |  | 2.9x faster |
-| `thin_plate_spline/k50/n100000/image` | 9.44 ms | 26.3 ms |  | 2.8x faster |
+| case | interpx | interpx, `from_owned` | SciPy | scirs2-interpolate | interpx against the fastest other |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| `linear/global/n10/scattered` | 1.29 µs | 1.38 µs | 12.6 µs | 5.58 µs | 4.3x faster |
+| `linear/k50/n10/scattered` | 1.27 µs | 1.41 µs | 17 µs |  | 13x faster |
+| `thin_plate_spline/global/n10/scattered` | 1.89 µs | 2.04 µs | 13.7 µs | 6.66 µs | 3.5x faster |
+| `thin_plate_spline/k50/n10/scattered` | 1.89 µs | 2.03 µs | 17.1 µs |  | 9x faster |
+| `cubic/global/n10/scattered` | 1.66 µs | 1.78 µs | 13.6 µs | 6.11 µs | 3.7x faster |
+| `cubic/k50/n10/scattered` | 1.66 µs | 1.8 µs | 18 µs |  | 11x faster |
+| `quintic/global/n10/scattered` | 2.38 µs | 2.54 µs | 15.6 µs | 5.83 µs | 2.5x faster |
+| `quintic/k50/n10/scattered` | 2.46 µs | 2.57 µs | 17.9 µs |  | 7.3x faster |
+| `multiquadric/global/n10/scattered` | 1.36 µs | 1.42 µs | 13.2 µs | 6.64 µs | 4.9x faster |
+| `multiquadric/k50/n10/scattered` | 1.35 µs | 1.46 µs | 17.1 µs |  | 13x faster |
+| `inverse_multiquadric/global/n10/scattered` | 1.41 µs | 1.48 µs | 12.1 µs | 7.02 µs | 5x faster |
+| `inverse_multiquadric/k50/n10/scattered` | 1.38 µs | 1.47 µs | 17.1 µs |  | 12x faster |
+| `inverse_quadratic/global/n10/scattered` | 1.39 µs | 1.41 µs | 12.6 µs |  | 9x faster |
+| `inverse_quadratic/k50/n10/scattered` | 1.32 µs | 1.31 µs | 17.4 µs |  | 13x faster |
+| `gaussian/global/n10/scattered` | 1.48 µs | 1.61 µs | 12.3 µs | 7.86 µs | 5.3x faster |
+| `gaussian/k50/n10/scattered` | 1.52 µs | 1.61 µs | 17 µs |  | 11x faster |
+| `linear/global/n100/scattered` | 44.3 µs | 58.7 µs | 82.7 µs | 802 µs | 1.9x faster |
+| `linear/k50/n100/scattered` | 3.33 µs | 3.41 µs | 23.6 µs |  | 7.1x faster |
+| `thin_plate_spline/global/n100/scattered` | 78.2 µs | 114 µs | 117 µs | 916 µs | 1.5x faster |
+| `thin_plate_spline/k50/n100/scattered` | 3.77 µs | 4.04 µs | 24.1 µs |  | 6.4x faster |
+| `cubic/global/n100/scattered` | 51.6 µs | 71.5 µs | 83.2 µs | 764 µs | 1.6x faster |
+| `cubic/k50/n100/scattered` | 3.33 µs | 3.46 µs | 24.4 µs |  | 7.3x faster |
+| `quintic/global/n100/scattered` | 55.6 µs | 94.7 µs | 101 µs | 819 µs | 1.8x faster |
+| `quintic/k50/n100/scattered` | 3.29 µs | 3.56 µs | 25.8 µs |  | 7.8x faster |
+| `multiquadric/global/n100/scattered` | 52.4 µs | 67.4 µs | 84.5 µs | 664 µs | 1.6x faster |
+| `multiquadric/k50/n100/scattered` | 3.41 µs | 3.19 µs | 23 µs |  | 6.7x faster |
+| `inverse_multiquadric/global/n100/scattered` | 56.1 µs | 77.7 µs | 83.3 µs | 888 µs | 1.5x faster |
+| `inverse_multiquadric/k50/n100/scattered` | 3.24 µs | 3.39 µs | 23.3 µs |  | 7.2x faster |
+| `inverse_quadratic/global/n100/scattered` | 48.3 µs | 56.8 µs | 75.6 µs |  | 1.6x faster |
+| `inverse_quadratic/k50/n100/scattered` | 3.31 µs | 3.43 µs | 22.2 µs |  | 6.7x faster |
+| `gaussian/global/n100/scattered` | 67.4 µs | 100 µs | 97.9 µs | 828 µs | 1.5x faster |
+| `gaussian/k50/n100/scattered` | 3.15 µs | 3.4 µs | 22.1 µs |  | 7x faster |
+| `linear/global/n1000/scattered` | 17.6 ms | 17.9 ms | 62.9 ms | 197 ms | 3.6x faster |
+| `linear/k50/n1000/scattered` | 37.7 µs | 59.6 µs | 135 µs |  | 3.6x faster |
+| `thin_plate_spline/global/n1000/scattered` | 21.1 ms | 21.5 ms | 66.5 ms | 212 ms | 3.2x faster |
+| `thin_plate_spline/k50/n1000/scattered` | 38.3 µs | 62.2 µs | 141 µs |  | 3.7x faster |
+| `cubic/global/n1000/scattered` | 17.9 ms | 17.5 ms | 62.2 ms | 196 ms | 3.5x faster |
+| `cubic/k50/n1000/scattered` | 38.1 µs | 61.4 µs | 139 µs |  | 3.6x faster |
+| `quintic/global/n1000/scattered` | 18.9 ms | 18.2 ms | 61.7 ms | 198 ms | 3.3x faster |
+| `quintic/k50/n1000/scattered` | 36.3 µs | 60.6 µs | 140 µs |  | 3.9x faster |
+| `multiquadric/global/n1000/scattered` | 19.5 ms | 19.5 ms | 61.7 ms | 201 ms | 3.2x faster |
+| `multiquadric/k50/n1000/scattered` | 37.8 µs | 60.2 µs | 131 µs |  | 3.5x faster |
+| `inverse_multiquadric/global/n1000/scattered` | 18.9 ms | 19.1 ms | 65.4 ms | 210 ms | 3.5x faster |
+| `inverse_multiquadric/k50/n1000/scattered` | 38 µs | 59.9 µs | 139 µs |  | 3.7x faster |
+| `inverse_quadratic/global/n1000/scattered` | 18.8 ms | 18.4 ms | 60.2 ms |  | 3.2x faster |
+| `inverse_quadratic/k50/n1000/scattered` | 38.4 µs | 58.2 µs | 132 µs |  | 3.4x faster |
+| `gaussian/global/n1000/scattered` | 20.5 ms | 20.2 ms | 64 ms | 211 ms | 3.1x faster |
+| `gaussian/k50/n1000/scattered` | 38.2 µs | 56.7 µs | 136 µs |  | 3.6x faster |
+| `thin_plate_spline/global/n3000/scattered` | 423 ms | 461 ms | 1.92 s | 6.18 s | 4.5x faster |
+| `thin_plate_spline/k50/n10000/scattered` | 720 µs | 734 µs | 1.71 ms |  | 2.4x faster |
+| `thin_plate_spline/k50/n10000/image` | 765 µs | 736 µs | 1.73 ms |  | 2.3x faster |
+| `thin_plate_spline/k50/n100000/scattered` | 8.99 ms | 8.99 ms | 26.1 ms |  | 2.9x faster |
+| `thin_plate_spline/k50/n100000/image` | 9.44 ms | 8.89 ms | 26.3 ms |  | 2.8x faster |
 
 ## Memory
 
@@ -946,11 +946,14 @@ Megabytes. "Data read" is the process with the data of the case in memory, befor
 | case | library | data read | while building | built | while evaluating | highest |
 | :--- | :--- | ---: | ---: | ---: | ---: | ---: |
 | `nearest_nd/n100000/image500` | interpx | 12.0 | +3.5 | +2.1 | +4.1 | 18.2 |
+| `nearest_nd/n100000/image500` | interpx, `from_owned` | 13.7 | +1.9 | +0.9 | +2.9 | 18.6 |
 | `nearest_nd/n100000/image500` | SciPy | 4.3 | +0.0 | +0.0 | +0.0 | 4.3 |
 | `rbf/thin_plate_spline/global/n3000/scattered` | interpx | 4.3 | +75.9 | +3.8 | +3.8 | 80.3 |
+| `rbf/thin_plate_spline/global/n3000/scattered` | interpx, `from_owned` | 4.2 | +76.1 | +3.8 | +3.8 | 80.3 |
 | `rbf/thin_plate_spline/global/n3000/scattered` | SciPy | 4.3 | +0.0 | +0.0 | +0.0 | 4.3 |
 | `rbf/thin_plate_spline/global/n3000/scattered` | scirs2-interpolate | 2.8 | +289.8 | +1.7 | +1.7 | 292.5 |
 | `rbf/thin_plate_spline/k50/n100000/image` | interpx | 7.2 | +3.0 | +4.2 | +4.5 | 11.9 |
+| `rbf/thin_plate_spline/k50/n100000/image` | interpx, `from_owned` | 7.5 | +5.1 | +3.9 | +4.2 | 13.5 |
 | `rbf/thin_plate_spline/k50/n100000/image` | SciPy | 4.3 | +0.0 | +0.0 | +0.0 | 4.3 |
 | `oned/cubic_spline/n10000/sorted` | interpx | 4.9 | +0.4 | +0.4 | +0.4 | 5.9 |
 | `oned/cubic_spline/n10000/sorted` | SciPy | 4.3 | +0.0 | +0.0 | +0.0 | 4.3 |
@@ -1015,5 +1018,5 @@ The largest distance of a library's values from SciPy's, over the cases of a fam
 | `BSpline` | 4e-16 |  |  |  |  |
 | `BSplineCurve` | 4e-16 |  |  |  |  |
 | Regular grid | 4e-04 | 4e-04 | 4e-16 | 6e-16 | 7e-01 |
-| `NearestNDInterpolator` | 0e+00 |  |  |  |  |
-| `RBFInterpolator` | 8e-05 |  | 3e+01 |  |  |
+| `NearestNDInterpolator` | 0e+00 | 0e+00 |  |  |  |
+| `RBFInterpolator` | 8e-05 | 8e-05 | 3e+01 |  |  |

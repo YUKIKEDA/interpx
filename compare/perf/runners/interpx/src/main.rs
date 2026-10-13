@@ -119,12 +119,17 @@ fn nearest_nd(case: &Case) {
         case.array("values"),
         case.rows::<2>("q"),
     );
-    let build = || NearestNDInterpolator::new(&points, &values).expect("valid");
-    run(case, LIBRARY, q.len(), build, |built, out| {
+    let eval = |built: &NearestNDInterpolator<2>, out: &mut [f64]| {
         built
             .eval_batch_into(&q, out, f64::NAN)
             .expect("same length");
-    });
+    };
+    if owned() {
+        let build = |values| NearestNDInterpolator::from_owned(&points, values).expect("valid");
+        return run_given(case, OWNED, q.len(), || values.clone(), build, eval);
+    }
+    let build = || NearestNDInterpolator::new(&points, &values).expect("valid");
+    run(case, LIBRARY, q.len(), build, eval);
 }
 
 fn rbf(case: &Case) {
@@ -149,19 +154,27 @@ fn rbf(case: &Case) {
         Some(k) => RbfOptions::new().with_neighbors(k),
         None => RbfOptions::new(),
     };
-    let build =
-        || RBFInterpolator::with_options(&points, &values, kernel, &options).expect("valid");
-    run(case, LIBRARY, q.len(), build, |built, out| {
+    let eval = |built: &RBFInterpolator<2>, out: &mut [f64]| {
         built
             .eval_batch_into(&q, out, f64::NAN)
             .expect("same length");
-    });
+    };
+    if owned() {
+        let make = || (points.clone(), values.clone());
+        let build = |(points, values)| {
+            RBFInterpolator::from_owned(points, values, kernel, &options).expect("valid")
+        };
+        return run_given(case, OWNED, q.len(), make, build, eval);
+    }
+    let build =
+        || RBFInterpolator::with_options(&points, &values, kernel, &options).expect("valid");
+    run(case, LIBRARY, q.len(), build, eval);
 }
 
 fn main() {
     let case = Case::from_args();
-    if owned() && case.family() != "grid" {
-        unsupported("built with `from_owned` for grids only");
+    if owned() && !matches!(case.family(), "grid" | "nearest_nd" | "rbf") {
+        unsupported("built with `from_owned` for the types that keep their data");
     }
     match case.family() {
         "oned" => oned(&case),

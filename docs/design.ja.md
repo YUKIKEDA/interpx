@@ -147,7 +147,7 @@ pub enum EndCondition<V> { NotAKnot, FirstDerivative(V), SecondDerivative(V) }
 
 ### 3.4 所有権・スレッド安全性
 * すべての補間器は **owned** で、ライフタイム引数を持たない。`T: 'static` の制約は課さない。
-* コンストラクタは `::new(&[...])`（借用から構築）を提供する。渡されたデータをそのまま持つ型は、`::from_owned(...)`（ゼロコピー移動）も提供する: `PPoly`、`BSpline`、`RegularGridInterpolator`、`NearestNDInterpolator`、`RBFInterpolator`（後の 2 つは P-6、#128 で足す）。1 次元の各型と曲線は、データから係数を作り、座標のほかは持たないので、`from_owned` を持たない（省けるのは座標の複製 1 回だけである）。
+* コンストラクタは `::new(&[...])`（借用から構築）を提供する。渡されたデータをそのまま持つ型は、`::from_owned(...)`（ゼロコピー移動）も提供する: `PPoly`、`BSpline`、`RegularGridInterpolator`、`NearestNDInterpolator`、`RBFInterpolator`（後の 2 つは P-6、#128 で足した）。移すのは、型がそのまま持つ配列だけである: `NearestNDInterpolator::from_owned(points: &[..], values: Vec<V>)` は値を移し、点は借りる（点は木に入り、渡された配列は持たない）。`RBFInterpolator::from_owned(points: Vec<..>, values: Vec<V>, kernel, &options)` は点を移し、近傍モードでは値も移す（全域では、値は解く系に入って残らない）。この 2 型では、構築の時間は変わらない（木の組み立てと求解が占める。$10^5$ 点の `NearestNDInterpolator` で 9.2 ms と 8.5 ms）。得るものは、大きい配列を 2 つ持たずに済むことである。1 次元の各型と曲線は、データから係数を作り、座標のほかは持たないので、`from_owned` を持たない（省けるのは座標の複製 1 回だけである）。
   * **構築が複製し、検査すること**（P-1、#122。オーナーの決定）: 他のライブラリとの比較（§8.3）で、構築がいちばん負けていた。相手（`interpn`、`ndarray-interp`、SciPy）はデータを借りるだけで、検査もしないからである。次のとおり決めた。
     * **借りる形は足さない。** 補間器はデータを所有し、ライフタイムを持たない（`Send + Sync + 'static` で持ち回れる）。複製を避けたい呼び出し側は `from_owned` を使う。ライフタイムつきの型や `Arc` の入口は足さない（型が 2 系統になる、入口が 3 つになる）。
     * **値の有限性の検査は残す。** NaN と無限大を構築時に `NonFinite { index }` で返すのは、この crate の約束である（SciPy は検査せず、評価で NaN が出る）。

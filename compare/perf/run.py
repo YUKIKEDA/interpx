@@ -66,7 +66,7 @@ def supports(library: str, case: dict) -> bool:
     family, method = case["family"], case.get("method")
     ascending = not case["name"].endswith("/flipped")
     if library == "interpx_owned":
-        return family == "grid"
+        return family in ("grid", "nearest_nd", "rbf")
     if library == "interpn":
         return family == "grid" and ascending and method in ("linear", "nearest", "cubic")
     if library == "ndarray_interp":

@@ -812,6 +812,67 @@ fn evaluations_from_several_threads_and_from_clones_agree() {
 }
 
 #[test]
+fn data_handed_over_gives_the_interpolant_of_data_copied() {
+    let points: Vec<[f64; 2]> = (0..30_u32)
+        .map(|n| [f64::from(n * 17 % 31) * 0.1, f64::from(n * 29 % 37) * 0.1])
+        .collect();
+    let values: Vec<[f64; 2]> = points.iter().map(|p| [p[0] * p[1], p[0] - p[1]]).collect();
+    let queries = [[0.5, 0.5], [2.9, 0.1], [1.0, 3.0], [f64::NAN, 1.0]];
+    let both = [
+        RbfOptions::new().with_smoothing(0.1),
+        RbfOptions::new()
+            .with_neighbors(9)
+            .with_degree(RbfDegree::Degree(2)),
+    ];
+    for options in &both {
+        let kernel = RbfKernel::ThinPlateSpline;
+        let copied = Rbf::with_options(&points, &values, kernel, options).expect("valid");
+        let moved =
+            Rbf::from_owned(points.clone(), values.clone(), kernel, options).expect("valid");
+        assert_eq!(moved.len(), copied.len());
+        assert_eq!(moved.neighbors(), copied.neighbors());
+        assert_eq!(
+            moved.eval_batch(&queries),
+            copied.eval_batch(&queries),
+            "{options:?}"
+        );
+    }
+    // The same faults, in the same order: the length before a number that is
+    // not finite, and that before a point given twice.
+    let plain = RbfOptions::new();
+    let from = |points: Vec<[f64; 2]>, values: Vec<[f64; 2]>| {
+        Rbf::from_owned(points, values, RbfKernel::Linear, &plain).err()
+    };
+    let short = from(points.clone(), values[..29].to_vec());
+    assert_eq!(
+        short,
+        Some(E::LengthMismatch {
+            expected: 30,
+            actual: 29
+        })
+    );
+    let mut twice = points.clone();
+    twice[7] = twice[2];
+    let mut bad = values.clone();
+    bad[20][0] = f64::NAN;
+    assert_eq!(from(twice.clone(), bad), Some(E::NonFinite { index: 20 }));
+    assert_eq!(
+        from(twice, values.clone()),
+        Some(E::DuplicatePoints {
+            first: 2,
+            second: 7
+        })
+    );
+    assert_eq!(
+        from(Vec::new(), Vec::new()),
+        Some(E::InsufficientPoints {
+            required: 1,
+            actual: 0
+        })
+    );
+}
+
+#[test]
 fn a_batch_of_points_with_the_same_neighbors_is_a_loop_over_eval() {
     // 40 points and a row of 2000 queries across them: far more queries than
     // points, so the neighbors of a query are mostly those of the one before.
