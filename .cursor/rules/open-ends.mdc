@@ -12,6 +12,8 @@ A PR is opened when its work is finished, not when it runs. Two sentences do not
 
 What is out of the row's scope is a roadmap row that names when (`.cursor/rules/defer.mdc`), not a caveat. This rule is about the code the row adds or changes. A finding about code the row did not change becomes its own Issue at once, and the row goes on (`.cursor/rules/pace.mdc`).
 
+A comment in the code is held to the same line as the PR: it says what was measured, and marks a cause that was not confirmed as not confirmed. In #137 a comment said the compiler had made a jump in one place and not in another; nobody had read the disassembly.
+
 On M2-2 a PR was opened with both sentences. The owner asked why. Timing the stages found that four fifths of the construction was one step done a line at a time (three times faster once fixed), and computing the coverage figure from the data found an error path that could never run.
 
 ```text
