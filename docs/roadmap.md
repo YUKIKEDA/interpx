@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M5-4 (property tests and the golden suite for every type) next: of the rows that do not wait for `convx`, it is the one that can still find a wrong result in what exists, and the documents (M5-6 to M5-8) are written on top of what it leaves. M4 waits for `convx` (see Dependencies), and brings its own `serde` and its own share of M5-4. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
+M5-4 (#157): the audit is done and the tests it found missing (the orders of convergence) are in. One line is left: what becomes of the real-world data of design section 8.4.7, which is the owner's to decide. Then M5-6 (`README.md`, `README.ja.md`, `examples/`): the capabilities of v0.1.0 that do not wait for `convx` are there and tested, and nothing a user reads says so yet. M5-7 and M5-8 follow it. M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4 (the orders of its two types, the adversarial geometry of section 8.4.6), and its part of the documents. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
 
 ## Dependencies
 
@@ -88,7 +88,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | ----- | ---- | --------------------------------------------------------------------------- | ----- | ------ |
 | M5-1  | Feat | `rayon` features: `eval_batch_par`, `eval_batch_into_par`                   | #150  | Done   |
 | M5-3  | Feat | `serde` for all interpolators (topology stored, format version, validation) | #154  | Done   |
-| M5-4  | Test | Property tests (`proptest`) and the SciPy 1.18 golden suite for every type  |       | Todo   |
+| M5-4  | Test | Property tests (`proptest`) and the SciPy 1.18 golden suite for every type  | #157  | Todo   |
 | M5-5  | Task | `compare/perf`: SciPy and other pure-Rust crates, time and memory           | #120  | Done   |
 | M5-6  | Task | `README.md`, `README.ja.md`, and `examples/`                                |       | Todo   |
 | M5-7  | Task | English `docs/design.md`                                                    |       | Todo   |
