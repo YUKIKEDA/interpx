@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-P-2 to P-6 (below), in that order: where the comparison of M5-5 found interpx slower than a library that computes the same thing, or unable to build what SciPy builds. They come before M5-1 to M5-3, which are put on top of the types these rows may change (`.cursor/rules/pace.mdc`, `.cursor/rules/bench.mdc`). P-4 starts with a Grill. M4 waits for `convx` (see Dependencies).
+The rows of P (below) that are not done, in this order: P-4 and P-6 first (what SciPy builds and interpx cannot; a constructor the design names and the code lacks), then the speed rows by the size of the loss: P-9 (it moves every figure of the rows after it), P-3, P-7, P-8, P-5. They come before M5-1 to M5-3, which are put on top of the types these rows may change (`.cursor/rules/pace.mdc`, `.cursor/rules/bench.mdc`). M4 waits for `convx` (see Dependencies).
 
 ## Dependencies
 
@@ -71,11 +71,14 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | ID  | Kind   | Title                                                                                    | Issue | Status |
 | --- | ------ | ---------------------------------------------------------------------------------------- | ----- | ------ |
 | P-1 | Design | Construction: what it copies and what it checks (grid 180x and more, 1-D 1.3x to 5x)     | #122  | Done   |
-| P-2 | Task   | 1-D evaluation of queries in no order on 10 000 points (2.4x against `ndarray-interp`)   | #123  | Todo   |
+| P-2 | Task   | 1-D evaluation of queries in no order on 10 000 points (2.4x against `ndarray-interp`)   | #123  | Done   |
 | P-3 | Task   | Grid `linear` and `nearest` evaluation (1.1x to 1.6x against `interpn`)                  | #124  | Todo   |
 | P-4 | Design | Grid: an axis with one point (SciPy builds it; eight cases of SciPy's suite do not run)  | #125  | Todo   |
 | P-5 | Task   | RBF `quintic` at 10 points (1.12x against SciPy, one case)                               | #126  | Todo   |
 | P-6 | Feat   | `from_owned` for `NearestNDInterpolator` and `RBFInterpolator` (the types that keep data) | #128  | Todo   |
+| P-7 | Task   | `BSpline1D` of degree 1 on 10 000 points: evaluation in order (1.14x), construction (3x) | #130  | Todo   |
+| P-8 | Task   | `Linear1D` and `Nearest1D`: construction on 10 000 points (1.9x and 1.1x against SciPy)  | #131  | Todo   |
+| P-9 | Task   | Search: the time for points in no order moves twofold with where it is built in          | #132  | Todo   |
 
 ## M5: Integration and quality
 

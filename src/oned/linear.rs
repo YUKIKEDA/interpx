@@ -256,6 +256,7 @@ impl<T: Scalar, V: Value<T>> Interpolator for Linear1D<T, V> {
     fn eval(&self, x: &T) -> Option<V> {
         search::eval(
             self.poly.breakpoints(),
+            self.poly.evenly_spaced(),
             self.poly.extrapolate(),
             *x,
             |i, x| self.segment(i, x),
@@ -270,6 +271,7 @@ impl<T: Scalar, V: Value<T>> Interpolator for Linear1D<T, V> {
     ) -> Result<(), InterpolateError> {
         search::eval_batch_into(
             self.poly.breakpoints(),
+            self.poly.evenly_spaced(),
             self.poly.extrapolate(),
             points,
             out,

@@ -57,9 +57,11 @@ def rng_for(name: str) -> np.random.Generator:
     return np.random.default_rng([SEED, *name.encode()])
 
 
-def oned(n: int, method: str, order: str) -> dict:
-    name = f"oned/{method}/n{n}/{order}"
-    x = np.arange(n, dtype=float)
+def oned(n: int, method: str, order: str, even: bool = True) -> dict:
+    name = f"oned/{method}/n{n}/{order}" + ("" if even else "-uneven")
+    # Evenly spaced, as in SciPy's suite; or spacings of 0.5 to 1.5, for the
+    # libraries that find an interval faster on even spacing than otherwise.
+    x = np.arange(n, dtype=float) if even else np.cumsum(rng_for(f"oned/uneven/{n}").uniform(0.5, 1.5, n))
     q = np.linspace(x[0], x[-1], 4 * n)
     if order == "shuffled":
         rng_for(name).shuffle(q)
@@ -72,7 +74,7 @@ def oned(n: int, method: str, order: str) -> dict:
         # A decay over the whole range. SciPy's suite has `exp(-x / 3)` at
         # every size, which is below the smallest normal number from x = 2100
         # on: the times would then be those of arithmetic on such numbers.
-        "arrays": {"x": x, "y": np.exp(-3.0 * x / n), "q": q},
+        "arrays": {"x": x, "y": np.exp(-3.0 * (x - x[0]) / (x[-1] - x[0] + 1.0)), "q": q},
     }
 
 
@@ -183,6 +185,10 @@ def all_cases() -> list[dict]:
         for method in ONED_METHODS:
             for order in ("sorted", "shuffled"):
                 cases.append(oned(n, method, order))
+    for n in (100, 10000):
+        for method in ("linear", "cubic_spline", "pchip"):
+            for order in ("sorted", "shuffled"):
+                cases.append(oned(n, method, order, even=False))
     for n_eval in SCIPY["ppoly_bspline"]["n_eval"]:
         cases.append(piecewise("ppoly", n_eval))
         cases.append(piecewise("bspline", n_eval))

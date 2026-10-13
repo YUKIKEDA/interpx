@@ -54,6 +54,9 @@ pub struct PPoly<T: Scalar, V: Value<T> = T> {
     /// Coefficients per interval: the degree plus one.
     order: usize,
     extrapolate: Extrapolate,
+    /// Whether the break points are evenly spaced (`search::evenly_spaced`): found at
+    /// construction, and only a matter of how a search starts.
+    even: bool,
 }
 
 impl<T: Scalar, V: Value<T>> PPoly<T, V> {
@@ -105,6 +108,7 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
     ) -> Result<Self, InterpolateError> {
         let order = check(breakpoints, coefficients, degree)?;
         Ok(Self {
+            even: search::evenly_spaced(breakpoints),
             breakpoints: breakpoints.to_vec(),
             coefficients: coefficients.to_vec(),
             order,
@@ -139,11 +143,18 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
     ) -> Result<Self, InterpolateError> {
         let order = check(&breakpoints, &coefficients, degree)?;
         Ok(Self {
+            even: search::evenly_spaced(&breakpoints),
             breakpoints,
             coefficients,
             order,
             extrapolate: Extrapolate::Extend,
         })
+    }
+
+    /// Whether the break points are evenly spaced, for a type that searches
+    /// them itself.
+    pub(crate) fn evenly_spaced(&self) -> bool {
+        self.even
     }
 
     /// Builds a piecewise polynomial from parts a constructor of this crate has
@@ -158,6 +169,7 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
             "the caller checked the parts"
         );
         Self {
+            even: search::evenly_spaced(&breakpoints),
             breakpoints,
             coefficients,
             order: degree + 1,
@@ -603,9 +615,13 @@ impl<T: Scalar, V: Value<T>> Interpolator for PPoly<T, V> {
     type Output = V;
 
     fn eval(&self, x: &T) -> Option<V> {
-        search::eval(&self.breakpoints, self.extrapolate, *x, |i, x| {
-            self.horner(i, x)
-        })
+        search::eval(
+            &self.breakpoints,
+            self.even,
+            self.extrapolate,
+            *x,
+            |i, x| self.horner(i, x),
+        )
     }
 
     fn eval_batch_into(
@@ -616,6 +632,7 @@ impl<T: Scalar, V: Value<T>> Interpolator for PPoly<T, V> {
     ) -> Result<(), InterpolateError> {
         search::eval_batch_into(
             &self.breakpoints,
+            self.even,
             self.extrapolate,
             points,
             out,
