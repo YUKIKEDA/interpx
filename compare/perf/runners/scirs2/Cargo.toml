@@ -1,0 +1,14 @@
+# The `scirs2-interpolate` side of the comparison. Not published.
+[package]
+name = "perf-scirs2"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+scirs2-interpolate = "0.6.5"
+# The arrays its interfaces take (its re-export of `ndarray`).
+scirs2-core = "*"
+perf-harness = { path = "../harness" }
+
+[workspace]

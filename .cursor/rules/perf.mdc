@@ -43,6 +43,7 @@ A loop whose every step needs the result of the step before it (a running sum, a
 ## SIMD and parallelism
 
 - Explicit SIMD is not in v0.1.0 unless a measurement shows a bottleneck. If added, it uses a safe crate (`wide` or similar), and its result is bit for bit the scalar path's result. FMA is used only when the error bound includes it.
+- A type has two batch methods, `eval_batch` and `eval_batch_into`. When one is overridden for speed, read where the other goes, and send both through one path. In #116 only `eval_batch_into` was overridden, and the PR body said both took the same path without that having been read.
 - `rayon` appears only in the outermost `eval_batch_*_par`. No nested `par_iter` inside a parallel region. Use a minimum chunk size so small batches stay serial.
 - `eval_batch_par` and `eval_batch_into_par` return results bit for bit equal to the serial forms: each point is independent and the reduction order is fixed. A test compares them.
 

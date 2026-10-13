@@ -116,6 +116,8 @@ benches/
   rbf.rs            time to build an RBFInterpolator and to evaluate it, for three kernels
                     (needs the `scattered` feature)
 compare/            Python side: pinned SciPy, data sets, generators, goldens (see the golden-data skill)
+  perf/             the comparison with SciPy and other Rust crates (see the perf-compare skill): cases.py, run.py, report.py,
+                    scipy_runner.py, and runners/ (one Cargo package for each library, each its own workspace; harness/ is shared)
 docs/               design.ja.md, roadmap.md, conventions.md, adr/
 ```
 

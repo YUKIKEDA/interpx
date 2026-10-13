@@ -44,6 +44,7 @@ Before starting a piece of work (a row, an investigation, one more attempt at ei
 3. Speed a user can see, with the case and the ratio named.
 4. An explanation of a figure, with nothing to fix.
 
+- Within a class, work whose result can change how what exists is built comes before work that is put on top of it. A comparison with other libraries, a measurement of a whole type, a review of an interface: these can send the types back to be rebuilt, and features added before them are rebuilt with them. Right after this section was written, the agent proposed `rayon` (M5-1) as the next row, again by its place in the table, with the comparison with SciPy and other crates (M5-5) still to come; the owner put M5-5 first.
 - A line that reads "nothing changes for a user" is class 4. It is done when nothing above it is open, or beside other work without holding it (below).
 - The order under Current work in `docs/roadmap.md` is written with its reason. It is asked again at the moment of starting: an order written earlier is a note, not a decision made now.
 - The work stops when the question of its Issue is answered. A question that turns up on the way gets a line of its own and its own place in the order. It does not inherit the place of the work that turned it up.

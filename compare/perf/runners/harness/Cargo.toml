@@ -1,0 +1,12 @@
+# What every Rust runner of the comparison shares: reading a case, the marks
+# the driver reads, and the timing loop. Not published.
+[package]
+name = "perf-harness"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde_json = "1"
+
+[workspace]

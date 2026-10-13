@@ -11,11 +11,13 @@ Correctness comes first. A performance claim comes with a measurement in the sam
 
 - Time: `criterion` in `benches/`, run by `just bench`. CI does not run it (noise). It is not a gate.
 - Allocation: `tests/alloc.rs` with a counting allocator asserts zero allocations on the evaluation APIs (`.cursor/rules/perf.mdc`). It runs in `just test`. An allowed count stays or goes down; raising it needs an Issue.
-- Memory: peak allocation is measured with a counting allocator, build and evaluate separately. The O(N²) RBF cost is measured, not only stated.
-- Comparison: `compare/perf/` runs SciPy 1.18 and the other pure-Rust interpolation crates on the same data and queries. It is manual and records results in `compare/perf/out/` (ignored). Procedure: `.agents/skills/perf-compare/SKILL.md`.
+- Memory: peak allocation is measured with a counting allocator, build and evaluate separately. The O(N²) RBF cost is measured, not only stated. Against other libraries, memory is the resident set size of the process sampled over time, with the phases marked on it; a peak alone does not say when the memory was held, and an allocator inside one library cannot be laid against another.
+- Comparison: `compare/perf/` runs SciPy 1.18 and the other pure-Rust interpolation crates on the same data and queries. It is manual and records results in `compare/perf/out/` (ignored); `docs/performance.md` is the summary, written by `compare/perf/report.py` and not by hand. Procedure: `.agents/skills/perf-compare/SKILL.md`.
+- A call shorter than the step of the clock (100 ns on Windows) is not timed alone: it is repeated inside one sample until the sample is long enough, and the sample is divided. The first run of the comparison timed single calls and reported "200 ns against 100 ns".
 
 ## Rules
 
+- The comparison comes before the features that are put on top of the types (`rayon`, `ndarray`, `serde`). Where interpx is slower than a library that computes the same thing, that is a row with an Issue, worked before those features, the largest ratio first; or it is written in the design with the numbers and the reason it stays.
 - No speed target before the comparison is measured. The other crates are chosen when the row starts: maintained, pure Rust. A category with no comparable crate says so in the table.
 - Profile before a speed row, and write on the Issue where the time goes. Order rows by the profile, not by roadmap number. Skill: `.agents/skills/cpu-profile/SKILL.md`.
 - Compare both sides with the same profile and flags, the same data, the same queries, pinned to one core when timing a serial path, and interleaved. Stop leftover processes from earlier runs. A difference inside the spread is not a result; "spread" means the statistics of repeated runs.
