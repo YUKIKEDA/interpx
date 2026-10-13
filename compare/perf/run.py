@@ -43,6 +43,13 @@ SAMPLE_EVERY = 0.001
 TIME_LIMIT = 900.0
 # How a run that the time limit stopped is recorded (`failed`).
 STOPPED = "stopped at the time limit"
+# A library whose construction or evaluation of a case takes this many seconds
+# is run on that case in the first round only. The rounds are there for the
+# spread between processes, which for a call this long is a few percent
+# (three constructions of 107 s read 106 to 124 s); run three times, the
+# cases on real data took four hours, most of it one library solving one
+# system again. The rule goes by the time and not by the library.
+LONG = 2.0
 
 RUST_RUNNERS = ("interpx", "scirs2", "ndarray_interp", "interpn")
 # interpx again, built with `from_owned` (the data handed over, not copied).
@@ -218,6 +225,15 @@ def held_out(directory: Path, library: str) -> dict | None:
     }
 
 
+def once(row: dict) -> bool:
+    """Whether a library that gave this row on a case is not run on it again
+    in a later round: it was stopped at the time limit, or one of its calls
+    is long."""
+    if str(row.get("failed", "")).startswith(STOPPED):
+        return True
+    return any(row[what]["median"] >= LONG for what in ("build", "eval") if what in row)
+
+
 def environment() -> dict:
     def version(*args: str) -> str:
         try:
@@ -274,9 +290,7 @@ def main() -> None:
         for line in (OUT / "results.jsonl").read_text(encoding="utf-8").splitlines():
             row = json.loads(line)
             have.add((row["case"], row["library"], row["round"]))
-            if str(row.get("failed", "")).startswith(STOPPED):
-                # Not started again in a later round: it would be stopped
-                # again, a quarter of an hour later.
+            if once(row):
                 have |= {(row["case"], row["library"], later) for later in range(args.rounds)}
 
     with (OUT / "results.jsonl").open("a", encoding="utf-8") as results:
@@ -310,7 +324,7 @@ def main() -> None:
                         shown = str(run)
                     results.write(json.dumps(row) + "\n")
                     results.flush()
-                    if str(row.get("failed", "")).startswith(STOPPED):
+                    if once(row):
                         have |= {(case["name"], library, later) for later in range(args.rounds)}
                     print(f"[{round_ + 1}/{args.rounds} {number}/{len(chosen)}] {case['name']:58} {library:10} {shown}", flush=True)
 
