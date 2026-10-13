@@ -324,9 +324,13 @@ impl<'a, const D: usize> Terms<'a, D> {
     /// The value of every monomial at `point`, in their order.
     fn at(&self, point: &[f64; D]) -> impl Iterator<Item = f64> + 'a {
         let moved: [f64; D] = core::array::from_fn(|d| (point[d] - self.shift[d]) / self.scale[d]);
-        self.powers
-            .iter()
-            .map(move |power| moved.iter().zip(power).map(|(x, p)| x.powi(*p)).product())
+        self.powers.iter().map(move |powers| {
+            moved
+                .iter()
+                .zip(powers)
+                .map(|(x, p)| power(*x, *p))
+                .product()
+        })
     }
 
     /// Writes the value of every monomial at `point` to `out`, which has one
@@ -336,6 +340,26 @@ impl<'a, const D: usize> Terms<'a, D> {
             *value = monomial;
         }
     }
+}
+
+/// `x` to the power `p`, zero or more, by squaring. Not `f64::powi`: that is
+/// a call, and the powers of a monomial are 0, 1, or 2 nearly always, which
+/// cost less than the call does. With it the six monomials of the quintic
+/// kernel in two dimensions were over half of an evaluation on ten points
+/// (#126). For 0, 1, and 2 the result is exactly `1`, `x`, and `x * x`; from
+/// 3 on it can be a rounding away from what `powi` gives.
+fn power(x: f64, p: i32) -> f64 {
+    let (mut result, mut square, mut left) = (1.0, x, p);
+    while left > 0 {
+        if left & 1 == 1 {
+            result *= square;
+        }
+        left >>= 1;
+        if left > 0 {
+            square *= square;
+        }
+    }
+    result
 }
 
 /// The side of the tiles the kernels of the matrix are worked out by: two
@@ -1326,7 +1350,7 @@ impl<const D: usize, V: Value<f64>> Interpolator for RBFInterpolator<D, V> {
 
 #[cfg(test)]
 mod tests {
-    use super::{monomial_count, monomials, side_of, system, RbfKernel, Terms};
+    use super::{monomial_count, monomials, power, side_of, system, RbfKernel, Terms};
     use crate::common::{assert_close, load, reals, Real, Tol, DIRECT_F64};
     use crate::{InterpolateError as E, ParamReason};
     use serde_json::Value as Json;
@@ -1487,6 +1511,36 @@ mod tests {
                 assert_close(*got, *want, DIRECT_F64, &what);
             }
         }
+    }
+
+    #[test]
+    fn a_power_by_squaring_is_the_power() {
+        let bases = [0.0, -0.0, 1.0, -1.0, 0.3, -2.7, 1e-30, 1e17, 7.0];
+        for x in bases {
+            // The powers nearly every monomial has: exactly `1`, `x`, `x * x`.
+            assert_eq!(power(x, 0).to_bits(), 1.0_f64.to_bits());
+            assert_eq!(power(x, 1).to_bits(), x.to_bits());
+            assert_eq!(power(x, 2).to_bits(), (x * x).to_bits());
+            // Higher ones: the product of `p` factors to a rounding or two of
+            // each multiplication (`powi` of the platform is another such
+            // product, and is a bit away from this one already at `0.3^3`).
+            for p in 3..=17 {
+                let (ours, theirs) = (power(x, p), x.powi(p));
+                let apart = (ours - theirs).abs();
+                assert!(
+                    apart <= 32.0 * f64::EPSILON * theirs.abs(),
+                    "{x}^{p}: {ours} {theirs}"
+                );
+                assert_eq!(
+                    ours.is_sign_negative(),
+                    theirs.is_sign_negative(),
+                    "{x}^{p}"
+                );
+            }
+        }
+        // Exact where the factors are: powers of two.
+        assert_eq!(power(2.0, 10), 1024.0);
+        assert_eq!(power(-0.5, 5), -0.03125);
     }
 
     #[test]
