@@ -3,10 +3,27 @@
 use core::fmt::Debug;
 
 mod sealed {
-    pub trait Sealed {}
+    pub trait Sealed: super::Kept {}
     impl Sealed for f32 {}
     impl Sealed for f64 {}
 }
+
+/// What the `serde` feature needs of a scalar and of a value: that it can be a
+/// part of a stored form. Without the feature, nothing.
+///
+/// It is a supertrait of the sealed traits and not of [`Scalar`] or `Value`,
+/// so those read the same with and without the feature.
+#[cfg(feature = "serde")]
+pub trait Kept: crate::stored::Stored {}
+#[cfg(feature = "serde")]
+impl<X: crate::stored::Stored> Kept for X {}
+
+/// What the `serde` feature needs of a scalar and of a value. Without the
+/// feature, nothing.
+#[cfg(not(feature = "serde"))]
+pub trait Kept {}
+#[cfg(not(feature = "serde"))]
+impl<X> Kept for X {}
 
 /// A floating-point scalar: `f32` or `f64`.
 ///

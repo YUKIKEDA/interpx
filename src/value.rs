@@ -8,7 +8,7 @@ pub(crate) mod sealed {
 
     /// Seals [`Value`](super::Value), and holds what the crate needs from a
     /// value and callers do not.
-    pub trait Sealed<T> {
+    pub trait Sealed<T>: crate::scalar::Kept {
         /// Whether every column of `self` is within `tolerance * (1 + |b|)` of
         /// the same column `b` of `other`.
         fn within(&self, other: &Self, tolerance: T) -> bool;

@@ -36,6 +36,8 @@ or_fun_call = "deny"
 # Without the default features: no plotting, no rayon, no process forking.
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+# For the `serde` feature's tests: a binary format beside JSON.
+postcard = { version = "1.1.3", default-features = false, features = ["use-std"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.152", features = ["float_roundtrip"] }
 stats_alloc = "0.1.10"
@@ -46,6 +48,8 @@ default = ["scattered"]
 scattered = ["dep:kiddo", "dep:faer"]
 # `ParInterpolator`: batches evaluated on several threads.
 rayon = ["dep:rayon"]
+# `Serialize` and `Deserialize` for the interpolators and their parameters.
+serde = ["dep:serde"]
 
 [dependencies]
 # The dense LU of the RBF interpolator. Without the default features: no rayon,
@@ -55,6 +59,7 @@ faer = { version = "0.24.4", default-features = false, features = ["std"], optio
 kiddo = { version = "6.3.0", default-features = false, optional = true }
 num-traits = "0.2.19"
 rayon = { version = "1.11", optional = true }
+serde = { version = "1.0.229", features = ["derive"], optional = true }
 thiserror = "2"
 
 # The library has no `#[bench]` functions. Without this, `cargo bench -- <args>`

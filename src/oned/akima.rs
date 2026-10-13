@@ -29,6 +29,7 @@ use crate::{Extrapolate, Hint, InterpolateError, Interpolator, PPoly, Scalar, Va
 /// # }
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum AkimaMethod {
     /// Akima's weights: how much the secant changes on each side. SciPy's
@@ -348,5 +349,49 @@ impl<T: Scalar, V: Value<T>> Interpolator for Akima1D<T, V> {
         fill: V,
     ) -> Result<(), InterpolateError> {
         self.poly.eval_batch_into(points, out, fill)
+    }
+}
+
+/// The stored form of the `serde` feature.
+#[cfg(feature = "serde")]
+mod stored {
+    use super::{Akima1D, AkimaMethod};
+    use crate::{PPoly, Scalar, Value};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::borrow::Cow;
+
+    /// The version of the stored form.
+    const VERSION: u32 = 1;
+
+    /// What is stored: the piecewise cubic, and the method it was built with.
+    #[derive(Serialize, Deserialize)]
+    #[serde(bound = "")]
+    struct Form<'a, T: Scalar, V: Value<T>> {
+        version: u32,
+        poly: Cow<'a, PPoly<T, V>>,
+        method: AkimaMethod,
+    }
+
+    impl<T: Scalar, V: Value<T>> Serialize for Akima1D<T, V> {
+        fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+            Form {
+                version: VERSION,
+                poly: Cow::Borrowed(&self.poly),
+                method: self.method,
+            }
+            .serialize(to)
+        }
+    }
+
+    impl<'de, T: Scalar, V: Value<T>> Deserialize<'de> for Akima1D<T, V> {
+        fn deserialize<D: Deserializer<'de>>(from: D) -> Result<Self, D::Error> {
+            let form = Form::<T, V>::deserialize(from)?;
+            crate::stored::version(form.version, VERSION)?;
+            crate::stored::degree(form.poly.degree(), 3)?;
+            Ok(Self {
+                poly: form.poly.into_owned(),
+                method: form.method,
+            })
+        }
     }
 }

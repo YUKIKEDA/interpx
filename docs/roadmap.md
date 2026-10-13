@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M5-3 (`serde`) next: it is the last capability of v0.1.0 that does not wait for `convx`, and M5-4 (the tests of every type) and M5-6 to M5-8 (the documents) describe what it leaves. M4 waits for `convx` (see Dependencies). P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
+M5-4 (property tests and the golden suite for every type) next: of the rows that do not wait for `convx`, it is the one that can still find a wrong result in what exists, and the documents (M5-6 to M5-8) are written on top of what it leaves. M4 waits for `convx` (see Dependencies), and brings its own `serde` and its own share of M5-4. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
 
 ## Dependencies
 
@@ -61,8 +61,8 @@ M5-3 (`serde`) next: it is the last capability of v0.1.0 that does not wait for 
 
 | ID   | Kind | Title                                                                                | Issue | Status |
 | ---- | ---- | ------------------------------------------------------------------------------------ | ----- | ------ |
-| M4-1 | Feat | `LinearNDInterpolator<D>`: Delaunay, Jump-and-Walk, tolerances, brute-force fallback |       | Todo   |
-| M4-2 | Feat | `CloughTocher2DInterpolator`: global gradient estimate, Bernstein-Bézier patch       |       | Todo   |
+| M4-1 | Feat | `LinearNDInterpolator<D>`: Delaunay, Jump-and-Walk, tolerances, brute-force fallback, `serde` |       | Todo   |
+| M4-2 | Feat | `CloughTocher2DInterpolator`: global gradient estimate, Bernstein-Bézier patch, `serde` |       | Todo   |
 
 ## P: What the comparison found (before M5-1)
 
@@ -87,7 +87,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | ID    | Kind | Title                                                                       | Issue | Status |
 | ----- | ---- | --------------------------------------------------------------------------- | ----- | ------ |
 | M5-1  | Feat | `rayon` features: `eval_batch_par`, `eval_batch_into_par`                   | #150  | Done   |
-| M5-3  | Feat | `serde` for all interpolators (topology stored, format version, validation) |       | Todo   |
+| M5-3  | Feat | `serde` for all interpolators (topology stored, format version, validation) | #154  | Done   |
 | M5-4  | Test | Property tests (`proptest`) and the SciPy 1.18 golden suite for every type  |       | Todo   |
 | M5-5  | Task | `compare/perf`: SciPy and other pure-Rust crates, time and memory           | #120  | Done   |
 | M5-6  | Task | `README.md`, `README.ja.md`, and `examples/`                                |       | Todo   |

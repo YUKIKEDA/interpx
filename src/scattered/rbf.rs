@@ -60,6 +60,7 @@ use std::cell::RefCell;
 /// assert_eq!(err.err(), Some(not_positive));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum RbfKernel {
     /// `-r`. Needs a polynomial of degree 0.
@@ -606,6 +607,7 @@ thread_local! {
 /// assert_eq!(RbfOptions::new().degree(), RbfDegree::Default);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum RbfDegree {
     /// The degree the kernel needs, and a constant term for the kernels that
     /// need none: SciPy's default.
@@ -635,6 +637,7 @@ pub enum RbfDegree {
 /// assert_eq!(RbfOptions::new(), RbfOptions::default());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RbfOptions {
     smoothing: f64,
     degree: RbfDegree,
@@ -798,6 +801,10 @@ pub struct RBFInterpolator<const D: usize, V: Value<f64> = f64> {
     degree: Option<usize>,
     solved: Solved<D, V>,
 }
+
+/// What the checks of a constructor settle: the degree of the polynomial, the
+/// number of neighbors, and the monomials.
+type Planned<const D: usize> = (Option<usize>, Option<usize>, Vec<[i32; D]>);
 
 /// What an interpolant evaluates from.
 #[derive(Debug, Clone)]
@@ -989,8 +996,50 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
         kernel: RbfKernel,
         options: &RbfOptions,
     ) -> Result<Self, InterpolateError> {
-        validate::length(&values, points.len())?;
-        validate::enough(&points, 1)?;
+        let (degree, neighbors, powers) = Self::plan(&points, Some(&values), kernel, options)?;
+        let smoothing = options.smoothing;
+        let solved = match neighbors {
+            Some(neighbors) => Solved::Locally {
+                values: values.into_owned(),
+                tree: Tree::new(&points),
+                neighbors,
+            },
+            None => {
+                let terms = Terms::on(&powers, points.iter().copied());
+                let (matrix, rhs) = system(&points, &values, smoothing, kernel, &terms)?;
+                Solved::Globally {
+                    coefficients: solve(matrix, &rhs)?,
+                    shift: terms.shift,
+                    scale: terms.scale,
+                }
+            }
+        };
+        Ok(Self {
+            points: points.into_owned(),
+            kernel,
+            powers,
+            smoothing,
+            degree,
+            solved,
+        })
+    }
+
+    /// Runs the checks of [`RBFInterpolator::with_options`], and returns what
+    /// they settle: the degree of the polynomial, the number of neighbors
+    /// (none when every query has all the points), and the monomials.
+    ///
+    /// `values` is `None` for a stored interpolant with one system: it holds
+    /// the coefficients in their place, which its reader checks.
+    fn plan(
+        points: &[[f64; D]],
+        values: Option<&[V]>,
+        kernel: RbfKernel,
+        options: &RbfOptions,
+    ) -> Result<Planned<D>, InterpolateError> {
+        if let Some(values) = values {
+            validate::length(values, points.len())?;
+        }
+        validate::enough(points, 1)?;
         // With neighbors the points go into a tree that numbers them with
         // `u32`. (Counted before the points are looked at one by one.)
         let in_a_tree = options.neighbors.is_some_and(|k| k < points.len());
@@ -1003,10 +1052,10 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
             });
         }
         let finite = |point: &[f64; D]| point.iter().all(|c| c.is_finite());
-        if let Some(index) = validate::first_failing(&points, finite) {
+        if let Some(index) = validate::first_failing(points, finite) {
             return Err(InterpolateError::NonFinite { index });
         }
-        if let Some(index) = validate::first_failing(&values, V::all_finite) {
+        if let Some(index) = values.and_then(|v| validate::first_failing(v, V::all_finite)) {
             return Err(InterpolateError::NonFinite { index });
         }
         let invalid = |name, reason| InterpolateError::InvalidParameter { name, reason };
@@ -1036,7 +1085,7 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
         // With as many neighbors as points, every query has all the points.
         let neighbors = options.neighbors.filter(|k| *k < points.len());
         let powers = monomials(neighbors.unwrap_or(points.len()), kernel, degree)?;
-        if let Some((first, second)) = super::first_repeat(&points) {
+        if let Some((first, second)) = super::first_repeat(points) {
             return Err(InterpolateError::DuplicatePoints { first, second });
         }
         // The system of the neighbors is made at every evaluation, in a
@@ -1045,30 +1094,7 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
             side_of(neighbors, powers.len())
                 .map_err(|max| invalid("neighbors", ParamReason::TooLarge { max }))?;
         }
-        let solved = match neighbors {
-            Some(neighbors) => Solved::Locally {
-                values: values.into_owned(),
-                tree: Tree::new(&points),
-                neighbors,
-            },
-            None => {
-                let terms = Terms::on(&powers, points.iter().copied());
-                let (matrix, rhs) = system(&points, &values, smoothing, kernel, &terms)?;
-                Solved::Globally {
-                    coefficients: solve(matrix, &rhs)?,
-                    shift: terms.shift,
-                    scale: terms.scale,
-                }
-            }
-        };
-        Ok(Self {
-            points: points.into_owned(),
-            kernel,
-            powers,
-            smoothing,
-            degree,
-            solved,
-        })
+        Ok((degree, neighbors, powers))
     }
 
     /// Returns the number of data points. See [`RBFInterpolator`] for an
@@ -1347,6 +1373,115 @@ impl<const D: usize, V: Value<f64>> Interpolator for RBFInterpolator<D, V> {
         let mut out = Vec::with_capacity(points.len());
         self.each(points, |value| out.push(value));
         out
+    }
+}
+
+/// The stored form of the `serde` feature.
+#[cfg(feature = "serde")]
+mod stored {
+    use super::{RBFInterpolator, RbfDegree, RbfKernel, RbfOptions, Solved, Terms, Tree};
+    use crate::{validate, InterpolateError, Value};
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    use std::borrow::Cow;
+
+    /// The version of the stored form.
+    const VERSION: u32 = 1;
+
+    /// What is stored: the points, the parameters, and what the interpolant
+    /// evaluates from. The monomials, the change of coordinates of the
+    /// polynomial, and the tree of an interpolant with neighbors are not: they
+    /// are found again from the points and the parameters when the form is
+    /// read.
+    #[derive(Serialize, Deserialize)]
+    #[serde(bound = "")]
+    struct Form<'a, const D: usize, V: Value<f64>> {
+        version: u32,
+        #[serde(with = "crate::stored")]
+        points: Cow<'a, [[f64; D]]>,
+        kernel: RbfKernel,
+        smoothing: f64,
+        degree: Option<usize>,
+        /// How many neighbors a query has, or `None` for one system over all
+        /// the points.
+        neighbors: Option<usize>,
+        /// With one system, its solution: the coefficients. With neighbors,
+        /// the values at the points.
+        #[serde(with = "crate::stored")]
+        held: Cow<'a, [V]>,
+    }
+
+    impl<const D: usize, V: Value<f64>> Serialize for RBFInterpolator<D, V> {
+        fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+            let (neighbors, held) = match &self.solved {
+                Solved::Globally { coefficients, .. } => (None, coefficients),
+                Solved::Locally {
+                    values, neighbors, ..
+                } => (Some(*neighbors), values),
+            };
+            Form {
+                version: VERSION,
+                points: Cow::Borrowed(&self.points),
+                kernel: self.kernel,
+                smoothing: self.smoothing,
+                degree: self.degree,
+                neighbors,
+                held: Cow::Borrowed(held),
+            }
+            .serialize(to)
+        }
+    }
+
+    /// The points and the parameters pass the checks of
+    /// [`RBFInterpolator::with_options`]. The coefficients of one system are
+    /// checked for their number and for being finite; the system is not solved
+    /// again.
+    impl<'de, const D: usize, V: Value<f64>> Deserialize<'de> for RBFInterpolator<D, V> {
+        fn deserialize<D2: Deserializer<'de>>(from: D2) -> Result<Self, D2::Error> {
+            let form = Form::<D, V>::deserialize(from)?;
+            crate::stored::version(form.version, VERSION)?;
+            let (points, held) = (form.points.into_owned(), form.held.into_owned());
+            let options = RbfOptions {
+                smoothing: form.smoothing,
+                degree: form.degree.map_or(RbfDegree::None, RbfDegree::Degree),
+                neighbors: form.neighbors,
+            };
+            let values = form.neighbors.is_some().then_some(&held[..]);
+            let (degree, neighbors, powers) =
+                Self::plan(&points, values, form.kernel, &options).map_err(de::Error::custom)?;
+            if neighbors != form.neighbors {
+                return Err(de::Error::custom(
+                    "the neighbors are not fewer than the points",
+                ));
+            }
+            let solved = match neighbors {
+                Some(neighbors) => Solved::Locally {
+                    values: held,
+                    tree: Tree::new(&points),
+                    neighbors,
+                },
+                None => {
+                    validate::length(&held, points.len() + powers.len())
+                        .map_err(de::Error::custom)?;
+                    if let Some(index) = validate::first_failing(&held, V::all_finite) {
+                        return Err(de::Error::custom(InterpolateError::NonFinite { index }));
+                    }
+                    let terms = Terms::on(&powers, points.iter().copied());
+                    Solved::Globally {
+                        coefficients: held,
+                        shift: terms.shift,
+                        scale: terms.scale,
+                    }
+                }
+            };
+            Ok(Self {
+                points,
+                kernel: form.kernel,
+                powers,
+                smoothing: form.smoothing,
+                degree,
+                solved,
+            })
+        }
     }
 }
 

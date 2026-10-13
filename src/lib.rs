@@ -23,6 +23,45 @@
 //!   batches you know to be small, call the serial forms: a batch of less
 //!   than a tenth of a millisecond of work is not shared out, and deciding
 //!   that has made it up to a third slower than the serial form.
+//! - `serde`: `Serialize` and `Deserialize` for every interpolator and for
+//!   the parameters they are built with. See below.
+//!
+//! # Storing an interpolator
+//!
+//! With the `serde` feature an interpolator is written by any format of
+//! `serde`, as text or as bytes, and read back without being built again:
+//! what is stored is what it was built into (the coefficients of a spline,
+//! not the data), with a version of the form.
+//!
+//! Reading runs the checks of the constructors, so a form that is broken or
+//! was written by hand is an error of the format and never an interpolator
+//! that panics or gives values of nothing. A version that this build does
+//! not know is an error as well.
+//!
+//! What comes back evaluates bit for bit as what was stored, when the format
+//! gives every number back as it was. Binary formats do. `serde_json` does
+//! with its `float_roundtrip` feature; without it a number can come back
+//! one bit off. A stored form holds finite numbers only.
+//!
+#![cfg_attr(feature = "serde", doc = "```")]
+#![cfg_attr(not(feature = "serde"), doc = "```ignore")]
+//! use interpx::{BoundaryCondition, CubicSpline, Interpolator};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let x = [0.0, 1.0, 2.5, 4.0];
+//! let y = [1.0, 3.0, 2.0, 5.0];
+//! let spline = CubicSpline::new(&x, &y, BoundaryCondition::NotAKnot)?;
+//!
+//! let text = serde_json::to_string(&spline)?;
+//! let back: CubicSpline<f64> = serde_json::from_str(&text)?;
+//! assert_eq!(back.eval(&1.7), spline.eval(&1.7));
+//!
+//! // Coordinates out of order: not a spline that could have been built.
+//! let broken = text.replace("[0.0,1.0,2.5,4.0]", "[1.0,0.0,2.5,4.0]");
+//! assert!(serde_json::from_str::<CubicSpline<f64>>(&broken).is_err());
+//! # Ok(())
+//! # }
+//! ```
 //!
 //! # Examples
 //!
@@ -88,6 +127,8 @@ mod scalar;
 #[cfg(feature = "scattered")]
 mod scattered;
 mod search;
+#[cfg(feature = "serde")]
+mod stored;
 mod tridiagonal;
 mod validate;
 mod value;

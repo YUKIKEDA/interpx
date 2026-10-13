@@ -17,13 +17,15 @@ use crate::{Scalar, Value};
 /// assert_ne!(end, EndCondition::NotAKnot);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(bound = "V: crate::stored::Stored"))]
 pub enum EndCondition<V> {
     /// The first two pieces at this end are one polynomial.
     NotAKnot,
     /// The first derivative at this end has the given value.
-    FirstDerivative(V),
+    FirstDerivative(#[cfg_attr(feature = "serde", serde(with = "crate::stored"))] V),
     /// The second derivative at this end has the given value.
-    SecondDerivative(V),
+    SecondDerivative(#[cfg_attr(feature = "serde", serde(with = "crate::stored"))] V),
 }
 
 /// The boundary conditions of a spline.
@@ -67,6 +69,8 @@ pub enum EndCondition<V> {
 /// assert_ne!(slopes, BoundaryCondition::<[f64; 2]>::clamped());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(bound = "V: crate::stored::Stored"))]
 pub enum BoundaryCondition<V> {
     /// Not-a-knot at both ends.
     #[default]

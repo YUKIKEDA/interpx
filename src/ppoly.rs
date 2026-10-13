@@ -641,3 +641,88 @@ impl<T: Scalar, V: Value<T>> Interpolator for PPoly<T, V> {
         )
     }
 }
+
+/// The stored form of the `serde` feature.
+#[cfg(feature = "serde")]
+pub(crate) mod stored {
+    use super::PPoly;
+    use crate::{Extrapolate, Scalar, Value};
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    use std::borrow::Cow;
+
+    /// The version of the stored forms below.
+    const VERSION: u32 = 1;
+
+    /// What is stored of a piecewise polynomial. Whether its break points are
+    /// evenly spaced is not: it is found again when the form is read.
+    #[derive(Serialize, Deserialize)]
+    #[serde(bound = "")]
+    struct Form<'a, T: Scalar, V: Value<T>> {
+        version: u32,
+        #[serde(with = "crate::stored")]
+        breakpoints: Cow<'a, [T]>,
+        #[serde(with = "crate::stored")]
+        coefficients: Cow<'a, [V]>,
+        degree: usize,
+        extrapolate: Extrapolate,
+    }
+
+    impl<T: Scalar, V: Value<T>> Serialize for PPoly<T, V> {
+        fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+            Form {
+                version: VERSION,
+                breakpoints: Cow::Borrowed(&self.breakpoints),
+                coefficients: Cow::Borrowed(&self.coefficients),
+                degree: self.degree(),
+                extrapolate: self.extrapolate,
+            }
+            .serialize(to)
+        }
+    }
+
+    /// Reads what [`PPoly::from_owned`] accepts: the checks are its checks.
+    impl<'de, T: Scalar, V: Value<T>> Deserialize<'de> for PPoly<T, V> {
+        fn deserialize<D: Deserializer<'de>>(from: D) -> Result<Self, D::Error> {
+            let form = Form::<T, V>::deserialize(from)?;
+            crate::stored::version(form.version, VERSION)?;
+            let (breakpoints, coefficients) = (
+                form.breakpoints.into_owned(),
+                form.coefficients.into_owned(),
+            );
+            PPoly::from_owned(breakpoints, coefficients, form.degree)
+                .map(|poly| poly.with_extrapolate(form.extrapolate))
+                .map_err(de::Error::custom)
+        }
+    }
+
+    /// The stored form of an interpolator that is a piecewise cubic and
+    /// nothing else: `CubicSpline`, `PchipInterpolator`, `CubicHermiteSpline`.
+    #[derive(Serialize, Deserialize)]
+    #[serde(bound = "")]
+    pub(crate) struct Cubic<'a, T: Scalar, V: Value<T>> {
+        version: u32,
+        poly: Cow<'a, PPoly<T, V>>,
+    }
+
+    impl<'a, T: Scalar, V: Value<T>> Cubic<'a, T, V> {
+        /// The form of an interpolator that holds `poly`.
+        pub(crate) fn of(poly: &'a PPoly<T, V>) -> Self {
+            Self {
+                version: VERSION,
+                poly: Cow::Borrowed(poly),
+            }
+        }
+
+        /// The polynomial of a form that was read.
+        ///
+        /// # Errors
+        ///
+        /// An error of the deserializer for a version that is not known and
+        /// for a polynomial that is not cubic.
+        pub(crate) fn cubic<E: de::Error>(self) -> Result<PPoly<T, V>, E> {
+            crate::stored::version(self.version, VERSION)?;
+            crate::stored::degree(self.poly.degree(), 3)?;
+            Ok(self.poly.into_owned())
+        }
+    }
+}

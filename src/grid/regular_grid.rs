@@ -33,6 +33,7 @@ use crate::{search, validate, Extrapolate, Hint, InterpolateError, Interpolator,
 /// # }
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum GridMethod {
     /// The value of the nearest grid point, axis by axis. Halfway between two
@@ -326,46 +327,8 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
         mut values: Vec<V>,
         method: GridMethod,
     ) -> Result<Self, InterpolateError> {
-        // A product that does not fit `usize` is the length of no slice.
-        let points = axes
-            .iter()
-            .try_fold(1_usize, |product, axis| product.checked_mul(axis.len()));
-        if points != Some(values.len()) {
-            return Err(InterpolateError::LengthMismatch {
-                expected: points.unwrap_or(usize::MAX),
-                actual: values.len(),
-            });
-        }
-        let on_axis =
-            |axis: usize| move |fault: AxisFault| InterpolateError::GridAxis { axis, fault };
-        let required = method.fewest_points();
-        for (d, axis) in axes.iter().enumerate() {
-            if axis.len() < required {
-                return Err(on_axis(d)(AxisFault::InsufficientPoints {
-                    required,
-                    actual: axis.len(),
-                }));
-            }
-        }
-        for (d, axis) in axes.iter().enumerate() {
-            if let Some(index) = validate::first_failing(axis, |c| c.is_finite()) {
-                return Err(on_axis(d)(AxisFault::NonFinite { index }));
-            }
-        }
-        if let Some(index) = validate::first_failing(&values, V::all_finite) {
-            return Err(InterpolateError::NonFinite { index });
-        }
-        let mut descending = [false; D];
-        for (d, axis) in axes.iter().enumerate() {
-            descending[d] = decreases(axis).map_err(on_axis(d))?;
-        }
-
-        // Neighbors along the last axis are next to each other; along an
-        // earlier axis they are a whole block of the later axes apart.
-        let mut strides = [1; D];
-        for d in (0..D.saturating_sub(1)).rev() {
-            strides[d] = strides[d + 1] * axes[d + 1].len();
-        }
+        let descending = check(&axes, &values, method)?;
+        let strides = strides_of(&axes);
         for d in 0..D {
             if descending[d] {
                 axes[d].reverse();
@@ -380,18 +343,29 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
             GridMethod::Pchip => slopes_along_last(&axes, &values).map(Rule::Pchip),
         }
         .map_err(|overflow| overflow.into_given(&axes, &strides, &descending))?;
+        Ok(Self::assembled(axes, values, strides, rule))
+    }
+
+    /// The interpolant of a grid that passed the checks ([`check`]), with its
+    /// axes ascending and what its method evaluates from.
+    fn assembled(
+        axes: [Vec<T>; D],
+        values: Vec<V>,
+        strides: [usize; D],
+        rule: Rule<T, D, V>,
+    ) -> Self {
         let mut even = [false; D];
         for (even, axis) in even.iter_mut().zip(&axes) {
             *even = search::evenly_spaced(axis);
         }
-        Ok(Self {
+        Self {
             axes,
             values,
             strides,
             rule,
             extrapolate: Extrapolate::Forbid,
             even,
-        })
+        }
     }
 
     /// Returns the same interpolant with another behavior outside the grid.
@@ -800,6 +774,59 @@ fn slopes_along_last<T: Scalar, const D: usize, V: Value<T>>(
     }
 }
 
+/// Runs the input checks of [`RegularGridInterpolator::new`], and says of
+/// each axis whether it decreases.
+fn check<T: Scalar, const D: usize, V: Value<T>>(
+    axes: &[Vec<T>; D],
+    values: &[V],
+    method: GridMethod,
+) -> Result<[bool; D], InterpolateError> {
+    // A product that does not fit `usize` is the length of no slice.
+    let points = axes
+        .iter()
+        .try_fold(1_usize, |product, axis| product.checked_mul(axis.len()));
+    if points != Some(values.len()) {
+        return Err(InterpolateError::LengthMismatch {
+            expected: points.unwrap_or(usize::MAX),
+            actual: values.len(),
+        });
+    }
+    let on_axis = |axis: usize| move |fault: AxisFault| InterpolateError::GridAxis { axis, fault };
+    let required = method.fewest_points();
+    for (d, axis) in axes.iter().enumerate() {
+        if axis.len() < required {
+            return Err(on_axis(d)(AxisFault::InsufficientPoints {
+                required,
+                actual: axis.len(),
+            }));
+        }
+    }
+    for (d, axis) in axes.iter().enumerate() {
+        if let Some(index) = validate::first_failing(axis, |c| c.is_finite()) {
+            return Err(on_axis(d)(AxisFault::NonFinite { index }));
+        }
+    }
+    if let Some(index) = validate::first_failing(values, V::all_finite) {
+        return Err(InterpolateError::NonFinite { index });
+    }
+    let mut descending = [false; D];
+    for (d, axis) in axes.iter().enumerate() {
+        descending[d] = decreases(axis).map_err(on_axis(d))?;
+    }
+    Ok(descending)
+}
+
+/// How far apart in the values the neighbors along each axis are. Along the
+/// last axis they are next to each other; along an earlier axis they are a
+/// whole block of the later axes apart.
+fn strides_of<T, const D: usize>(axes: &[Vec<T>; D]) -> [usize; D] {
+    let mut strides = [1; D];
+    for d in (0..D.saturating_sub(1)).rev() {
+        strides[d] = strides[d + 1] * axes[d + 1].len();
+    }
+    strides
+}
+
 /// Solves for the coefficients of the tensor-product spline of the given
 /// degree through the values of a grid.
 ///
@@ -1017,6 +1044,109 @@ impl<T: Scalar, const D: usize, V: Value<T>> Interpolator for RegularGridInterpo
             }
         }
         Ok(())
+    }
+}
+
+/// The stored form of the `serde` feature.
+#[cfg(feature = "serde")]
+mod stored {
+    use super::{check, strides_of, GridMethod, RegularGridInterpolator, Rule, Tensor};
+    use crate::oned::Collocation;
+    use crate::{validate, Extrapolate, InterpolateError, Scalar, Value};
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    use std::borrow::Cow;
+
+    /// The version of the stored form.
+    const VERSION: u32 = 1;
+
+    /// What is stored of a grid: its axes (ascending, as they are held), its
+    /// values, and what its method solved for. The strides, the knots of a
+    /// spline method, and whether an axis is evenly spaced are not: they are
+    /// found again from the axes when the form is read.
+    #[derive(Serialize, Deserialize)]
+    #[serde(bound = "")]
+    struct Form<'a, T: Scalar, const D: usize, V: Value<T>> {
+        version: u32,
+        #[serde(with = "crate::stored")]
+        axes: Cow<'a, [Vec<T>; D]>,
+        #[serde(with = "crate::stored")]
+        values: Cow<'a, [V]>,
+        method: GridMethod,
+        extrapolate: Extrapolate,
+        /// The coefficients of a spline method, the slopes of `Pchip`, and
+        /// nothing for the methods that evaluate from the values alone.
+        #[serde(with = "crate::stored")]
+        solved: Cow<'a, [V]>,
+    }
+
+    impl<T: Scalar, const D: usize, V: Value<T>> Serialize for RegularGridInterpolator<T, D, V> {
+        fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+            let solved: &[V] = match &self.rule {
+                Rule::Nearest | Rule::Linear => &[],
+                Rule::Spline(spline) => &spline.coefficients,
+                Rule::Pchip(slopes) => slopes,
+            };
+            Form {
+                version: VERSION,
+                axes: Cow::Borrowed(&self.axes),
+                values: Cow::Borrowed(&self.values),
+                method: self.method(),
+                extrapolate: self.extrapolate,
+                solved: Cow::Borrowed(solved),
+            }
+            .serialize(to)
+        }
+    }
+
+    /// The axes and the values pass the checks of
+    /// [`RegularGridInterpolator::new`], and the axes are ascending. What the
+    /// method solved for is checked for its length and for being finite; it
+    /// is not solved for again.
+    impl<'de, T: Scalar, const D: usize, V: Value<T>> Deserialize<'de>
+        for RegularGridInterpolator<T, D, V>
+    {
+        fn deserialize<D2: Deserializer<'de>>(from: D2) -> Result<Self, D2::Error> {
+            let form = Form::<T, D, V>::deserialize(from)?;
+            crate::stored::version(form.version, VERSION)?;
+            let (axes, values) = (form.axes.into_owned(), form.values.into_owned());
+            let solved = form.solved.into_owned();
+            let descending = check(&axes, &values, form.method).map_err(de::Error::custom)?;
+            if let Some(axis) = descending.iter().position(|descending| *descending) {
+                return Err(de::Error::custom(format_args!(
+                    "axis {axis} of the grid is stored descending"
+                )));
+            }
+            let degree = match form.method {
+                GridMethod::Nearest | GridMethod::Linear | GridMethod::Pchip => None,
+                GridMethod::Cubic => Some(3),
+                GridMethod::Quintic => Some(5),
+            };
+            // `Pchip` has slopes along the last axis: none without axes.
+            let expected = match form.method {
+                GridMethod::Nearest | GridMethod::Linear => 0,
+                GridMethod::Pchip if D == 0 => 0,
+                GridMethod::Cubic | GridMethod::Quintic | GridMethod::Pchip => values.len(),
+            };
+            validate::length(&solved, expected).map_err(de::Error::custom)?;
+            if let Some(index) = validate::first_failing(&solved, V::all_finite) {
+                return Err(de::Error::custom(InterpolateError::NonFinite { index }));
+            }
+            let rule = match (form.method, degree) {
+                (GridMethod::Nearest, _) => Rule::Nearest,
+                (GridMethod::Linear, _) => Rule::Linear,
+                (GridMethod::Pchip, _) | (_, None) => Rule::Pchip(solved),
+                (_, Some(degree)) => Rule::Spline(Tensor {
+                    degree,
+                    // As `tensor` places them: at the points of each axis.
+                    knots: core::array::from_fn(|d| {
+                        Collocation::knots_at_points(&axes[d], degree, false, false)
+                    }),
+                    coefficients: solved,
+                }),
+            };
+            let strides = strides_of(&axes);
+            Ok(Self::assembled(axes, values, strides, rule).with_extrapolate(form.extrapolate))
+        }
     }
 }
 
