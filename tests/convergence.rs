@@ -452,8 +452,9 @@ fn scattered_interpolants_come_nearer_the_function_with_more_points() {
     // The factors asserted are half of these or less, and the bounds three
     // times the errors. The Gaussian over all points is held to less: its
     // system is ill-conditioned at these sizes (coefficients of 1e9), and
-    // its error moves with the order of the points (SciPy's moves between
-    // 1.2e-5 and 3.3e-5 at 800 points when the same points are shuffled).
+    // its error moves with the order of the points: at 800 points between
+    // 7.3e-6 and 9.4e-5 over 12 orders (SciPy's between 7.0e-6 and 6.2e-4
+    // over 24; #159).
     let shape = 5.0;
     let cases = [
         (RbfKernel::Linear, 5.0, 1.2e-2, 4.0, 1.6e-2),
