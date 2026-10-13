@@ -683,3 +683,50 @@ impl<T: Scalar, V: Value<T>> Interpolator for BSpline1D<T, V> {
         self.spline.eval_batch_into(points, out, fill)
     }
 }
+
+/// The stored form of the `serde` feature.
+#[cfg(feature = "serde")]
+mod stored {
+    use super::BSpline1D;
+    use crate::{BSpline, InterpolateError, ParamReason, Scalar, Value};
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    use std::borrow::Cow;
+
+    /// The version of the stored form.
+    const VERSION: u32 = 1;
+
+    /// What is stored: the spline that was solved for.
+    #[derive(Serialize, Deserialize)]
+    #[serde(bound = "")]
+    struct Form<'a, T: Scalar, V: Value<T>> {
+        version: u32,
+        spline: Cow<'a, BSpline<T, V>>,
+    }
+
+    impl<T: Scalar, V: Value<T>> Serialize for BSpline1D<T, V> {
+        fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+            Form {
+                version: VERSION,
+                spline: Cow::Borrowed(&self.spline),
+            }
+            .serialize(to)
+        }
+    }
+
+    impl<'de, T: Scalar, V: Value<T>> Deserialize<'de> for BSpline1D<T, V> {
+        fn deserialize<D: Deserializer<'de>>(from: D) -> Result<Self, D::Error> {
+            let form = Form::<T, V>::deserialize(from)?;
+            crate::stored::version(form.version, VERSION)?;
+            if form.spline.degree() == 0 {
+                // As `BSpline1D::new` answers a degree of 0.
+                return Err(de::Error::custom(InterpolateError::InvalidParameter {
+                    name: "degree",
+                    reason: ParamReason::TooSmall { min: 1 },
+                }));
+            }
+            Ok(Self {
+                spline: form.spline.into_owned(),
+            })
+        }
+    }
+}

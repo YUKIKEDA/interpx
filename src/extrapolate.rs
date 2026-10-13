@@ -18,6 +18,7 @@
 /// assert_ne!(mode, Extrapolate::Forbid);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum Extrapolate {
     /// Return `None` outside the domain.

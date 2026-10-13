@@ -455,3 +455,25 @@ impl<T: Scalar, V: Value<T>> Interpolator for CubicSpline<T, V> {
         self.poly.eval_batch_into(points, out, fill)
     }
 }
+
+/// The stored form of the `serde` feature: the piecewise cubic.
+#[cfg(feature = "serde")]
+mod stored {
+    use super::CubicSpline;
+    use crate::ppoly::stored::Cubic;
+    use crate::{Scalar, Value};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    impl<T: Scalar, V: Value<T>> Serialize for CubicSpline<T, V> {
+        fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+            Cubic::of(&self.poly).serialize(to)
+        }
+    }
+
+    impl<'de, T: Scalar, V: Value<T>> Deserialize<'de> for CubicSpline<T, V> {
+        fn deserialize<D: Deserializer<'de>>(from: D) -> Result<Self, D::Error> {
+            let poly = Cubic::deserialize(from)?.cubic()?;
+            Ok(Self { poly })
+        }
+    }
+}

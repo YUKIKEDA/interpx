@@ -970,6 +970,59 @@ impl<T: Scalar, V: Value<T>> Interpolator for BSpline<T, V> {
     }
 }
 
+/// The stored form of the `serde` feature.
+#[cfg(feature = "serde")]
+mod stored {
+    use super::BSpline;
+    use crate::{Extrapolate, Scalar, Value};
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    use std::borrow::Cow;
+
+    /// The version of the stored form.
+    const VERSION: u32 = 1;
+
+    /// What is stored of a spline. The knot intervals of its domain and whether
+    /// they are evenly spaced are not: they are found again when the form is
+    /// read.
+    #[derive(Serialize, Deserialize)]
+    #[serde(bound = "")]
+    struct Form<'a, T: Scalar, V: Value<T>> {
+        version: u32,
+        #[serde(with = "crate::stored")]
+        knots: Cow<'a, [T]>,
+        #[serde(with = "crate::stored")]
+        control_points: Cow<'a, [V]>,
+        degree: usize,
+        extrapolate: Extrapolate,
+    }
+
+    impl<T: Scalar, V: Value<T>> Serialize for BSpline<T, V> {
+        fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+            Form {
+                version: VERSION,
+                knots: Cow::Borrowed(&self.knots),
+                control_points: Cow::Borrowed(&self.control_points),
+                degree: self.degree,
+                extrapolate: self.extrapolate,
+            }
+            .serialize(to)
+        }
+    }
+
+    /// Reads what [`BSpline::from_owned`] accepts: the checks are its checks.
+    impl<'de, T: Scalar, V: Value<T>> Deserialize<'de> for BSpline<T, V> {
+        fn deserialize<D: Deserializer<'de>>(from: D) -> Result<Self, D::Error> {
+            let form = Form::<T, V>::deserialize(from)?;
+            crate::stored::version(form.version, VERSION)?;
+            let (knots, control_points) =
+                (form.knots.into_owned(), form.control_points.into_owned());
+            BSpline::from_owned(knots, control_points, form.degree)
+                .map(|spline| spline.with_extrapolate(form.extrapolate))
+                .map_err(de::Error::custom)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{basis_values, BSpline, LOW_ORDER, MAX_ORDER};

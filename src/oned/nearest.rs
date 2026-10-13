@@ -28,6 +28,7 @@ use crate::{search, validate, Extrapolate, Hint, InterpolateError, Interpolator,
 /// # }
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum NearestKind {
     /// The nearest point; halfway between two points, the one on the left.
@@ -126,13 +127,18 @@ impl<T: Scalar, V: Value<T>> Nearest1D<T, V> {
     /// ```
     pub fn new(x: &[T], y: &[V], kind: NearestKind) -> Result<Self, InterpolateError> {
         validate::coordinates_and_values(x, y, x.len(), 2)?;
-        Ok(Self {
-            even: search::evenly_spaced(x),
-            x: x.to_vec(),
-            y: y.to_vec(),
+        Ok(Self::from_checked(x.to_vec(), y.to_vec(), kind))
+    }
+
+    /// The interpolator of data that passed the checks of [`Nearest1D::new`].
+    fn from_checked(x: Vec<T>, y: Vec<V>, kind: NearestKind) -> Self {
+        Self {
+            even: search::evenly_spaced(&x),
+            x,
+            y,
             kind,
             extrapolate: Extrapolate::Forbid,
-        })
+        }
     }
 
     /// Returns the same interpolator with another behavior outside the data.
@@ -265,5 +271,55 @@ impl<T: Scalar, V: Value<T>> Interpolator for Nearest1D<T, V> {
             fill,
             |i, x| self.pick(i, x),
         )
+    }
+}
+
+/// The stored form of the `serde` feature.
+#[cfg(feature = "serde")]
+mod stored {
+    use super::{Nearest1D, NearestKind};
+    use crate::{validate, Extrapolate, Scalar, Value};
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    use std::borrow::Cow;
+
+    /// The version of the stored form.
+    const VERSION: u32 = 1;
+
+    /// What is stored: the data and the rules. Whether the coordinates are
+    /// evenly spaced is found again when the form is read.
+    #[derive(Serialize, Deserialize)]
+    #[serde(bound = "")]
+    struct Form<'a, T: Scalar, V: Value<T>> {
+        version: u32,
+        #[serde(with = "crate::stored")]
+        x: Cow<'a, [T]>,
+        #[serde(with = "crate::stored")]
+        y: Cow<'a, [V]>,
+        kind: NearestKind,
+        extrapolate: Extrapolate,
+    }
+
+    impl<T: Scalar, V: Value<T>> Serialize for Nearest1D<T, V> {
+        fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+            Form {
+                version: VERSION,
+                x: Cow::Borrowed(&self.x),
+                y: Cow::Borrowed(&self.y),
+                kind: self.kind,
+                extrapolate: self.extrapolate,
+            }
+            .serialize(to)
+        }
+    }
+
+    /// Reads what [`Nearest1D::new`] accepts: the checks are its checks.
+    impl<'de, T: Scalar, V: Value<T>> Deserialize<'de> for Nearest1D<T, V> {
+        fn deserialize<D: Deserializer<'de>>(from: D) -> Result<Self, D::Error> {
+            let form = Form::<T, V>::deserialize(from)?;
+            crate::stored::version(form.version, VERSION)?;
+            let (x, y) = (form.x.into_owned(), form.y.into_owned());
+            validate::coordinates_and_values(&x, &y, x.len(), 2).map_err(de::Error::custom)?;
+            Ok(Self::from_checked(x, y, form.kind).with_extrapolate(form.extrapolate))
+        }
     }
 }

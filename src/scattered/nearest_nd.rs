@@ -72,8 +72,12 @@ pub struct NearestNDInterpolator<const D: usize, V: Value<f64> = f64> {
 /// The change of coordinates of a rescaled interpolant: `(x - offset) / scale`
 /// on each axis.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(bound = ""))]
 struct Scaling<const D: usize> {
+    #[cfg_attr(feature = "serde", serde(with = "crate::stored"))]
     offset: [f64; D],
+    #[cfg_attr(feature = "serde", serde(with = "crate::stored"))]
     scale: [f64; D],
 }
 
@@ -268,13 +272,6 @@ impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {
     ) -> Result<Self, InterpolateError> {
         validate::length(&values, points.len())?;
         validate::enough(points, 1)?;
-        // The tree numbers its points with `u32`.
-        let too_many = || InterpolateError::InvalidParameter {
-            name: "points",
-            reason: ParamReason::TooLarge {
-                max: u32::MAX as usize,
-            },
-        };
         if u32::try_from(points.len()).is_err() {
             return Err(too_many());
         }
@@ -299,14 +296,8 @@ impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {
                 scaling.map_or(*point, |scaling| scaling.apply(point))
             })
             .collect();
-        let tree = if D == 0 {
-            None
-        } else {
-            let tree = ImmutableKdTree::new_from_slice(&kept).map_err(|_| too_many())?;
-            Some(Arc::new(tree))
-        };
         Ok(Self {
-            tree,
+            tree: tree_of(&kept)?,
             first,
             values: values.into_owned(),
             scaling,
@@ -319,8 +310,11 @@ impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {
     ///
     /// A query at the distance `bound` exactly, or farther, has no value. For
     /// a [`rescaled`](NearestNDInterpolator::rescaled) interpolant the distance
-    /// is the one measured after the change of coordinates. A `bound` that is
-    /// NaN leaves no query with a value; an infinite one is no bound.
+    /// is the one measured after the change of coordinates. A `bound` of
+    /// positive infinity is no bound, and the interpolant has none afterwards
+    /// ([`distance_bound`](NearestNDInterpolator::distance_bound) returns
+    /// `None`). A `bound` that is NaN, zero, or below zero (negative infinity
+    /// among them) leaves no query with a value.
     ///
     /// # Examples
     ///
@@ -337,12 +331,21 @@ impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {
     /// assert_eq!(near.eval(&[2.5, 0.0]), Some(1.0));
     /// assert_eq!(near.eval(&[3.0, 0.0]), None);
     /// assert_eq!(near.eval(&[4.0, 0.0]), None);
+    ///
+    /// let open = near.clone().with_distance_bound(f64::INFINITY);
+    /// assert_eq!(open.distance_bound(), None);
+    /// assert_eq!(open.eval(&[4.0, 0.0]), Some(1.0));
+    /// assert_eq!(near.with_distance_bound(f64::NEG_INFINITY).eval(&[0.0, 0.0]), None);
     /// # Ok(())
     /// # }
     /// ```
     #[must_use]
     pub fn with_distance_bound(mut self, bound: f64) -> Self {
-        self.bound = Some(bound);
+        // Every distance is under positive infinity: that is no bound, and
+        // is held as none, so that two interpolants that give the same
+        // values are the same.
+        let open = bound.is_infinite() && bound.is_sign_positive();
+        self.bound = (!open).then_some(bound);
         self
     }
 
@@ -405,6 +408,27 @@ fn first_of_each<const D: usize>(points: &[[f64; D]]) -> Vec<u32> {
     first
 }
 
+/// The error of more points than the tree numbers: it numbers them with `u32`.
+fn too_many() -> InterpolateError {
+    InterpolateError::InvalidParameter {
+        name: "points",
+        reason: ParamReason::TooLarge {
+            max: u32::MAX as usize,
+        },
+    }
+}
+
+/// The tree of the points kept, or none without dimensions.
+fn tree_of<const D: usize>(
+    kept: &[[f64; D]],
+) -> Result<Option<Arc<ImmutableKdTree<f64, D>>>, InterpolateError> {
+    if D == 0 {
+        return Ok(None);
+    }
+    let tree = ImmutableKdTree::new_from_slice(kept).map_err(|_| too_many())?;
+    Ok(Some(Arc::new(tree)))
+}
+
 impl<const D: usize, V: Value<f64>> Interpolator for NearestNDInterpolator<D, V> {
     type Point = [f64; D];
     type Output = V;
@@ -439,5 +463,131 @@ impl<const D: usize, V: Value<f64>> Interpolator for NearestNDInterpolator<D, V>
             }
         }
         Some(self.values[self.first[item] as usize])
+    }
+}
+
+/// The stored form of the `serde` feature.
+#[cfg(feature = "serde")]
+mod stored {
+    use super::{too_many, tree_of, NearestNDInterpolator, Scaling};
+    use crate::{validate, InterpolateError, Value};
+    use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
+    use std::borrow::Cow;
+
+    /// The version of the stored form.
+    const VERSION: u32 = 1;
+
+    /// What is stored: the points of the tree (each set of coordinates once,
+    /// after the change of coordinates of a rescaled interpolant), which of
+    /// the values each of them has, the values, the change of coordinates,
+    /// and the bound. The tree is not: it is built again from its points when
+    /// the form is read, so that the form does not depend on how a version of
+    /// the tree's crate lays it out.
+    #[derive(Serialize, Deserialize)]
+    #[serde(bound = "")]
+    struct Form<'a, const D: usize, V: Value<f64>> {
+        version: u32,
+        #[serde(with = "crate::stored")]
+        points: Cow<'a, [[f64; D]]>,
+        first: Cow<'a, [u32]>,
+        #[serde(with = "crate::stored")]
+        values: Cow<'a, [V]>,
+        scaling: Option<Scaling<D>>,
+        bound: Option<f64>,
+    }
+
+    impl<const D: usize, V: Value<f64>> Serialize for NearestNDInterpolator<D, V> {
+        /// # Errors
+        ///
+        /// Besides the errors of the serializer: a distance bound that is NaN
+        /// or negative infinity is not stored. With either, no query has a
+        /// value; a text format has neither and would read them back as no
+        /// bound, with which every query has one.
+        fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+            // (Positive infinity is never held: `with_distance_bound`.)
+            if self.bound.is_some_and(|bound| !bound.is_finite()) {
+                return Err(ser::Error::custom(
+                    "a distance bound that is not finite cannot be stored",
+                ));
+            }
+            // The tree gives its points back with the place each was given at.
+            let mut points = vec![[0.0; D]; self.first.len()];
+            if let Some(tree) = &self.tree {
+                for (place, point) in tree.iter() {
+                    points[place as usize] = point;
+                }
+            }
+            Form {
+                version: VERSION,
+                points: Cow::Owned(points),
+                first: Cow::Borrowed(&self.first),
+                values: Cow::Borrowed(&self.values),
+                scaling: self.scaling,
+                bound: self.bound,
+            }
+            .serialize(to)
+        }
+    }
+
+    /// The points and the values pass the checks of
+    /// [`NearestNDInterpolator::new`]. The points are those of the tree, so
+    /// they are also checked to be distinct, and the places of their values to
+    /// increase and to be places of the values.
+    impl<'de, const D: usize, V: Value<f64>> Deserialize<'de> for NearestNDInterpolator<D, V> {
+        fn deserialize<D2: Deserializer<'de>>(from: D2) -> Result<Self, D2::Error> {
+            let form = Form::<D, V>::deserialize(from)?;
+            crate::stored::version(form.version, VERSION)?;
+            let (points, values) = (form.points.into_owned(), form.values.into_owned());
+            let first = form.first.into_owned();
+            let checked = || {
+                validate::length(&first, points.len())?;
+                validate::enough(&values, 1)?;
+                validate::enough(&points, 1)?;
+                if u32::try_from(values.len()).is_err() {
+                    return Err(too_many());
+                }
+                let finite = |point: &[f64; D]| point.iter().all(|c| c.is_finite());
+                if let Some(index) = validate::first_failing(&points, finite) {
+                    return Err(InterpolateError::NonFinite { index });
+                }
+                if let Some(index) = validate::first_failing(&values, V::all_finite) {
+                    return Err(InterpolateError::NonFinite { index });
+                }
+                if let Some((first, second)) = crate::scattered::first_repeat(&points) {
+                    return Err(InterpolateError::DuplicatePoints { first, second });
+                }
+                Ok(())
+            };
+            checked().map_err(de::Error::custom)?;
+            let in_order = first.windows(2).all(|pair| pair[0] < pair[1]);
+            let in_range = first
+                .last()
+                .is_some_and(|last| (*last as usize) < values.len());
+            if !(in_order && in_range) {
+                return Err(de::Error::custom(
+                    "the places of the values of the points do not increase within the values",
+                ));
+            }
+            if let Some(scaling) = &form.scaling {
+                let usable = scaling.offset.iter().all(|c| c.is_finite())
+                    && scaling.scale.iter().all(|c| c.is_finite() && *c > 0.0);
+                if !usable {
+                    return Err(de::Error::custom(
+                        "the change of coordinates is not finite, or its scale is not above zero",
+                    ));
+                }
+            }
+            // As none is stored: see `serialize`.
+            if form.bound.is_some_and(|bound| !bound.is_finite()) {
+                return Err(de::Error::custom("the distance bound is not finite"));
+            }
+            Ok(Self {
+                tree: tree_of(&points).map_err(de::Error::custom)?,
+                first,
+                values,
+                scaling: form.scaling,
+                bound: form.bound,
+            })
+        }
     }
 }

@@ -449,13 +449,19 @@ fn a_bound_leaves_a_query_with_a_value_only_when_its_point_is_nearer() {
         bits(Some(-7.0))
     );
     // No distance is under zero, or under NaN; every distance is under infinity.
-    for none in [0.0, -1.0, f64::NAN] {
-        assert_eq!(
-            nearest.clone().with_distance_bound(none).eval(&[0.0, 0.0]),
-            None
-        );
+    for none in [0.0, -1.0, f64::NAN, f64::NEG_INFINITY] {
+        let bounded = nearest.clone().with_distance_bound(none);
+        assert_eq!(bounded.eval(&[0.0, 0.0]), None);
+        assert_eq!(bits(bounded.distance_bound()), bits(Some(none)));
     }
+    // Positive infinity is no bound, and is held as none.
     let open = nearest.clone().with_distance_bound(f64::INFINITY);
+    assert_eq!(open.distance_bound(), None);
+    let open = nearest
+        .clone()
+        .with_distance_bound(1.0)
+        .with_distance_bound(f64::INFINITY);
+    assert_eq!(open.distance_bound(), None);
     assert_eq!(
         bits(open.eval(&[1e100, 0.0])),
         bits(nearest.eval(&[1e100, 0.0]))

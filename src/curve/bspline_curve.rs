@@ -35,6 +35,7 @@ use crate::{
 /// # }
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum Parametrization {
     /// By 1: the points are equally spaced in the parameter, however far apart
@@ -406,5 +407,61 @@ impl<T: Scalar, const D: usize> Interpolator for BSplineCurve<T, D> {
         fill: [T; D],
     ) -> Result<(), InterpolateError> {
         self.spline.eval_batch_into(points, out, fill)
+    }
+}
+
+/// The stored form of the `serde` feature.
+#[cfg(feature = "serde")]
+mod stored {
+    use super::BSplineCurve;
+    use crate::{validate, BSpline1D, Scalar};
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    use std::borrow::Cow;
+
+    /// The version of the stored form.
+    const VERSION: u32 = 1;
+
+    /// What is stored: the spline, and the parameters of the data points.
+    #[derive(Serialize, Deserialize)]
+    #[serde(bound = "")]
+    struct Form<'a, T: Scalar, const D: usize> {
+        version: u32,
+        spline: Cow<'a, BSpline1D<T, [T; D]>>,
+        #[serde(with = "crate::stored")]
+        parameters: Cow<'a, [T]>,
+    }
+
+    impl<T: Scalar, const D: usize> Serialize for BSplineCurve<T, D> {
+        fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+            Form {
+                version: VERSION,
+                spline: Cow::Borrowed(&self.spline),
+                parameters: Cow::Borrowed(&self.parameters),
+            }
+            .serialize(to)
+        }
+    }
+
+    /// The parameters are checked as the coordinates of a spline are (finite,
+    /// strictly increasing, two or more), and against the domain of the
+    /// spline, whose ends are the first and the last of them.
+    impl<'de, T: Scalar, const D: usize> Deserialize<'de> for BSplineCurve<T, D> {
+        fn deserialize<D2: Deserializer<'de>>(from: D2) -> Result<Self, D2::Error> {
+            let form = Form::<T, D>::deserialize(from)?;
+            crate::stored::version(form.version, VERSION)?;
+            let parameters = form.parameters.into_owned();
+            validate::coordinates_and_values(&parameters, &parameters, parameters.len(), 2)
+                .map_err(de::Error::custom)?;
+            let ends = (parameters[0], parameters[parameters.len() - 1]);
+            if ends != form.spline.domain() {
+                return Err(de::Error::custom(
+                    "the parameters do not end where the domain of the spline ends",
+                ));
+            }
+            Ok(Self {
+                spline: form.spline.into_owned(),
+                parameters,
+            })
+        }
     }
 }

@@ -280,3 +280,54 @@ impl<T: Scalar, V: Value<T>> Interpolator for Linear1D<T, V> {
         )
     }
 }
+
+/// The stored form of the `serde` feature.
+#[cfg(feature = "serde")]
+mod stored {
+    use super::Linear1D;
+    use crate::{InterpolateError, PPoly, Scalar, Value};
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    use std::borrow::Cow;
+
+    /// The version of the stored form.
+    const VERSION: u32 = 1;
+
+    /// What is stored: the segments, and the last data value (the segments
+    /// give it back only up to rounding).
+    #[derive(Serialize, Deserialize)]
+    #[serde(bound = "")]
+    struct Form<'a, T: Scalar, V: Value<T>> {
+        version: u32,
+        poly: Cow<'a, PPoly<T, V>>,
+        #[serde(with = "crate::stored")]
+        last: V,
+    }
+
+    impl<T: Scalar, V: Value<T>> Serialize for Linear1D<T, V> {
+        fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+            Form {
+                version: VERSION,
+                poly: Cow::Borrowed(&self.poly),
+                last: self.last,
+            }
+            .serialize(to)
+        }
+    }
+
+    impl<'de, T: Scalar, V: Value<T>> Deserialize<'de> for Linear1D<T, V> {
+        fn deserialize<D: Deserializer<'de>>(from: D) -> Result<Self, D::Error> {
+            let form = Form::<T, V>::deserialize(from)?;
+            crate::stored::version(form.version, VERSION)?;
+            crate::stored::degree(form.poly.degree(), 1)?;
+            if !form.last.all_finite() {
+                // The last value belongs to the last coordinate.
+                let index = form.poly.breakpoints().len() - 1;
+                return Err(de::Error::custom(InterpolateError::NonFinite { index }));
+            }
+            Ok(Self {
+                poly: form.poly.into_owned(),
+                last: form.last,
+            })
+        }
+    }
+}
