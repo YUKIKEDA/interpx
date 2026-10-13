@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-The rows of P (below) that are not done, in this order: P-4 and P-6 first (what SciPy builds and interpx cannot; a constructor the design names and the code lacks), then the speed rows by the size of the loss: P-3, P-7, P-8, P-5, P-10 (what P-9 left open: no result depends on it). They come before M5-1 and M5-3, which are put on top of the types these rows may change (`.cursor/rules/pace.mdc`, `.cursor/rules/bench.mdc`). M4 waits for `convx` (see Dependencies).
+The rows of P (below) that are not done, in this order: P-4 and P-6 first (what SciPy builds and interpx cannot; a constructor the design names and the code lacks), then the speed rows by the size of the loss: P-3, P-7, P-8, P-5, P-10 and P-11 (what P-9 and P-3 left open: no result depends on them). They come before M5-1 to M5-3, which are put on top of the types these rows may change (`.cursor/rules/pace.mdc`, `.cursor/rules/bench.mdc`). M4 waits for `convx` (see Dependencies).
 
 ## Dependencies
 
@@ -72,14 +72,15 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | --- | ------ | ---------------------------------------------------------------------------------------- | ----- | ------ |
 | P-1 | Design | Construction: what it copies and what it checks (grid 180x and more, 1-D 1.3x to 5x)     | #122  | Done   |
 | P-2 | Task   | 1-D evaluation of queries in no order on 10 000 points (2.4x against `ndarray-interp`)   | #123  | Done   |
-| P-3 | Task   | Grid `linear` and `nearest` evaluation (1.1x to 1.6x against `interpn`)                  | #124  | Todo   |
+| P-3 | Task   | Grid `linear` and `nearest` evaluation (1.1x to 1.6x against `interpn`)                  | #124  | Done   |
 | P-4 | Design | Grid: an axis with one point (SciPy builds it; eight cases of SciPy's suite do not run)  | #125  | Done   |
-| P-5 | Task   | RBF `quintic` at 10 points (1.12x against SciPy, one case)                               | #126  | Todo   |
+| P-5 | Task   | RBF `quintic` at 10 points (1.12x against SciPy, one case)                               | #126  | Done   |
 | P-6 | Feat   | `from_owned` for `NearestNDInterpolator` and `RBFInterpolator` (the types that keep data) | #128  | Done   |
-| P-7 | Task   | `BSpline1D` of degree 1 on 10 000 points: evaluation in order (1.14x), construction (3x) | #130  | Todo   |
-| P-8 | Task   | `Linear1D` and `Nearest1D`: construction on 10 000 points (1.9x and 1.1x against SciPy)  | #131  | Todo   |
+| P-7 | Task   | `BSpline1D` of degree 1 on 10 000 points: evaluation in order (1.14x against SciPy)      | #130  | Done   |
+| P-8 | Task   | Construction on 10 000 points: `Linear1D` 1.9x, `Nearest1D` 1.1x, `BSpline1D` degree 1 2.9x | #131  | Done   |
 | P-9 | Task   | Search: the time for points in no order moves twofold with where it is built in          | #132  | Done   |
 | P-10 | Task  | Search: the cause of P-9 in the disassembly, the five cases it made slower, a two-place check | #138  | Todo   |
+| P-11 | Task  | Grid: the search on two and three axes against `interpn` (up to 1.5x, part of it unexplained) | #144  | Todo   |
 
 ## M5: Integration and quality
 

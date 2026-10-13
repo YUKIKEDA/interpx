@@ -102,22 +102,18 @@ impl GridMethod {
         match self {
             Self::Nearest | Self::Linear => 1,
             Self::Pchip => 2,
-            Self::Cubic | Self::Quintic => self.degree().map_or(2, |degree| degree + 1),
-        }
-    }
-
-    /// The degree of the spline of a spline method.
-    fn degree(self) -> Option<usize> {
-        match self {
-            Self::Nearest | Self::Linear | Self::Pchip => None,
-            Self::Cubic => Some(3),
-            Self::Quintic => Some(5),
+            Self::Cubic => 4,
+            Self::Quintic => 6,
         }
     }
 }
 
 /// The largest order (degree + 1) of a spline method: that of the quintic.
 const MAX_ORDER: usize = 6;
+
+/// The most dimensions the corners of a cell are laid out for at once (16
+/// corners): the linear method of more dimensions takes them one by one.
+const SMALL: usize = 4;
 
 /// What a grid evaluates by.
 #[derive(Debug, Clone)]
@@ -560,6 +556,29 @@ impl<T: Scalar, const D: usize, V: Value<T>> RegularGridInterpolator<T, D, V> {
                 // The corners of the cell, the first axis outermost (the order
                 // SciPy adds them in): bit `d` from the top says whether the
                 // corner is on the upper side along axis `d`.
+                if D <= SMALL {
+                    // The weight and the place of every corner, made axis by
+                    // axis: each axis doubles the corners there are, the lower
+                    // side then the upper side of each. The weight of a corner
+                    // is the same product in the same order as below, and no
+                    // corner waits for the one before it.
+                    let mut weight = [T::one(); 1 << SMALL];
+                    let mut offset = [0_usize; 1 << SMALL];
+                    for d in 0..D {
+                        for corner in (0..1_usize << d).rev() {
+                            let (w, o) = (weight[corner], offset[corner]);
+                            weight[2 * corner] = w * weights[d][0];
+                            weight[2 * corner + 1] = w * weights[d][1];
+                            offset[2 * corner] = o + offsets[d][0];
+                            offset[2 * corner + 1] = o + offsets[d][1];
+                        }
+                    }
+                    let mut value = V::zero();
+                    for corner in 0..1_usize << D {
+                        value = value.axpy(weight[corner], self.values[offset[corner]]);
+                    }
+                    return value;
+                }
                 let mut value = V::zero();
                 for corner in 0..1_usize << D {
                     let mut weight = T::one();

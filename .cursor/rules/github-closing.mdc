@@ -20,4 +20,6 @@ This does not close #120.
 Part of #120. The acceptance text on #120 is still unmet.
 ```
 
+When the PR body itself says a condition of the Issue is not met, the PR does not close the Issue as it stands. Before the PR is opened, either the unmet conditions are moved to an Issue and a roadmap row of their own and the first Issue's text is changed to say so, or the PR says `Part of #N`. Which of the two is the owner's to say when the conditions are ones the owner set. #137 was opened with `Closes #132` and two of three conditions unmet; the review caught it, and the two became #138.
+
 Skill: `.agents/skills/github-closing/SKILL.md`.
