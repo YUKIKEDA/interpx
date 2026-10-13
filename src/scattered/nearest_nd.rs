@@ -3,6 +3,7 @@
 use crate::error::ParamReason;
 use crate::{validate, InterpolateError, Interpolator, Value};
 use kiddo::{ImmutableKdTree, SquaredEuclidean};
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -158,7 +159,35 @@ impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {
     /// # }
     /// ```
     pub fn new(points: &[[f64; D]], values: &[V]) -> Result<Self, InterpolateError> {
-        Self::build(points, values, false)
+        Self::build(points, Cow::Borrowed(values), false)
+    }
+
+    /// Builds the interpolant from values that are handed over, which are
+    /// kept as they are and not copied. The points are borrowed: they go into
+    /// a tree, and nothing of the slice is kept.
+    ///
+    /// The checks and the interpolant are those of
+    /// [`new`](NearestNDInterpolator::new).
+    ///
+    /// # Errors
+    ///
+    /// As [`new`](NearestNDInterpolator::new).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{InterpolateError, Interpolator, NearestNDInterpolator};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// let points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
+    /// let values = vec![10.0, 20.0, 30.0];
+    /// let nearest = NearestNDInterpolator::from_owned(&points, values)?;
+    /// assert_eq!(nearest.eval(&[0.9, 0.2]), Some(20.0));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn from_owned(points: &[[f64; D]], values: Vec<V>) -> Result<Self, InterpolateError> {
+        Self::build(points, Cow::Owned(values), false)
     }
 
     /// Builds the interpolant with every coordinate brought to the same range
@@ -201,11 +230,43 @@ impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {
     /// # }
     /// ```
     pub fn rescaled(points: &[[f64; D]], values: &[V]) -> Result<Self, InterpolateError> {
-        Self::build(points, values, true)
+        Self::build(points, Cow::Borrowed(values), true)
     }
 
-    fn build(points: &[[f64; D]], values: &[V], rescale: bool) -> Result<Self, InterpolateError> {
-        validate::length(values, points.len())?;
+    /// [`rescaled`](NearestNDInterpolator::rescaled) from values that are
+    /// handed over, as [`from_owned`](NearestNDInterpolator::from_owned) is
+    /// to [`new`](NearestNDInterpolator::new).
+    ///
+    /// # Errors
+    ///
+    /// As [`rescaled`](NearestNDInterpolator::rescaled).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{InterpolateError, Interpolator, NearestNDInterpolator};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// // Metres along the first axis, kilometres along the second.
+    /// let points = [[0.0, 0.0], [1000.0, 0.0], [0.0, 1.0]];
+    /// let scaled = NearestNDInterpolator::rescaled_from_owned(&points, vec![1.0, 2.0, 3.0])?;
+    /// assert_eq!(scaled.eval(&[400.0, 0.3]), Some(1.0));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn rescaled_from_owned(
+        points: &[[f64; D]],
+        values: Vec<V>,
+    ) -> Result<Self, InterpolateError> {
+        Self::build(points, Cow::Owned(values), true)
+    }
+
+    fn build(
+        points: &[[f64; D]],
+        values: Cow<'_, [V]>,
+        rescale: bool,
+    ) -> Result<Self, InterpolateError> {
+        validate::length(&values, points.len())?;
         validate::enough(points, 1)?;
         // The tree numbers its points with `u32`.
         let too_many = || InterpolateError::InvalidParameter {
@@ -217,11 +278,11 @@ impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {
         if u32::try_from(points.len()).is_err() {
             return Err(too_many());
         }
-        let not_finite = |point: &[f64; D]| !point.iter().all(|c| c.is_finite());
-        if let Some(index) = points.iter().position(not_finite) {
+        let finite = |point: &[f64; D]| point.iter().all(|c| c.is_finite());
+        if let Some(index) = validate::first_failing(points, finite) {
             return Err(InterpolateError::NonFinite { index });
         }
-        if let Some(index) = values.iter().position(|v| !v.all_finite()) {
+        if let Some(index) = validate::first_failing(&values, V::all_finite) {
             return Err(InterpolateError::NonFinite { index });
         }
 
@@ -247,7 +308,7 @@ impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {
         Ok(Self {
             tree,
             first,
-            values: values.to_vec(),
+            values: values.into_owned(),
             scaling,
             bound: None,
         })

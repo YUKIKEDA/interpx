@@ -65,6 +65,10 @@ When a new reference looks inexact, check the interpolation property first (the 
 4. Run the generator. Read the diff of the JSON: only the intended cases are added.
 5. Write the Rust test with fixed tolerances from §8.2, and do the mutation check from `numeric-tests.mdc`: copy the JSON aside, change one expected value (and, separately, one NaN query), see the test fail, and restore the copy.
 
+## Add cases to a generator that exists
+
+New cases draw from a generator of their own (`np.random.default_rng(SEED + n)`) and use names of their own for their arrays. A generator script is one long function: a case added in the middle that draws from the shared generator, or that reuses a name such as `q3`, changes the cases after it, in this file and in the files the same run writes later. After `just gen-goldens`, `git diff --stat compare/goldens` shows additions in the file that was meant and nothing else. A deletion, or a second file, is the sign (#134: a reused name changed the queries of a case in `grid_pchip.json`).
+
 ## Regenerate
 
 Regeneration is its own change. The PR says why, lists the cases whose expected values moved, and for each says whether SciPy changed or the generator did. Never edit a JSON file by hand.

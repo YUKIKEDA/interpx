@@ -775,7 +775,7 @@ fn slopes_along_last<T: Scalar, const D: usize, V: Value<T>>(
         pchip::slopes(axis, &per_width, line, slopes)
             .map_err(|index| Overflow::Value(l * n + index))?;
     }
-    match slopes.iter().position(|slope| !slope.all_finite()) {
+    match validate::first_failing(&slopes, V::all_finite) {
         Some(index) => Err(Overflow::Value(index)),
         None => Ok(slopes),
     }
@@ -825,7 +825,7 @@ fn tensor<T: Scalar, const D: usize, V: Value<T>>(
         }
         knots[d] = system.knots;
     }
-    if let Some(index) = coefficients.iter().position(|c| !c.all_finite()) {
+    if let Some(index) = validate::first_failing(&coefficients, V::all_finite) {
         return Err(Overflow::Value(index));
     }
     Ok(Tensor {

@@ -19,6 +19,7 @@ use crate::{reserve, validate, InterpolateError, Interpolator, Value};
 use faer::dyn_stack::{MemBuffer, MemStack};
 use faer::linalg::lu::partial_pivoting::factor::{lu_in_place, lu_in_place_scratch};
 use faer::{MatMut, Par};
+use std::borrow::Cow;
 use std::cell::RefCell;
 
 /// The kernel of an [`RBFInterpolator`]: a function of the distance `r` from a
@@ -911,8 +912,59 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
         kernel: RbfKernel,
         options: &RbfOptions,
     ) -> Result<Self, InterpolateError> {
-        validate::length(values, points.len())?;
-        validate::enough(points, 1)?;
+        Self::build(
+            Cow::Borrowed(points),
+            Cow::Borrowed(values),
+            kernel,
+            options,
+        )
+    }
+
+    /// Builds the interpolant from points and values that are handed over.
+    ///
+    /// The points are kept as they are and not copied. So are the values with
+    /// [`RbfOptions::with_neighbors`]; without it the values go into the
+    /// system that is solved, and are not kept at all.
+    ///
+    /// The checks and the interpolant are those of
+    /// [`with_options`](RBFInterpolator::with_options).
+    ///
+    /// # Errors
+    ///
+    /// As [`with_options`](RBFInterpolator::with_options).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{InterpolateError, Interpolator, RBFInterpolator, RbfKernel, RbfOptions};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// let points = vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.5, 0.4]];
+    /// let values = vec![0.0, 1.0, 2.0, 3.0, 1.3];
+    /// let options = RbfOptions::new().with_neighbors(4);
+    /// let rbf = RBFInterpolator::from_owned(points, values, RbfKernel::Linear, &options)?;
+    /// assert_eq!(rbf.neighbors(), Some(4));
+    /// assert!(rbf.eval(&[0.2, 0.9]).is_some());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn from_owned(
+        points: Vec<[f64; D]>,
+        values: Vec<V>,
+        kernel: RbfKernel,
+        options: &RbfOptions,
+    ) -> Result<Self, InterpolateError> {
+        Self::build(Cow::Owned(points), Cow::Owned(values), kernel, options)
+    }
+
+    fn build(
+        points: Cow<'_, [[f64; D]]>,
+        values: Cow<'_, [V]>,
+        kernel: RbfKernel,
+        options: &RbfOptions,
+    ) -> Result<Self, InterpolateError> {
+        validate::length(&values, points.len())?;
+        validate::enough(&points, 1)?;
         // With neighbors the points go into a tree that numbers them with
         // `u32`. (Counted before the points are looked at one by one.)
         let in_a_tree = options.neighbors.is_some_and(|k| k < points.len());
@@ -924,11 +976,11 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
                 },
             });
         }
-        let not_finite = |point: &[f64; D]| !point.iter().all(|c| c.is_finite());
-        if let Some(index) = points.iter().position(not_finite) {
+        let finite = |point: &[f64; D]| point.iter().all(|c| c.is_finite());
+        if let Some(index) = validate::first_failing(&points, finite) {
             return Err(InterpolateError::NonFinite { index });
         }
-        if let Some(index) = values.iter().position(|v| !v.all_finite()) {
+        if let Some(index) = validate::first_failing(&values, V::all_finite) {
             return Err(InterpolateError::NonFinite { index });
         }
         let invalid = |name, reason| InterpolateError::InvalidParameter { name, reason };
@@ -958,7 +1010,7 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
         // With as many neighbors as points, every query has all the points.
         let neighbors = options.neighbors.filter(|k| *k < points.len());
         let powers = monomials(neighbors.unwrap_or(points.len()), kernel, degree)?;
-        if let Some((first, second)) = super::first_repeat(points) {
+        if let Some((first, second)) = super::first_repeat(&points) {
             return Err(InterpolateError::DuplicatePoints { first, second });
         }
         // The system of the neighbors is made at every evaluation, in a
@@ -969,13 +1021,13 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
         }
         let solved = match neighbors {
             Some(neighbors) => Solved::Locally {
-                values: values.to_vec(),
-                tree: Tree::new(points),
+                values: values.into_owned(),
+                tree: Tree::new(&points),
                 neighbors,
             },
             None => {
                 let terms = Terms::on(&powers, points.iter().copied());
-                let (matrix, rhs) = system(points, values, smoothing, kernel, &terms)?;
+                let (matrix, rhs) = system(&points, &values, smoothing, kernel, &terms)?;
                 Solved::Globally {
                     coefficients: solve(matrix, &rhs)?,
                     shift: terms.shift,
@@ -984,7 +1036,7 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
             }
         };
         Ok(Self {
-            points: points.to_vec(),
+            points: points.into_owned(),
             kernel,
             powers,
             smoothing,

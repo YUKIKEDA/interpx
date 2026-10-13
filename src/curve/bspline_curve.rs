@@ -160,7 +160,7 @@ impl<T: Scalar, const D: usize> BSplineCurve<T, D> {
     ) -> Result<Self, InterpolateError> {
         let required = fewest_points(degree, &bc)?;
         validate::enough(points, required)?;
-        if let Some(index) = points.iter().position(|point| !point.all_finite()) {
+        if let Some(index) = validate::first_failing(points, |point| point.all_finite()) {
             return Err(InterpolateError::NonFinite { index });
         }
         let parameters = parameters_of(points, parametrization)?;
