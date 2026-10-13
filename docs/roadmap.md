@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-The rows of P (below) that are not done, in this order: P-4 and P-6 first (what SciPy builds and interpx cannot; a constructor the design names and the code lacks), then the speed rows by the size of the loss: P-3, P-7, P-8, P-5, P-10 (what P-9 left open: no result depends on it). They come before M5-1 to M5-3, which are put on top of the types these rows may change (`.cursor/rules/pace.mdc`, `.cursor/rules/bench.mdc`). M4 waits for `convx` (see Dependencies).
+The rows of P (below) that are not done, in this order: P-4 and P-6 first (what SciPy builds and interpx cannot; a constructor the design names and the code lacks), then the speed rows by the size of the loss: P-3, P-7, P-8, P-5, P-10 and P-11 (what P-9 and P-3 left open: no result depends on them). They come before M5-1 to M5-3, which are put on top of the types these rows may change (`.cursor/rules/pace.mdc`, `.cursor/rules/bench.mdc`). M4 waits for `convx` (see Dependencies).
 
 ## Dependencies
 
@@ -80,6 +80,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | P-8 | Task   | `Linear1D` and `Nearest1D`: construction on 10 000 points (1.9x and 1.1x against SciPy)  | #131  | Todo   |
 | P-9 | Task   | Search: the time for points in no order moves twofold with where it is built in          | #132  | Done   |
 | P-10 | Task  | Search: the cause of P-9 in the disassembly, the five cases it made slower, a two-place check | #138  | Todo   |
+| P-11 | Task  | Grid: the search on two and three axes against `interpn` (up to 1.5x, part of it unexplained) | #144  | Todo   |
 
 ## M5: Integration and quality
 
