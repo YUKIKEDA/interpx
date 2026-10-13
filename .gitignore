@@ -6,3 +6,4 @@ __pycache__/
 /compare/perf/out/
 *.proptest-regressions
 /compare/perf/runners/*/target
+proptest-regressions/
