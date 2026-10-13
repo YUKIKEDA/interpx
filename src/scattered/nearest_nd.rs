@@ -310,8 +310,11 @@ impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {
     ///
     /// A query at the distance `bound` exactly, or farther, has no value. For
     /// a [`rescaled`](NearestNDInterpolator::rescaled) interpolant the distance
-    /// is the one measured after the change of coordinates. A `bound` that is
-    /// NaN leaves no query with a value; an infinite one is no bound.
+    /// is the one measured after the change of coordinates. A `bound` of
+    /// positive infinity is no bound, and the interpolant has none afterwards
+    /// ([`distance_bound`](NearestNDInterpolator::distance_bound) returns
+    /// `None`). A `bound` that is NaN, zero, or below zero (negative infinity
+    /// among them) leaves no query with a value.
     ///
     /// # Examples
     ///
@@ -328,12 +331,21 @@ impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {
     /// assert_eq!(near.eval(&[2.5, 0.0]), Some(1.0));
     /// assert_eq!(near.eval(&[3.0, 0.0]), None);
     /// assert_eq!(near.eval(&[4.0, 0.0]), None);
+    ///
+    /// let open = near.clone().with_distance_bound(f64::INFINITY);
+    /// assert_eq!(open.distance_bound(), None);
+    /// assert_eq!(open.eval(&[4.0, 0.0]), Some(1.0));
+    /// assert_eq!(near.with_distance_bound(f64::NEG_INFINITY).eval(&[0.0, 0.0]), None);
     /// # Ok(())
     /// # }
     /// ```
     #[must_use]
     pub fn with_distance_bound(mut self, bound: f64) -> Self {
-        self.bound = Some(bound);
+        // Every distance is under positive infinity: that is no bound, and
+        // is held as none, so that two interpolants that give the same
+        // values are the same.
+        let open = bound.is_infinite() && bound.is_sign_positive();
+        self.bound = (!open).then_some(bound);
         self
     }
 
@@ -488,12 +500,14 @@ mod stored {
         /// # Errors
         ///
         /// Besides the errors of the serializer: a distance bound that is NaN
-        /// is not stored. A text format has no NaN and would read it back as
-        /// no bound, which is another interpolant.
+        /// or negative infinity is not stored. With either, no query has a
+        /// value; a text format has neither and would read them back as no
+        /// bound, with which every query has one.
         fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
-            if self.bound.is_some_and(f64::is_nan) {
+            // (Positive infinity is never held: `with_distance_bound`.)
+            if self.bound.is_some_and(|bound| !bound.is_finite()) {
                 return Err(ser::Error::custom(
-                    "a distance bound that is NaN cannot be stored",
+                    "a distance bound that is not finite cannot be stored",
                 ));
             }
             // The tree gives its points back with the place each was given at.
@@ -509,9 +523,7 @@ mod stored {
                 first: Cow::Borrowed(&self.first),
                 values: Cow::Borrowed(&self.values),
                 scaling: self.scaling,
-                // An infinite bound is no bound, and a text format has no
-                // infinity.
-                bound: self.bound.filter(|bound| bound.is_finite()),
+                bound: self.bound,
             }
             .serialize(to)
         }
@@ -565,7 +577,7 @@ mod stored {
                     ));
                 }
             }
-            // As it is not stored: see `serialize`.
+            // As none is stored: see `serialize`.
             if form.bound.is_some_and(|bound| !bound.is_finite()) {
                 return Err(de::Error::custom("the distance bound is not finite"));
             }

@@ -727,20 +727,35 @@ fn scattered_types_come_back_and_a_broken_form_does_not() {
     form["scaling"]["scale"][0] = json!(0.0);
     assert!(serde_json::from_value::<NearestNDInterpolator<2>>(form).is_err());
 
-    // An infinite bound is no bound, and is stored as none; one that is NaN
-    // (no query has a value) is not stored at all.
+    // A bound of positive infinity is no bound: the interpolant holds none,
+    // and comes back with none.
     let unbounded = NearestNDInterpolator::new(&data, &twice).expect("valid");
     let infinite = unbounded.clone().with_distance_bound(f64::INFINITY);
+    assert_eq!(infinite.distance_bound(), None);
     let back: NearestNDInterpolator<2> = serde_json::from_value(json!(infinite)).expect("read");
     assert_eq!(back.distance_bound(), None);
     assert_eq!(back.eval_batch(&points), infinite.eval_batch(&points));
-    // (A binary format could hold the infinity; the form does not.)
     let bytes = postcard::to_stdvec(&infinite).expect("stored");
     let back: NearestNDInterpolator<2> = postcard::from_bytes(&bytes).expect("read");
     assert_eq!(back.distance_bound(), None);
-    let never = unbounded.with_distance_bound(f64::NAN);
-    assert!(serde_json::to_string(&never).is_err());
-    assert!(postcard::to_stdvec(&never).is_err());
+    // With a bound that is NaN or negative infinity no query has a value. A
+    // text format would write `null` for either and read back no bound, with
+    // which every query has one: neither is stored, in any format.
+    for none in [f64::NAN, f64::NEG_INFINITY] {
+        let never = unbounded.clone().with_distance_bound(none);
+        assert_eq!(never.eval(&data[0]), None);
+        assert!(serde_json::to_string(&never).is_err(), "{none}");
+        assert!(postcard::to_stdvec(&never).is_err(), "{none}");
+    }
+    // A stored form that says so is not read either (a binary format can).
+    let finite = unbounded.clone().with_distance_bound(0.375);
+    let bytes = postcard::to_stdvec(&finite).expect("stored");
+    let at = position(&bytes, &0.375_f64.to_le_bytes()).expect("the bound");
+    for none in [f64::NAN, f64::NEG_INFINITY, f64::INFINITY] {
+        let mut broken = bytes.clone();
+        broken[at..at + 8].copy_from_slice(&none.to_le_bytes());
+        assert!(postcard::from_bytes::<NearestNDInterpolator<2>>(&broken).is_err(), "{none}");
+    }
 
     // Without dimensions all points are one point.
     let nowhere = NearestNDInterpolator::new(&[[], []], &[7.0, 8.0]).expect("valid");
