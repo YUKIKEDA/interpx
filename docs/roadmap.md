@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-P-12 (#159) next: a figure of the RBF interpolant that is three times SciPy's and not explained may be a wrong result, and that comes before everything else. Then M5-11 (#160, the real-world data of the comparison): it can still show a loss the synthetic cases do not, and a loss is worked before the documents describe the library. Then M5-6 (`README.md`, `README.ja.md`, `examples/`), M5-7, and M5-8. M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4 (the orders of its two types, the adversarial geometry of section 8.4.6), and its part of the documents. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
+M5-11 (#160, the real-world data of the comparison) next: it can still show a loss the synthetic cases do not, and a loss is worked before the documents describe the library. Then M5-6 (`README.md`, `README.ja.md`, `examples/`), M5-7, and M5-8. M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4 (the orders of its two types, the adversarial geometry of section 8.4.6), and its part of the documents. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
 
 ## Dependencies
 
@@ -81,7 +81,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | P-9 | Task   | Search: the time for points in no order moves twofold with where it is built in          | #132  | Done   |
 | P-10 | Task  | Search: the cause of P-9 in the disassembly, the five cases it made slower, a two-place check | #138  | Todo   |
 | P-11 | Task  | Grid: the search on two and three axes against `interpn` (up to 1.5x, part of it unexplained) | #144  | Todo   |
-| P-12 | Bug   | RBF, Gaussian kernel: on an ill-conditioned system the error is three times SciPy's, outside SciPy's own range | #159  | Todo   |
+| P-12 | Bug   | RBF, Gaussian kernel: on an ill-conditioned system the error is three times SciPy's, outside SciPy's own range (it was inside: one order of the points among many) | #159  | Done   |
 
 ## M5: Integration and quality
 

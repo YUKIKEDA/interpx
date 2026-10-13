@@ -91,6 +91,16 @@ pub enum RbfKernel {
     },
     /// `exp(-r^2)`, with `r` the distance times `epsilon`. Needs no
     /// polynomial.
+    ///
+    /// With many points for its `epsilon` (points much nearer each other
+    /// than `1 / epsilon`) the system of this kernel is ill-conditioned:
+    /// the interpolant is then decided by rounding, misses its data by
+    /// what the rounding leaves, and stops improving as points are added.
+    /// With `epsilon` 5 on 800 points of the unit square, the error on a
+    /// smooth function was between 1e-5 and 1e-4 depending on the order
+    /// the points were given in, where the multiquadric had 1e-6 in any
+    /// order (SciPy has the same errors). A larger `epsilon`, neighbors
+    /// ([`RbfOptions::with_neighbors`]), or another kernel avoids it.
     Gaussian {
         /// What the distance is multiplied by.
         epsilon: f64,
