@@ -350,7 +350,8 @@ fn polygon<T: Scalar, V: Value<T>>(x: &[T], y: &[V]) -> Result<BSpline<T, V>, In
     knots.push(x[0]);
     knots.extend_from_slice(x);
     knots.push(x[n - 1]);
-    BSpline::from_owned(knots, y.to_vec(), 1)
+    // The caller checked `x` and `y`, and these are those numbers.
+    Ok(BSpline::from_checked(knots, y.to_vec(), 1))
 }
 
 /// Degree 2 or more, not periodic: `left` and `right` are the derivatives given
