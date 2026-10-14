@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-P-14 (#164) next: on real station data the RBF interpolant of two kernels is off by thousands of degrees with no error, in this crate and in SciPy; that may be a result the crate should refuse, and it comes before the documents. Then P-13 (#162), a question of the design that changes no result, and P-17 (#168) with whichever row runs the comparison next. Then M5-6 (`README.md`, `README.ja.md`, `examples/`), M5-7, and M5-8: the documents are written on figures that are right. M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4, and its part of the documents. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
+P-17 (#168) next, with a run of the whole comparison: P-14 made the construction of an RBF interpolant over all its points 7 to 78% longer (the estimate of its condition), so `docs/performance.md` is out of date for those rows, and P-17 is the change to the harness that the same run can carry. Then P-13 (#162), a question of the design that changes no result. Then M5-6 (`README.md`, `README.ja.md`, `examples/`), M5-7, and M5-8: the documents are written on figures that are right. M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4, and its part of the documents. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
 
 ## Dependencies
 
@@ -83,7 +83,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | P-11 | Task   | Grid: the search on two and three axes against `interpn` (up to 1.5x, part of it unexplained)                                                                      | #144  | Todo   |
 | P-12 | Bug    | RBF, Gaussian kernel: on an ill-conditioned system the error is three times SciPy's, outside SciPy's own range (it was inside: one order of the points among many) | #159  | Done   |
 | P-13 | Task   | Grid splines: a direct against an iterative solve, inside SciPy and against interpx; whether the solver is the user's to choose                                    | #162  | Todo   |
-| P-14 | Bug    | RBF on real station data: the cubic and quintic kernels give interpolants off by tens to thousands of degrees, far from SciPy's                                    | #164  | Todo   |
+| P-14 | Bug    | RBF on real station data: the cubic and quintic kernels give interpolants off by tens to thousands of degrees, far from SciPy's (stations that nearly coincide; the interpolant now says how badly its system is conditioned) | #164  | Done   |
 | P-15 | Bug    | compare: eight runs reported as failures of other libraries with no reason; all eight were our runners' own panic | #165  | Done   |
 | P-16 | Bug    | compare: SciPy's memory in `docs/performance.md` is that of a 4 MB launcher, not of the interpreter | #166  | Done   |
 | P-17 | Task   | compare: a construction of minutes is built twice, and one run sits at the time limit | #168  | Todo   |

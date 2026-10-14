@@ -683,6 +683,40 @@ fn scattered_types_come_back_and_a_broken_form_does_not() {
     form["neighbors"] = json!(80);
     assert!(serde_json::from_value::<RBFInterpolator<2>>(form).is_err());
 
+    // The estimate of the condition is stored with one system (it is not
+    // solved again to be read), and belongs to none with neighbors.
+    let whole = RBFInterpolator::<2>::new(&data, &values, RbfKernel::Cubic).expect("valid");
+    let estimate = whole.reciprocal_condition().expect("one system");
+    assert!(estimate > 0.0 && estimate < 1.0, "{estimate}");
+    let back: RBFInterpolator<2> = serde_json::from_value(json!(whole)).expect("read");
+    assert_eq!(back.reciprocal_condition(), Some(estimate));
+    let bytes = postcard::to_stdvec(&whole).expect("stored");
+    let back: RBFInterpolator<2> = postcard::from_bytes(&bytes).expect("read");
+    assert_eq!(back.reciprocal_condition(), Some(estimate));
+    for wrong in [json!(1.5), json!(-0.25), json!(null)] {
+        let mut form = json!(whole);
+        form["reciprocal_condition"] = wrong.clone();
+        assert!(
+            serde_json::from_value::<RBFInterpolator<2>>(form).is_err(),
+            "{wrong}"
+        );
+    }
+    for edge in [0.0, 1.0] {
+        let mut form = json!(whole);
+        form["reciprocal_condition"] = json!(edge);
+        let back: RBFInterpolator<2> = serde_json::from_value(form).expect("read");
+        assert_eq!(back.reciprocal_condition(), Some(edge));
+    }
+    let options = RbfOptions::new().with_neighbors(12);
+    let near = RBFInterpolator::<2>::with_options(&data, &values, RbfKernel::Cubic, &options);
+    let near = near.expect("valid");
+    assert_eq!(near.reciprocal_condition(), None);
+    let back: RBFInterpolator<2> = serde_json::from_value(json!(near)).expect("read");
+    assert_eq!(back.reciprocal_condition(), None);
+    let mut form = json!(near);
+    form["reciprocal_condition"] = json!(0.5);
+    assert!(serde_json::from_value::<RBFInterpolator<2>>(form).is_err());
+
     // Points given twice: the tree has each once, and the first value. A
     // point of its own is given last, so that the last value is one the tree
     // points to (values after that one belong to no point of the form, and a
