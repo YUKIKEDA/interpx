@@ -604,6 +604,25 @@ fn inverse(matrix: &[f64], n: usize) -> Vec<f64> {
     inverse
 }
 
+/// The matrix of a system with `kernels` points balanced as the crate
+/// balances it before it estimates the condition: the kernels divided by the
+/// largest of them, and the monomials as they are (`D A D` with `D` the root
+/// of that on the points and its inverse on the monomials).
+fn balanced(matrix: &[f64], n: usize, kernels: usize) -> Vec<f64> {
+    let largest = (0..kernels)
+        .flat_map(|i| (0..kernels).map(move |j| (i, j)))
+        .fold(0.0_f64, |largest, (i, j)| {
+            largest.max(matrix[i * n + j].abs())
+        });
+    let a = largest.sqrt().recip();
+    let d: Vec<f64> = (0..n)
+        .map(|i| if i < kernels { a } else { 1.0 / a })
+        .collect();
+    (0..n * n)
+        .map(|at| matrix[at] * d[at / n] * d[at % n])
+        .collect()
+}
+
 #[test]
 fn the_reciprocal_condition_is_that_of_the_system_and_falls_as_points_come_together() {
     let one_norm = |matrix: &[f64], n: usize| {
@@ -632,6 +651,7 @@ fn the_reciprocal_condition_is_that_of_the_system_and_falls_as_points_come_toget
         matrix[i * n + n - 1] = 1.0;
         matrix[(n - 1) * n + i] = 1.0;
     }
+    let matrix = balanced(&matrix, n, points.len());
     let exact = (one_norm(&matrix, n) * one_norm(&inverse(&matrix, n), n)).recip();
     let rbf = Rbf::new(&points, &values, RbfKernel::Linear).expect("valid");
     let estimate = rbf.reciprocal_condition().expect("one system");
@@ -680,6 +700,7 @@ fn the_reciprocal_condition_is_that_of_the_system_and_falls_as_points_come_toget
             matrix[i * n + n - 1] = 1.0;
             matrix[(n - 1) * n + i] = 1.0;
         }
+        let matrix = balanced(&matrix, n, close.len());
         let exact = (one_norm(&matrix, n) * one_norm(&inverse(&matrix, n), n)).recip();
         let mut held = values.to_vec();
         held.push(1.0);
@@ -711,6 +732,57 @@ fn the_reciprocal_condition_is_that_of_the_system_and_falls_as_points_come_toget
             before = estimate;
         }
         assert!(before < 1e-6, "{name}: {before:e} at a gap of 1e-7");
+    }
+}
+
+#[test]
+fn the_reciprocal_condition_does_not_move_with_the_unit_of_the_coordinates() {
+    // Franke's first function on 100 Halton points, the coordinates taken in
+    // units 100 and a million times smaller: the same interpolant (it misses
+    // its data by as little), and the system as it stands would read 31
+    // orders less for the cubic and 54 for the quintic (#170).
+    let halton = |i: usize, base: usize| {
+        let (mut share, mut at, mut i) = (1.0, 0.0, i);
+        while i > 0 {
+            share /= base as f64;
+            at += share * (i % base) as f64;
+            i /= base;
+        }
+        at
+    };
+    let base: Vec<[f64; 2]> = (1..=100).map(|i| [halton(i, 2), halton(i, 3)]).collect();
+    let values: Vec<f64> = base
+        .iter()
+        .map(|p| (3.0 * p[0]).sin() * p[1] + p[0])
+        .collect();
+    let estimate = |kernel, s: f64| {
+        let points: Vec<[f64; 2]> = base.iter().map(|p| [p[0] * s, p[1] * s]).collect();
+        let rbf = Rbf::new(&points, &values, kernel).expect("built");
+        rbf.reciprocal_condition().expect("one system")
+    };
+    // A power of the distance: the balanced system is the same in any unit.
+    for kernel in [RbfKernel::Linear, RbfKernel::Cubic, RbfKernel::Quintic] {
+        let first = estimate(kernel, 1.0);
+        assert!(first > 1e-12, "{kernel:?}: {first:e}");
+        // Larger units as well: the kernels then smaller than the monomials.
+        for s in [1e-4, 1e2, 1e6] {
+            let other = estimate(kernel, s);
+            assert!(
+                (other / first - 1.0).abs() < 1e-6,
+                "{kernel:?}, s = {s:e}: {other:e} against {first:e}"
+            );
+        }
+    }
+    // The thin plate spline changes shape with the unit (`r^2 ln r` of `s r`
+    // has `r^2 ln s` in it): it moves, by two orders over a million, and not
+    // by twenty-four.
+    let first = estimate(RbfKernel::ThinPlateSpline, 1.0);
+    for s in [1e2, 1e6] {
+        let other = estimate(RbfKernel::ThinPlateSpline, s);
+        assert!(
+            other > first * 1e-3 && other < first * 1e3,
+            "s = {s:e}: {other:e} against {first:e}"
+        );
     }
 }
 

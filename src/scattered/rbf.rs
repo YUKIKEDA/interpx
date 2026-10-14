@@ -518,13 +518,22 @@ fn fill<const D: usize>(
 fn solve<V: Value<f64>>(
     mut matrix: Vec<f64>,
     rhs: &[V],
+    kernels: usize,
 ) -> Result<(Vec<V>, f64), InterpolateError> {
     let side = rhs.len();
-    // The largest sum of the sizes of a column: the norm of the matrix, read
-    // before the factors are written over it.
+    let balance = balance(&matrix, side, kernels);
+    // The largest sum of the sizes of a column of the balanced matrix: its
+    // norm, read before the factors are written over the matrix.
     let norm = matrix
         .chunks_exact(side.max(1))
-        .map(|column| column.iter().map(|entry| entry.abs()).sum::<f64>())
+        .zip(&balance)
+        .map(|(column, across)| {
+            let sizes = column
+                .iter()
+                .zip(&balance)
+                .map(|(entry, down)| (entry * down * across).abs());
+            sizes.sum::<f64>()
+        })
         .fold(0.0, f64::max);
     let (mut order, mut inverse) = (vec![0_usize; side], vec![0_usize; side]);
     factor(
@@ -536,7 +545,10 @@ fn solve<V: Value<f64>>(
     let mut solution: Vec<V> = order.iter().map(|row| rhs[*row]).collect();
     substitute(&matrix, &mut solution);
     if solution.iter().all(V::all_finite) {
-        Ok((solution, reciprocal_condition(&matrix, &order, norm)))
+        Ok((
+            solution,
+            reciprocal_condition(&matrix, &order, &balance, norm),
+        ))
     } else {
         Err(InterpolateError::SolverFailed(SolverError::Singular))
     }
@@ -548,6 +560,37 @@ fn solve<V: Value<f64>>(
 /// `dlacon` stops at five).
 const ESTIMATES: usize = 5;
 
+/// The diagonal that balances the matrix of a [`system`] with `kernels`
+/// points before its condition is estimated: `a` for a point and `1 / a` for
+/// a monomial, with `a` one over the square root of the largest kernel. The
+/// balanced matrix (the diagonal on both sides) has kernels of size one at
+/// most and the monomials as they are.
+///
+/// The condition of the matrix as it is solved depends on the unit of the
+/// coordinates: the monomials are of points brought to [-1, 1], and the
+/// kernels of distances as they are, so multiplying the coordinates by `s`
+/// multiplies the kernels of the cubic by `s^3` and leaves the monomials.
+/// Measured on 100 points (Franke's first function), the reciprocal condition
+/// of the cubic's matrix went from 3.2e-7 to 1.9e-38 as `s` went from 1 to
+/// 1e6, and that of the quintic to 7.9e-63, where the interpolant missed its
+/// data by 1e-13 and 4e-12 whatever `s` (#170). The balanced matrix of a
+/// kernel that is a power of the distance is the same for every `s` (1.4e-7
+/// and 8.9e-10 then); that of the thin plate spline, which is not, moved from
+/// 1.8e-5 to 3.5e-7. It is the same system: what is solved is not changed.
+fn balance(matrix: &[f64], side: usize, kernels: usize) -> Vec<f64> {
+    let largest = (0..kernels)
+        .flat_map(|j| &matrix[j * side..j * side + kernels])
+        .fold(0.0_f64, |largest, entry| largest.max(entry.abs()));
+    let a = if largest > 0.0 && largest.is_finite() {
+        largest.sqrt().recip()
+    } else {
+        1.0
+    };
+    (0..side)
+        .map(|i| if i < kernels { a } else { a.recip() })
+        .collect()
+}
+
 /// How many times [`reciprocal_condition`] puts a vector through the inverse
 /// again to find the direction it stretches most. With one round the
 /// estimate was down to 0.15 of the norm (the linear kernel on 200 points,
@@ -556,20 +599,27 @@ const ESTIMATES: usize = 5;
 const INVERSE_ROUNDS: usize = 2;
 
 /// An estimate of the reciprocal of the condition number, in the 1-norm, of
-/// the symmetric matrix [`factor`] has factored, whose norm was `norm`: from
-/// 1 for a matrix as well conditioned as can be, down to 0 for a singular
-/// one. Under `f64::EPSILON` the matrix is singular to working precision.
+/// the symmetric matrix [`factor`] has factored, balanced on both sides by
+/// the diagonal `balance` ([`balance`]), whose norm was `norm`: from 1 for a
+/// matrix as well conditioned as can be, down to 0 for a singular one. Under
+/// `f64::EPSILON` the matrix is singular to working precision.
 ///
 /// The norm of the inverse is estimated from a few solves: Hager's search,
 /// as LAPACK's `dgecon` has it, and a few rounds through the inverse for
 /// what the search does not see. The estimate is a lower bound of the norm,
-/// so the result is never under the true reciprocal; on the matrices
-/// measured it was within a factor of 2.5 above it.
-fn reciprocal_condition(matrix: &[f64], order: &[usize], norm: f64) -> f64 {
+/// so the result is not under the true reciprocal (in exact arithmetic: for a
+/// matrix singular to working precision the solves are rounding, and the
+/// result is an order of magnitude); on the matrices measured it was within a
+/// factor of 2.5 above it.
+fn reciprocal_condition(matrix: &[f64], order: &[usize], balance: &[f64], norm: f64) -> f64 {
     let side = order.len();
+    // A solve with the balanced matrix `D A D`: `D⁻¹ A⁻¹ D⁻¹ b`.
     let solved = |b: &[f64]| -> Vec<f64> {
-        let mut x: Vec<f64> = order.iter().map(|row| b[*row]).collect();
+        let mut x: Vec<f64> = order.iter().map(|row| b[*row] / balance[*row]).collect();
         substitute(matrix, &mut x);
+        for (entry, scale) in x.iter_mut().zip(balance) {
+            *entry /= *scale;
+        }
         x
     };
     let mut x = vec![1.0 / side as f64; side];
@@ -1171,7 +1221,7 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
             None => {
                 let terms = Terms::on(&powers, points.iter().copied());
                 let (matrix, rhs) = system(&points, &values, smoothing, kernel, &terms)?;
-                let (coefficients, reciprocal_condition) = solve(matrix, &rhs)?;
+                let (coefficients, reciprocal_condition) = solve(matrix, &rhs, points.len())?;
                 Solved::Globally {
                     reciprocal_condition,
                     coefficients,
@@ -1349,30 +1399,42 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
     /// Neither this crate nor SciPy refuses such a system; this number is
     /// how to tell.
     ///
+    /// The number does not depend on the unit of the coordinates: it is that
+    /// of the system balanced so that its kernels are of size one at most
+    /// (for a kernel that is a power of the distance, the same number in any
+    /// unit; the thin plate spline moves by two orders over a factor of 1e6,
+    /// since its kernel changes shape with the unit). The condition of the
+    /// system as it stands would not tell: coordinates in metres would make
+    /// it many orders smaller with nothing wrong.
+    ///
     /// Points that lie very near each other are what does it, the more so
     /// the higher the power of the distance in the kernel. On 10 838
     /// weather stations (longitude and latitude; the nearest two 0.0003
-    /// degrees apart) the reciprocal condition and the error of the
-    /// temperature at 1204 stations left out were:
+    /// degrees apart) this number, how far the interpolant missed its own
+    /// data (largest), and the error (root mean square) of the temperature
+    /// at 1204 stations left out were:
     ///
     /// | kernel | reciprocal condition | misses its data by | error |
     /// | :--- | ---: | ---: | ---: |
-    /// | linear | 1e-10 | 1e-8 | 2.7 |
-    /// | thin plate spline | 1e-16 | 0.007 | 5.7 |
-    /// | cubic | 1e-20 | 11 | 24 |
-    /// | quintic | 1e-29 | 5000 | 4900 |
+    /// | linear | 7e-11 | 1e-7 | 2.7 |
+    /// | thin plate spline | 5e-17 | 0.06 | 5.7 |
+    /// | cubic | 7e-21 | 33 | 27 |
+    /// | quintic | 4e-24 | 56 000 | 13 600 |
     ///
-    /// (Degrees Celsius; the nearest station alone is off by 3.4.) Merging
-    /// the stations nearer than 0.1 degrees brought the cubic kernel to 3.8
-    /// and the thin plate spline to 3.1; the quintic stayed unusable. With
+    /// (Degrees Celsius, from -52 to 44; the nearest station alone is off by
+    /// 3.4.) Merging the stations nearer than 0.1 degrees brought the cubic
+    /// kernel to 3.8 and the thin plate spline to 3.1 (measured with SciPy,
+    /// which solves the same system); the quintic stayed unusable. With
     /// such data: merge points that nearly coincide, take the linear kernel,
     /// or take neighbors ([`RbfOptions::with_neighbors`]).
     ///
     /// The estimate comes from a few solves with the factored system (the
     /// search of LAPACK's `dgecon`, and two more rounds that find an inverse
     /// large in one direction, which is what two close points make). It is
-    /// never under the true reciprocal condition, and was within a factor
-    /// of 2.5 above it on the systems it was measured on.
+    /// not under the true reciprocal condition, and was within a factor of
+    /// 2.5 above it on the systems it was measured on. Under `f64::EPSILON`
+    /// it is an order of magnitude: the solves it is made of are rounding
+    /// there too.
     ///
     /// # Examples
     ///
@@ -2373,7 +2435,7 @@ mod tests {
             let norm = one_norm(&matrix, n);
             let exact = (norm * one_norm(&inverse(&matrix, n), n)).recip();
             let (factors, order) = factored(&matrix, n);
-            let estimate = reciprocal_condition(&factors, &order, norm);
+            let estimate = reciprocal_condition(&factors, &order, &vec![1.0; n], norm);
             // A lower bound of the norm of the inverse: never under the
             // reciprocal condition itself (up to the rounding of the
             // reference, which grows with the condition), and within the
@@ -2393,7 +2455,10 @@ mod tests {
         // working precision tells from it.
         let singular = [1.0, 2.0, 1.0, 2.0, 5.0, 2.0, 1.0, 2.0, 1.0];
         let (factors, order) = factored(&singular, 3);
-        assert!(reciprocal_condition(&factors, &order, one_norm(&singular, 3)) < f64::EPSILON);
+        assert!(
+            reciprocal_condition(&factors, &order, &[1.0; 3], one_norm(&singular, 3))
+                < f64::EPSILON
+        );
     }
 
     #[test]
@@ -2407,7 +2472,8 @@ mod tests {
                     .map(|at| if at / n == at % n { scale } else { 0.0 })
                     .collect();
                 let (factors, order) = factored(&matrix, n);
-                let estimate = reciprocal_condition(&factors, &order, one_norm(&matrix, n));
+                let estimate =
+                    reciprocal_condition(&factors, &order, &vec![1.0; n], one_norm(&matrix, n));
                 assert!(
                     estimate <= 1.0,
                     "{scale} times the identity of {n}: {estimate:e}"
@@ -2422,7 +2488,7 @@ mod tests {
         let identity = [1.0, 0.0, 0.0, 1.0];
         let (factors, order) = factored(&identity, 2);
         assert_eq!(
-            reciprocal_condition(&factors, &order, f64::INFINITY).to_bits(),
+            reciprocal_condition(&factors, &order, &[1.0; 2], f64::INFINITY).to_bits(),
             0.0_f64.to_bits()
         );
     }
@@ -2433,7 +2499,8 @@ mod tests {
         // nor the smallest.
         let matrix = [2.0, 0.5, 0.0, 0.5, 4000.0, 1.0, 0.0, 1.0, 0.003];
         let exact = (one_norm(&matrix, 3) * one_norm(&inverse(&matrix, 3), 3)).recip();
-        let (solution, estimate) = solve(matrix.to_vec(), &[1.0, 2.0, 3.0]).expect("solved");
+        // No points: no kernels to balance, the matrix as it is.
+        let (solution, estimate) = solve(matrix.to_vec(), &[1.0, 2.0, 3.0], 0).expect("solved");
         assert!(
             estimate >= exact * (1.0 - 1e-9) && estimate <= 1.3 * exact,
             "{estimate:e}, {exact:e}"
