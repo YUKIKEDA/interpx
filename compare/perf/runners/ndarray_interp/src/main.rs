@@ -8,7 +8,7 @@ use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1};
 use ndarray_interp::interp1d::cubic_spline::{BoundaryCondition, CubicSpline};
 use ndarray_interp::interp1d::{Interp1DBuilder, Linear};
 use ndarray_interp::interp2d::{Bilinear, Interp2DBuilder};
-use perf_harness::{run, unsupported, Case};
+use perf_harness::{descends, refused, run, unsupported, Case};
 
 const LIBRARY: &str = "ndarray_interp";
 
@@ -29,7 +29,7 @@ fn oned(case: &Case) {
                     .x(x)
                     .strategy(Linear::new())
                     .build()
-                    .expect("valid")
+                    .unwrap_or_else(|error| refused(error))
             },
             |built, out| {
                 built
@@ -47,7 +47,7 @@ fn oned(case: &Case) {
                     .x(x)
                     .strategy(strategy)
                     .build()
-                    .expect("valid")
+                    .unwrap_or_else(|error| refused(error))
             },
             |built, out| {
                 built
@@ -68,7 +68,7 @@ fn grid(case: &Case) {
         case.array("axis1"),
         case.array("values"),
     );
-    if ax[1] < ax[0] {
+    if descends(&ax) || descends(&ay) {
         unsupported("axes must increase");
     }
     let rows = case.rows::<2>("q");
@@ -88,7 +88,7 @@ fn grid(case: &Case) {
                 .y(ay)
                 .strategy(Bilinear::new())
                 .build()
-                .expect("valid")
+                .unwrap_or_else(|error| refused(error))
         },
         |built, out| {
             built

@@ -30,6 +30,16 @@ pub struct Case {
 impl Case {
     /// The case in the directory named by the first argument of the process.
     pub fn from_args() -> Self {
+        // A panic says why to the driver before the process ends with its
+        // code (101): "exit code 101" alone stood in the report for eight
+        // runs, and all eight were this repository's runners reading the
+        // second point of an axis of one (#165).
+        std::panic::set_hook(Box::new(|panic| {
+            println!(
+                "{}",
+                json!({ "mark": "failed", "why": format!("the runner panicked: {panic}") })
+            );
+        }));
         let dir = PathBuf::from(std::env::args().nth(1).expect("usage: runner CASE_DIR"));
         let text = fs::read_to_string(dir.join("case.json")).expect("case.json is there");
         let spec = serde_json::from_str(&text).expect("case.json is JSON");
@@ -99,6 +109,22 @@ fn read(path: &Path) -> Vec<f64> {
 pub fn unsupported(why: &str) -> ! {
     println!("{}", json!({ "mark": "unsupported", "why": why }));
     std::process::exit(0);
+}
+
+/// Says that the library refused the case with `error`, and ends the
+/// process: the library's own answer, as the result of the run.
+pub fn refused(error: impl std::fmt::Debug) -> ! {
+    println!(
+        "{}",
+        json!({ "mark": "failed", "why": format!("the library refused the case: {error:?}") })
+    );
+    std::process::exit(1);
+}
+
+/// Whether an axis is given from its high end: its second coordinate is
+/// below its first. An axis of one point has no direction, and is not.
+pub fn descends(axis: &[f64]) -> bool {
+    axis.len() > 1 && axis[1] < axis[0]
 }
 
 fn mark(name: &str) {

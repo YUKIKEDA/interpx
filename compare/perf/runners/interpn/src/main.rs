@@ -7,13 +7,13 @@
 //! and interpx build, so the values of that method differ.
 
 use interpn::{MulticubicRectilinear, MultilinearRectilinear, NearestRectilinear};
-use perf_harness::{run, unsupported, Case};
+use perf_harness::{descends, refused, run, unsupported, Case};
 
 const LIBRARY: &str = "interpn";
 
 fn grid<const D: usize>(case: &Case) {
     let axes: [Vec<f64>; D] = core::array::from_fn(|d| case.array(&format!("axis{d}")));
-    if axes.iter().any(|axis| axis[1] < axis[0]) {
+    if axes.iter().any(|axis| descends(axis)) {
         unsupported("axes must increase");
     }
     let values = case.array("values");
@@ -27,21 +27,24 @@ fn grid<const D: usize>(case: &Case) {
             case,
             LIBRARY,
             count,
-            || MultilinearRectilinear::new(&grids, &values).expect("valid"),
+            || MultilinearRectilinear::new(&grids, &values).unwrap_or_else(|error| refused(error)),
             |built, out| built.interp(&q, out).expect("same length"),
         ),
         "nearest" => run(
             case,
             LIBRARY,
             count,
-            || NearestRectilinear::new(&grids, &values).expect("valid"),
+            || NearestRectilinear::new(&grids, &values).unwrap_or_else(|error| refused(error)),
             |built, out| built.interp(&q, out).expect("same length"),
         ),
         "cubic" => run(
             case,
             LIBRARY,
             count,
-            || MulticubicRectilinear::new(&grids, &values, false).expect("valid"),
+            || {
+                MulticubicRectilinear::new(&grids, &values, false)
+                    .unwrap_or_else(|error| refused(error))
+            },
             |built, out| built.interp(&q, out).expect("same length"),
         ),
         other => unsupported(&format!("no method {other}")),

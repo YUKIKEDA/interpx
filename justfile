@@ -28,6 +28,11 @@ compare-perf *args:
 compare-fetch:
     uv run --directory compare python -X utf8 perf/real.py
 
+# Check the driver of the comparison: that it measures the process that does
+# the work (its memory, its core). Before a run that is to be published.
+compare-check:
+    uv run --directory compare python -X utf8 perf/check_driver.py
+
 # `docs/performance.md` from the last run of `compare-perf`.
 compare-report:
     uv run --directory compare python -X utf8 perf/report.py

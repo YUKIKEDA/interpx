@@ -10,8 +10,15 @@ import sys
 import time
 from pathlib import Path
 
-import numpy as np
-from scipy.interpolate import (
+# Before anything large is imported: the process the driver started may be a
+# launcher (the `python.exe` of a `uv` environment on Windows starts the
+# interpreter as its child), and what the driver has to watch and to pin to a
+# core is this process. Its memory read 4 MB for every case until it said so
+# (#166).
+print(json.dumps({"mark": "pid", "pid": os.getpid()}), flush=True)
+
+import numpy as np  # noqa: E402
+from scipy.interpolate import (  # noqa: E402
     Akima1DInterpolator,
     BSpline,
     CubicSpline,

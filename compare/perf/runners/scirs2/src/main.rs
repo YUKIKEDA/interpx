@@ -6,7 +6,7 @@
 //! Its grid interpolator takes the axes and the values by value, so
 //! construction copies them, as interpx's does.
 
-use perf_harness::{run, unsupported, Case};
+use perf_harness::{descends, refused, run, unsupported, Case};
 use scirs2_core::ndarray::{Array1, ArrayD, ArrayView1, ArrayView2, IxDyn};
 use scirs2_interpolate::interp1d::{ExtrapolateMode, Interp1d, InterpolationMethod};
 use scirs2_interpolate::interpnd::{
@@ -34,7 +34,10 @@ fn oned(case: &Case) {
             case,
             LIBRARY,
             q.len(),
-            || Interp1d::new(&x, &y, method, ExtrapolateMode::Error).expect("valid"),
+            || {
+                Interp1d::new(&x, &y, method, ExtrapolateMode::Error)
+                    .unwrap_or_else(|error| refused(error))
+            },
             |built, out| copy(built.evaluate_array(&q).expect("in range"), out),
         );
     };
@@ -45,21 +48,21 @@ fn oned(case: &Case) {
             case,
             LIBRARY,
             q.len(),
-            || CubicSpline::new_not_a_knot(&x, &y).expect("valid"),
+            || CubicSpline::new_not_a_knot(&x, &y).unwrap_or_else(|error| refused(error)),
             |built, out| copy(built.evaluate_array(&q).expect("in range"), out),
         ),
         "pchip" => run(
             case,
             LIBRARY,
             q.len(),
-            || PchipInterpolator::new(&x, &y, false).expect("valid"),
+            || PchipInterpolator::new(&x, &y, false).unwrap_or_else(|error| refused(error)),
             |built, out| copy(built.evaluate_array(&q).expect("in range"), out),
         ),
         "akima" => run(
             case,
             LIBRARY,
             q.len(),
-            || AkimaSpline::new(&x, &y).expect("valid"),
+            || AkimaSpline::new(&x, &y).unwrap_or_else(|error| refused(error)),
             |built, out| copy(built.evaluate_array(&q).expect("in range"), out),
         ),
         other => unsupported(&format!("no method {other}")),
@@ -71,7 +74,10 @@ fn grid(case: &Case) {
     let axes: Vec<Array1<f64>> = (0..dim)
         .map(|d| Array1::from(case.array(&format!("axis{d}"))))
         .collect();
-    if axes.iter().any(|axis| axis[1] < axis[0]) {
+    if axes
+        .iter()
+        .any(|axis| axis.as_slice().is_some_and(descends))
+    {
         unsupported("axes must increase");
     }
     let method = match case.text("method") {
@@ -95,7 +101,7 @@ fn grid(case: &Case) {
                 method,
                 GridExtrapolate::Error,
             )
-            .expect("valid")
+            .unwrap_or_else(|error| refused(error))
         },
         |built, out| copy(built.__call__(&q).expect("in range"), out),
     );
@@ -124,8 +130,16 @@ fn rbf(case: &Case) {
         case,
         LIBRARY,
         q.nrows(),
-        || RBFInterpolator::new(&points, &values, kernel, epsilon).expect("valid"),
-        |built, out| copy(built.interpolate(&q).expect("valid"), out),
+        || {
+            RBFInterpolator::new(&points, &values, kernel, epsilon)
+                .unwrap_or_else(|error| refused(error))
+        },
+        |built, out| {
+            copy(
+                built.interpolate(&q).unwrap_or_else(|error| refused(error)),
+                out,
+            )
+        },
     );
 }
 

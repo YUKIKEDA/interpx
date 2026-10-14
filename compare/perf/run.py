@@ -108,19 +108,33 @@ def run_one(library: str, directory: Path, pause: bool) -> dict:
         env["RAYON_NUM_THREADS"] = str(PAR_THREADS)
     start_ns = time.time_ns()
     process = subprocess.Popen(command(library, directory), stdout=subprocess.PIPE, text=True, env=env)
-    watched = psutil.Process(process.pid)
-    try:
-        # One core for the serial runs; the parallel one has them all.
-        watched.cpu_affinity(list(range(os.cpu_count() or 1)) if several else [CORE])
-    except (psutil.Error, AttributeError):
-        pass
+    # One core for the serial runs; the parallel one has them all.
+    cores = list(range(os.cpu_count() or 1)) if several else [CORE]
+    # The process that does the work, whose memory is sampled: the one that
+    # was started, until a runner says it is another (`pid`, below).
+    watched = [psutil.Process(process.pid)]
+    pinned: list[str] = []
+
+    def pin(worker: psutil.Process) -> None:
+        """Puts the process on the cores, and reads back where it is: a run
+        that is not where the report says it was is not a result."""
+        try:
+            worker.cpu_affinity(cores)
+            at = worker.cpu_affinity()
+        except (psutil.Error, AttributeError) as error:
+            pinned.append(f"the cores could not be set: {error}")
+            return
+        if sorted(at) != cores:
+            pinned.append(f"on cores {at}, not {cores}")
+
+    pin(watched[0])
     samples: list[tuple[int, int]] = []
     done = threading.Event()
 
     def sample() -> None:
         while not done.is_set():
             try:
-                samples.append((time.time_ns() - start_ns, watched.memory_info().rss))
+                samples.append((time.time_ns() - start_ns, watched[0].memory_info().rss))
             except psutil.Error:
                 return
             time.sleep(SAMPLE_EVERY)
@@ -132,7 +146,12 @@ def run_one(library: str, directory: Path, pause: bool) -> dict:
 
     def stop() -> None:
         stopped.set()
-        process.kill()
+        # The worker first: killing a launcher leaves its child running.
+        for running in (watched[0], process):
+            try:
+                running.kill()
+            except (psutil.Error, OSError):
+                pass
 
     killer = threading.Timer(TIME_LIMIT, stop)
     killer.start()
@@ -148,6 +167,17 @@ def run_one(library: str, directory: Path, pause: bool) -> dict:
                 result = {"unsupported": message["why"]}
             elif message["mark"] == "failed":
                 result = {"failed": message["why"]}
+            elif message["mark"] == "pid":
+                if message["pid"] != watched[0].pid:
+                    try:
+                        worker = psutil.Process(message["pid"])
+                    except psutil.Error as error:
+                        pinned.append(f"the worker is gone: {error}")
+                        continue
+                    pin(worker)
+                    # What was sampled so far is the launcher's.
+                    samples.clear()
+                    watched[0] = worker
             else:
                 marks[message["mark"]] = message["t_ns"] - start_ns
         code = process.wait()
@@ -159,6 +189,8 @@ def run_one(library: str, directory: Path, pause: bool) -> dict:
         return {"failed": f"{STOPPED} of {TIME_LIMIT / 60:.0f} minutes"}
     if "failed" in result:
         return result
+    if pinned and "unsupported" not in result:
+        return {"failed": f"not measured where it should be: {pinned[0]}"}
     if code != 0 or not result:
         return {"failed": f"exit code {code}"}
     if "unsupported" in result:
