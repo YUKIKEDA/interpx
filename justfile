@@ -4,6 +4,8 @@ set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 lint:
     cargo fmt --check
     cargo clippy --all-targets -- -D warnings
+    cargo clippy --all-targets --no-default-features -- -D warnings
+    cargo clippy --all-targets --all-features -- -D warnings
 
 test:
     cargo test

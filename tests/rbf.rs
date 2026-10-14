@@ -573,6 +573,219 @@ fn the_degree_asked_for_is_the_degree_used() {
     }
 }
 
+/// The inverse of a matrix of `n` rows, by elimination with the largest pivot
+/// of each column.
+fn inverse(matrix: &[f64], n: usize) -> Vec<f64> {
+    let mut a = matrix.to_vec();
+    let mut inverse: Vec<f64> = (0..n * n)
+        .map(|at| f64::from(u8::from(at / n == at % n)))
+        .collect();
+    for k in 0..n {
+        let pivot = (k..n)
+            .max_by(|i, j| a[i * n + k].abs().total_cmp(&a[j * n + k].abs()))
+            .unwrap_or(k);
+        for j in 0..n {
+            a.swap(k * n + j, pivot * n + j);
+            inverse.swap(k * n + j, pivot * n + j);
+        }
+        let scale = a[k * n + k];
+        for j in 0..n {
+            a[k * n + j] /= scale;
+            inverse[k * n + j] /= scale;
+        }
+        for i in (0..n).filter(|i| *i != k) {
+            let factor = a[i * n + k];
+            for j in 0..n {
+                a[i * n + j] -= factor * a[k * n + j];
+                inverse[i * n + j] -= factor * inverse[k * n + j];
+            }
+        }
+    }
+    inverse
+}
+
+/// The matrix of a system with `kernels` points balanced as the crate
+/// balances it before it estimates the condition: the kernels divided by the
+/// largest of them, and the monomials as they are (`D A D` with `D` the root
+/// of that on the points and its inverse on the monomials).
+fn balanced(matrix: &[f64], n: usize, kernels: usize) -> Vec<f64> {
+    let largest = (0..kernels)
+        .flat_map(|i| (0..kernels).map(move |j| (i, j)))
+        .fold(0.0_f64, |largest, (i, j)| {
+            largest.max(matrix[i * n + j].abs())
+        });
+    let a = largest.sqrt().recip();
+    let d: Vec<f64> = (0..n)
+        .map(|i| if i < kernels { a } else { 1.0 / a })
+        .collect();
+    (0..n * n)
+        .map(|at| matrix[at] * d[at / n] * d[at % n])
+        .collect()
+}
+
+#[test]
+fn the_reciprocal_condition_is_that_of_the_system_and_falls_as_points_come_together() {
+    let one_norm = |matrix: &[f64], n: usize| {
+        (0..n)
+            .map(|j| (0..n).map(|i| matrix[i * n + j].abs()).sum::<f64>())
+            .fold(0.0, f64::max)
+    };
+    // The linear kernel with its constant: the system is `-r` between the
+    // points, bordered by ones, written out here.
+    let points = [
+        [0.0, 0.0],
+        [1.0, 0.25],
+        [0.5, 2.0],
+        [3.0, 1.0],
+        [2.0, 2.5],
+        [-1.0, 1.5],
+    ];
+    let values = [1.0, 2.0, 0.5, -1.0, 3.0, 0.0];
+    let n = points.len() + 1;
+    let mut matrix = vec![0.0; n * n];
+    for (i, a) in points.iter().enumerate() {
+        for (j, b) in points.iter().enumerate() {
+            let (dx, dy): (f64, f64) = (a[0] - b[0], a[1] - b[1]);
+            matrix[i * n + j] = -(dx * dx + dy * dy).sqrt();
+        }
+        matrix[i * n + n - 1] = 1.0;
+        matrix[(n - 1) * n + i] = 1.0;
+    }
+    let matrix = balanced(&matrix, n, points.len());
+    let exact = (one_norm(&matrix, n) * one_norm(&inverse(&matrix, n), n)).recip();
+    let rbf = Rbf::new(&points, &values, RbfKernel::Linear).expect("valid");
+    let estimate = rbf.reciprocal_condition().expect("one system");
+    // A lower bound of the norm of the inverse: not under the reciprocal
+    // condition, and within a factor of three above it.
+    assert!(
+        estimate >= exact * (1.0 - 1e-9) && estimate <= 3.0 * exact,
+        "{estimate:e}, {exact:e}"
+    );
+    assert!(estimate > 1e-3 && estimate <= 1.0, "{estimate:e}");
+
+    // The data handed over, values of several columns: the same system.
+    let owned = Rbf::from_owned(
+        points.to_vec(),
+        values.to_vec(),
+        RbfKernel::Linear,
+        &RbfOptions::new(),
+    );
+    assert_eq!(owned.expect("valid").reciprocal_condition(), Some(estimate));
+    let pairs: Vec<[f64; 2]> = values.iter().map(|v| [*v, 1.0 - v]).collect();
+    let columns = Rbf::new(&points, &pairs, RbfKernel::Linear).expect("valid");
+    assert_eq!(columns.reciprocal_condition(), Some(estimate));
+
+    // With neighbors a system is solved at every evaluation: no one number.
+    let near = RbfOptions::new().with_neighbors(3);
+    let local = Rbf::with_options(&points, &values, RbfKernel::Linear, &near).expect("valid");
+    assert_eq!(local.reciprocal_condition(), None);
+    // As many neighbors as points is one system.
+    let all = RbfOptions::new().with_neighbors(points.len());
+    let whole = Rbf::with_options(&points, &values, RbfKernel::Linear, &all).expect("valid");
+    assert_eq!(whole.reciprocal_condition(), Some(estimate));
+
+    // Two points close together: the inverse is large across their two rows
+    // only, which a search from one vector does not see. Against the matrix
+    // written out again.
+    for gap in [1e-2, 1e-4, 1e-6] {
+        let mut close = points.to_vec();
+        close.push([points[0][0] + gap, points[0][1]]);
+        let n = close.len() + 1;
+        let mut matrix = vec![0.0; n * n];
+        for (i, a) in close.iter().enumerate() {
+            for (j, b) in close.iter().enumerate() {
+                let (dx, dy): (f64, f64) = (a[0] - b[0], a[1] - b[1]);
+                matrix[i * n + j] = -(dx * dx + dy * dy).sqrt();
+            }
+            matrix[i * n + n - 1] = 1.0;
+            matrix[(n - 1) * n + i] = 1.0;
+        }
+        let matrix = balanced(&matrix, n, close.len());
+        let exact = (one_norm(&matrix, n) * one_norm(&inverse(&matrix, n), n)).recip();
+        let mut held = values.to_vec();
+        held.push(1.0);
+        let rbf = Rbf::new(&close, &held, RbfKernel::Linear).expect("valid");
+        let estimate = rbf.reciprocal_condition().expect("one system");
+        assert!(
+            estimate >= exact * (1.0 - 1e-6) && estimate <= 3.0 * exact,
+            "gap {gap:e}: {estimate:e}, {exact:e}"
+        );
+    }
+
+    // Two points nearer and nearer: the system is built every time, and the
+    // number says how little is left of it. Every kernel, and the higher the
+    // power of the distance, the sooner.
+    for (name, kernel) in kernels(1.0) {
+        let mut before = f64::INFINITY;
+        for gap in [1e-1, 1e-3, 1e-5, 1e-7] {
+            let mut close = points.to_vec();
+            close.push([points[0][0] + gap, points[0][1]]);
+            let mut held = values.to_vec();
+            held.push(1.0);
+            let rbf = Rbf::new(&close, &held, kernel).expect("built");
+            let estimate = rbf.reciprocal_condition().expect("one system");
+            assert!((0.0..=1.0).contains(&estimate), "{name}: {estimate:e}");
+            assert!(
+                estimate < before,
+                "{name}, gap {gap:e}: {estimate:e} after {before:e}"
+            );
+            before = estimate;
+        }
+        assert!(before < 1e-6, "{name}: {before:e} at a gap of 1e-7");
+    }
+}
+
+#[test]
+fn the_reciprocal_condition_does_not_move_with_the_unit_of_the_coordinates() {
+    // Franke's first function on 100 Halton points, the coordinates taken in
+    // units 100 and a million times smaller: the same interpolant (it misses
+    // its data by as little), and the system as it stands would read 31
+    // orders less for the cubic and 54 for the quintic (#170).
+    let halton = |i: usize, base: usize| {
+        let (mut share, mut at, mut i) = (1.0, 0.0, i);
+        while i > 0 {
+            share /= base as f64;
+            at += share * (i % base) as f64;
+            i /= base;
+        }
+        at
+    };
+    let base: Vec<[f64; 2]> = (1..=100).map(|i| [halton(i, 2), halton(i, 3)]).collect();
+    let values: Vec<f64> = base
+        .iter()
+        .map(|p| (3.0 * p[0]).sin() * p[1] + p[0])
+        .collect();
+    let estimate = |kernel, s: f64| {
+        let points: Vec<[f64; 2]> = base.iter().map(|p| [p[0] * s, p[1] * s]).collect();
+        let rbf = Rbf::new(&points, &values, kernel).expect("built");
+        rbf.reciprocal_condition().expect("one system")
+    };
+    // A power of the distance: the balanced system is the same in any unit.
+    for kernel in [RbfKernel::Linear, RbfKernel::Cubic, RbfKernel::Quintic] {
+        let first = estimate(kernel, 1.0);
+        assert!(first > 1e-12, "{kernel:?}: {first:e}");
+        // Larger units as well: the kernels then smaller than the monomials.
+        for s in [1e-4, 1e2, 1e6] {
+            let other = estimate(kernel, s);
+            assert!(
+                (other / first - 1.0).abs() < 1e-6,
+                "{kernel:?}, s = {s:e}: {other:e} against {first:e}"
+            );
+        }
+    }
+    // The thin plate spline changes shape with the unit (`r^2 ln r` of `s r`
+    // has `r^2 ln s` in it): it moves, by two orders over a million, and not
+    // by twenty-four.
+    let first = estimate(RbfKernel::ThinPlateSpline, 1.0);
+    for s in [1e2, 1e6] {
+        let other = estimate(RbfKernel::ThinPlateSpline, s);
+        assert!(
+            other > first * 1e-3 && other < first * 1e3,
+            "s = {s:e}: {other:e} against {first:e}"
+        );
+    }
+}
+
 #[test]
 fn no_dimensions_columns_and_thread_safety() {
     // Without coordinates there is one point at most, and its value

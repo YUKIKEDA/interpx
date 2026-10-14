@@ -16,7 +16,7 @@
 
 mod common;
 
-use common::functions::{franke, genz};
+use common::functions::genz;
 use interpx::{
     Akima1D, AkimaMethod, BSpline1D, BoundaryCondition, CubicHermiteSpline, CubicSpline,
     GridMethod, Interpolator, Linear1D, Nearest1D, NearestKind, PchipInterpolator,
@@ -408,6 +408,7 @@ fn halton(i: usize) -> [f64; 2] {
 #[cfg(feature = "scattered")]
 #[test]
 fn scattered_interpolants_come_nearer_the_function_with_more_points() {
+    use common::functions::franke;
     use interpx::{NearestNDInterpolator, RBFInterpolator, RbfKernel, RbfOptions};
 
     // Franke's first function, on Halton points; the error on a lattice
