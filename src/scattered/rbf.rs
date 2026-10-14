@@ -1405,7 +1405,13 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
     /// unit; the thin plate spline moves by two orders over a factor of 1e6,
     /// since its kernel changes shape with the unit). The condition of the
     /// system as it stands would not tell: coordinates in metres would make
-    /// it many orders smaller with nothing wrong.
+    /// it many orders smaller with nothing wrong. A kernel with an `epsilon`
+    /// is another matter: `epsilon` times the distance changes with the
+    /// unit, so another unit is another problem, and this number moves with
+    /// it (a Gaussian with `epsilon` 3 on 100 points in the unit square:
+    /// 6e-13; the same points 1e4 times nearer together: under 1e-19).
+    /// There it is right to move: the points are too near together for that
+    /// `epsilon`.
     ///
     /// Points that lie very near each other are what does it, the more so
     /// the higher the power of the distance in the kernel. On 10 838
