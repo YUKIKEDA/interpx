@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M5-11 (#160, the real-world data of the comparison) next: it can still show a loss the synthetic cases do not, and a loss is worked before the documents describe the library. Then M5-6 (`README.md`, `README.ja.md`, `examples/`), M5-7, and M5-8. M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4 (the orders of its two types, the adversarial geometry of section 8.4.6), and its part of the documents. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
+P-16 (#166) and P-15 (#165) next, together: `docs/performance.md` on `main` has figures that are wrong (SciPy's memory) and failures that are ours and not the library's they are put to, and both are put right by one change to the driver and the runners and one run of the whole comparison. That run also finishes M5-11 (#160), whose data and cases are in. Then P-14 (#164): an RBF interpolant that is off by thousands of degrees with no error may be a wrong result, or one the crate should refuse. Then P-13 (#162), a question of the design that changes no result. Then M5-6 (`README.md`, `README.ja.md`, `examples/`), M5-7, and M5-8: the documents are written on figures that are right. M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4, and its part of the documents. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
 
 ## Dependencies
 
@@ -82,6 +82,10 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | P-10 | Task  | Search: the cause of P-9 in the disassembly, the five cases it made slower, a two-place check | #138  | Todo   |
 | P-11 | Task  | Grid: the search on two and three axes against `interpn` (up to 1.5x, part of it unexplained) | #144  | Todo   |
 | P-12 | Bug   | RBF, Gaussian kernel: on an ill-conditioned system the error is three times SciPy's, outside SciPy's own range (it was inside: one order of the points among many) | #159  | Done   |
+| P-13 | Task  | Grid splines: a direct against an iterative solve, inside SciPy and against interpx; whether the solver is the user's to choose | #162  | Todo   |
+| P-14 | Bug   | RBF on real station data: the cubic and quintic kernels give interpolants off by tens to thousands of degrees, far from SciPy's | #164  | Todo   |
+| P-15 | Bug   | compare: eight runs reported as failures of other libraries with no reason; one is our runner's own panic | #165  | Todo   |
+| P-16 | Bug   | compare: SciPy's memory in `docs/performance.md` is that of a 4 MB launcher, not of the interpreter | #166  | Todo   |
 
 ## M5: Integration and quality
 
@@ -96,7 +100,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | M5-8  | Task | Run `publish-review`, fix rustdoc and README failures                       |       | Todo   |
 | M5-9  | Task | Switch `convx` to the published version; set license and publish fields     |       | Todo   |
 | M5-10 | Task | Release PR for v0.1.0                                                       |       | Todo   |
-| M5-11 | Task | `compare/perf`: the real-world data sets of design section 8.4.7 (left out of M5-5) | #160  | Todo   |
+| M5-11 | Task | `compare/perf`: the real-world data sets of design section 8.4.7 (left out of M5-5). The data, the cases, and the results are in; SciPy's memory waits for P-16 | #160  | Todo   |
 
 ## After v0.1.0
 
@@ -116,6 +120,7 @@ Named so that no deferral is anonymous. Each becomes a roadmap row with an Issue
 | A-10 | Feat | `BSpline1D`: several derivatives at an end (`bc_type` as lists of pairs), and knots given by the caller |       | Todo   |
 | A-11 | Feat | `RBFInterpolator`: a smoothing value for each point                                                     |       | Todo   |
 | A-12 | Feat | `ndarray` interoperability: constructors and batches that take `ArrayView` (was M5-2; needs data that is borrowed) |       | Todo   |
+| A-13 | Feat | Grid: a cubic that solves nothing (centered-difference Hermite, as `interpn` has), to choose beside the spline | #163  | Todo   |
 
 ## Intentionally out of scope
 

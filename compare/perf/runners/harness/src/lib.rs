@@ -128,6 +128,13 @@ fn pause() {
 const FEWEST: usize = 5;
 const MOST: usize = 2000;
 
+/// A call that takes this long is timed once, by its first call. The samples
+/// of such a call are within a few percent of each other (three constructions
+/// of 107 s read 106 to 124 s, three of 17 s read 16.8 to 17.0), and timing
+/// it as the short calls are timed runs it five times more: one case on real
+/// data took seven minutes for one library that way (#160).
+const LONG: Duration = Duration::from_secs(2);
+
 /// The shortest time that is measured as one sample. The clock of the machine
 /// has steps of 100 ns (Windows), so a call shorter than this is repeated
 /// inside a sample until the sample is this long.
@@ -136,11 +143,15 @@ const SAMPLE: Duration = Duration::from_micros(200);
 /// The seconds one call of `run` takes, sampled several times: a warm-up
 /// first, then samples until [`BUDGET`] is used, at least [`FEWEST`] of them
 /// (three when one call alone takes longer than the budget). A sample is a
-/// number of calls that takes [`SAMPLE`] or more, divided by that number.
+/// number of calls that takes [`SAMPLE`] or more, divided by that number. A
+/// call of [`LONG`] or more is the one sample.
 fn time(mut run: impl FnMut()) -> Vec<f64> {
     let start = Instant::now();
     run();
     let first = start.elapsed();
+    if first >= LONG {
+        return vec![first.as_secs_f64()];
+    }
     // How many calls make a sample, from a second look at a few of them.
     let mut calls = 1_u32;
     loop {
@@ -173,6 +184,9 @@ fn time_given<I>(make: impl Fn() -> I, mut run: impl FnMut(I)) -> Vec<f64> {
     let start = Instant::now();
     run(make());
     let first = start.elapsed();
+    if first >= LONG {
+        return vec![first.as_secs_f64()];
+    }
     let mut calls = 1_usize;
     loop {
         let inputs: Vec<I> = (0..calls).map(|_| make()).collect();
