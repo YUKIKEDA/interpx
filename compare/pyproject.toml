@@ -7,6 +7,7 @@ dependencies = [
     "numpy",
     # Samples the memory of a runner from outside (`perf/run.py`).
     "psutil",
+    "rasterio>=1.5.2",
     "scipy==1.18.*",
 ]
 

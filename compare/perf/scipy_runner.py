@@ -10,8 +10,15 @@ import sys
 import time
 from pathlib import Path
 
-import numpy as np
-from scipy.interpolate import (
+# Before anything large is imported: the process the driver started may be a
+# launcher (the `python.exe` of a `uv` environment on Windows starts the
+# interpreter as its child), and what the driver has to watch and to pin to a
+# core is this process. Its memory read 4 MB for every case until it said so
+# (#166).
+print(json.dumps({"mark": "pid", "pid": os.getpid()}), flush=True)
+
+import numpy as np  # noqa: E402
+from scipy.interpolate import (  # noqa: E402
     Akima1DInterpolator,
     BSpline,
     CubicSpline,
@@ -33,6 +40,8 @@ BUDGET = 0.05
 SAMPLE = 0.0002
 FEWEST = 5
 MOST = 2000
+# A call that takes this many seconds is timed once (`LONG` in the Rust harness).
+LONG = 2.0
 
 
 def mark(name: str) -> None:
@@ -44,6 +53,9 @@ def timed(run) -> list[float]:
     start = time.perf_counter()
     run()
     first = time.perf_counter() - start
+    if first >= LONG:
+        # A long call is its one sample (as in the Rust harness).
+        return [first]
     calls = 1
     while True:
         start = time.perf_counter()
@@ -145,4 +157,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:  # noqa: BLE001  (whatever SciPy raises is the result)
+        # Said to the driver, so that the report can say why: an array too
+        # large to allocate is a result of the comparison, not a fault of it.
+        why = f"{type(error).__name__}: {error}"
+        print(json.dumps({"mark": "failed", "why": why[:300]}), flush=True)
+        sys.exit(1)

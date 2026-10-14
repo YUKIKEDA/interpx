@@ -22,6 +22,17 @@ bench *args:
 compare-perf *args:
     uv run --directory compare python -X utf8 perf/run.py {{args}}
 
+# Fetch the real-world data of the comparison into `compare/perf/out/real/`,
+# and check it (docs/design.ja.md section 8.4.7). Its cases are in
+# `compare-perf` once it is there.
+compare-fetch:
+    uv run --directory compare python -X utf8 perf/real.py
+
+# Check the driver of the comparison: that it measures the process that does
+# the work (its memory, its core). Before a run that is to be published.
+compare-check:
+    uv run --directory compare python -X utf8 perf/check_driver.py
+
 # `docs/performance.md` from the last run of `compare-perf`.
 compare-report:
     uv run --directory compare python -X utf8 perf/report.py

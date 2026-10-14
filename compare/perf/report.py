@@ -237,6 +237,43 @@ def figure(runs: dict, case: str) -> str | None:
     return name
 
 
+def real_section(runs: dict) -> list[str]:
+    """The cases on real-world data: the times, and the error at the points
+    that were held out."""
+    names = [case for case, by_library in runs.items() if "real" in next(iter(by_library.values()))[0]]
+    if not names:
+        return []
+    import real
+
+    doc = [
+        "## Real-world data",
+        "",
+        "Two data sets, each taken whole in the unit its source gives it out in; what was taken and how it was divided was fixed before anything was measured (`compare/perf/real.py`, docs/design.ja.md section 8.4.7).",
+        "",
+        f"- `{real.ELEVATION['name']}`: {real.ELEVATION['title']}. 4800 by 7200 cells of 1 m. The grid is every second row and column (and the last ones); every other cell is a query, and its elevation is the value held out. {real.ELEVATION['credit']}",
+        f"- `{real.WEATHER['name']}`: {real.WEATHER['title']}; longitude and latitude in degrees, as they are. Of every {real.HELD_OUT_EVERY} stations in the order of the file the last is a query, and its temperature is the value held out. The RBF kernels are those without a shape parameter. {real.WEATHER['credit']}",
+        "",
+        "These cases are also in the tables of their families below and in the counts above. Here they are with the error: the largest and the root mean square distance from the values held out (metres, and degrees Celsius), and the number of queries a library gave no value. A library missing from a case does not have it, or did not finish (see the runs that failed).",
+        "",
+    ]
+    for case in names:
+        by_library = runs[case]
+        # From a library that ran it: the sizes are known once the data is read.
+        first = next((rows for rows in map(measured, by_library.values()) if rows), [])
+        size = f"{first[0]['n']} points, {first[0]['n_eval']} queries" if first else ""
+        doc += [f"`{case}` ({size})", "", "| library | construction | evaluation | largest error | RMS error | no value |", "| :--- | ---: | ---: | ---: | ---: | ---: |"]
+        for library in LIBRARIES:
+            rows = measured(by_library.get(library, []))
+            if not rows:
+                continue
+            build, evaluation = times(rows, "build"), times(rows, "eval")
+            error = rows[0].get("error") or {}
+            cells = [f"{error['max']:.3g}" if "max" in error else "", f"{error['rms']:.3g}" if "rms" in error else "", str(error.get("without_a_value", ""))]
+            doc.append(f"| {TITLES[library]} | {seconds(build['median'])} | {seconds(evaluation['median'])} | " + " | ".join(cells) + " |")
+        doc.append("")
+    return doc
+
+
 def main() -> None:
     runs = load()
     env = json.loads((OUT / "environment.json").read_text(encoding="utf-8"))
@@ -260,6 +297,7 @@ def main() -> None:
         "- `interpx, from_owned` is interpx built from data that is handed over (`from_owned`) and so not copied. Its column is there for the types that keep their data as it is given (the grid, `NearestNDInterpolator`, `RBFInterpolator`), next to the construction from borrowed data (`new`), which is the one the comparison counts. Each of its samples is given data made just before it, which is not in the nearest cache as the data of the other constructions is: on small grids it reads slower than `new` for that reason.",
         f"- `interpx, parallel` is interpx evaluated with `eval_batch_into_par` (the `rayon` feature) on {env.get('par_threads', 'several')} threads, not pinned to a core. Every other column is one thread on one core, and the comparison counts those. A parallel batch times its first points and is shared out only when the rest is worth it, so on small cases the column reads as the serial one does.",
         "- A time is that of one call: construction, or the evaluation of all the queries of the case (`eval_batch_into` for interpx, the call with an array for the others). It is the median of the repeats of a process, and then the median of the rounds.",
+        "- A call of two seconds or more is timed once, not repeated; and a library whose construction or evaluation of a case takes that long is run on that case in the first round only. Its time is then one measurement. (The rule goes by the time, whatever the library.)",
         f"- interpx is called slower where its median is more than {LOSS:.2f} times another library's and its fastest repeat is slower than that library's fastest.",
         "- Memory is the resident set size of the process, sampled every millisecond from outside it.",
         f"- Command: `{env['command']}`.",
@@ -294,6 +332,8 @@ def main() -> None:
         doc += ["## Runs that failed", "", "| case | library | how |", "| :--- | :--- | :--- |"]
         doc += [f"| `{case}` | {TITLES[lib]} | {how} |" for case, lib, how in failed]
         doc.append("")
+
+    doc += real_section(runs)
 
     for family, title, note in FAMILIES:
         doc += [f"## {title}", "", note, "", "### Evaluation", ""] + table(runs, family, "eval") + ["", "### Construction", ""] + table(runs, family, "build") + [""]

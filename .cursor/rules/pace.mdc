@@ -63,7 +63,7 @@ In #109 the agent wrote "M2-4, then M3-5" under Current work, in the order of th
 A benchmark, a mutation run, or a script that rewrites a source file and restores it keeps the tree busy for minutes. While it runs in the working tree, nothing else can be edited there, and the work stands still.
 
 - Run it in the background (`run_in_background`), never in the foreground with a wait loop.
-- Run it on a copy of the tree: `git worktree add` for a committed state, or a copy of `src`, `benches`, `tests`, `Cargo.toml`, and `Cargo.lock` in the scratchpad for an uncommitted one, with its own `--target-dir`. The working tree stays free.
+- Run it on a copy of the tree: `git worktree add` for a committed state, or a copy of `src`, `benches`, `tests`, `Cargo.toml`, and `Cargo.lock` in the scratchpad for an uncommitted one, with its own `--target-dir`. The working tree stays free. Two worktrees never share a build directory: on #155 and #161 a second and a third worktree were pointed at the first one's `target/`, and the tests of one ran against a library built from the other's source while it held a mutant.
 - While it runs, do what does not depend on its result: the tests, the documents, the PR body, the next Issue, the next grill. Name that work before starting the run.
 - Runs that need a quiet machine (benchmarks that are compared) do not overlap each other. A run that only needs to pass or fail (tests, mutation checks, lint) can overlap anything.
 
