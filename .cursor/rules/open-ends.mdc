@@ -16,6 +16,8 @@ A comment in the code is held to the same line as the PR: it says what was measu
 
 On #158 the agent found that one figure was three times SciPy's, wrote "the cause was not confirmed; it is taken to be the difference between the solvers" in the design and in the PR, and filed nothing: the guess with "taken to be" in front of it, and no Issue. The owner asked for the Issue (#159). A figure that is not explained is an Issue with the numbers at once, and the text that points to it says "not known, #N" and gives no cause.
 
+Advice to a user is a claim like any other. "A larger `epsilon` avoids it" was written in a rustdoc from the cause alone (#161); following the advice was measured by a reviewer and made the error 300 times as large. What a user is told to do is done once, and its figure is beside the sentence.
+
 On M2-2 a PR was opened with both sentences. The owner asked why. Timing the stages found that four fifths of the construction was one step done a line at a time (three times faster once fixed), and computing the coverage figure from the data found an error path that could never run.
 
 ```text

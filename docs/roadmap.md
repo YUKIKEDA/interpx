@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-P-16 (#166) and P-15 (#165) next, together: `docs/performance.md` on `main` has figures that are wrong (SciPy's memory) and failures that are ours and not the library's they are put to, and both are put right by one change to the driver and the runners and one run of the whole comparison. That run also finishes M5-11 (#160), whose data and cases are in. Then P-14 (#164): an RBF interpolant that is off by thousands of degrees with no error may be a wrong result, or one the crate should refuse. Then P-13 (#162), a question of the design that changes no result. Then M5-6 (`README.md`, `README.ja.md`, `examples/`), M5-7, and M5-8: the documents are written on figures that are right. M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4, and its part of the documents. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
+P-14 (#164) next: on real station data the RBF interpolant of two kernels is off by thousands of degrees with no error, in this crate and in SciPy; that may be a result the crate should refuse, and it comes before the documents. Then P-13 (#162), a question of the design that changes no result, and P-17 (#168) with whichever row runs the comparison next. Then M5-6 (`README.md`, `README.ja.md`, `examples/`), M5-7, and M5-8: the documents are written on figures that are right. M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4, and its part of the documents. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
 
 ## Dependencies
 
@@ -15,9 +15,9 @@ P-16 (#166) and P-15 (#165) next, together: `docs/performance.md` on `main` has 
 
 ## M0: Bootstrap
 
-| ID   | Kind | Title                                              | Issue | Status      |
-| ---- | ---- | -------------------------------------------------- | ----- | ----------- |
-| M0-1 | Task | Repository rules, docs, ADRs, CI, and build config | #1    | Done        |
+| ID   | Kind | Title                                              | Issue | Status |
+| ---- | ---- | -------------------------------------------------- | ----- | ------ |
+| M0-1 | Task | Repository rules, docs, ADRs, CI, and build config | #1    | Done   |
 
 ## M1: Core, 1D, and curve
 
@@ -40,12 +40,12 @@ P-16 (#166) and P-15 (#165) next, together: `docs/performance.md` on `main` has 
 
 ## M2: Regular grid
 
-| ID   | Kind | Title                                                                                                  | Issue | Status |
-| ---- | ---- | ------------------------------------------------------------------------------------------------------ | ----- | ------ |
-| M2-1 | Feat | `RegularGridInterpolator`: shape, C-order values, `nearest`, `linear`, `Extrapolate`                   | #74   | Done   |
-| M2-2 | Feat | `RegularGridInterpolator`: `cubic`, `quintic` (tensor-product coefficients at construction)            | #79   | Done   |
-| M2-3 | Feat | `RegularGridInterpolator`: `pchip` (last-axis slopes kept, the other axes folded at evaluation)        | #87   | Done   |
-| M2-4 | Task | Grid `eval_batch_into` on a path: close the gap to a loop over `eval_hinted` (does not block M3)       | #90   | Done   |
+| ID   | Kind | Title                                                                                            | Issue | Status |
+| ---- | ---- | ------------------------------------------------------------------------------------------------ | ----- | ------ |
+| M2-1 | Feat | `RegularGridInterpolator`: shape, C-order values, `nearest`, `linear`, `Extrapolate`             | #74   | Done   |
+| M2-2 | Feat | `RegularGridInterpolator`: `cubic`, `quintic` (tensor-product coefficients at construction)      | #79   | Done   |
+| M2-3 | Feat | `RegularGridInterpolator`: `pchip` (last-axis slopes kept, the other axes folded at evaluation)  | #87   | Done   |
+| M2-4 | Task | Grid `eval_batch_into` on a path: close the gap to a loop over `eval_hinted` (does not block M3) | #90   | Done   |
 
 ## M3: Scattered, without `convx`
 
@@ -59,68 +59,69 @@ P-16 (#166) and P-15 (#165) next, together: `docs/performance.md` on `main` has 
 
 ## M4: Scattered, with `convx`
 
-| ID   | Kind | Title                                                                                | Issue | Status |
-| ---- | ---- | ------------------------------------------------------------------------------------ | ----- | ------ |
+| ID   | Kind | Title                                                                                         | Issue | Status |
+| ---- | ---- | --------------------------------------------------------------------------------------------- | ----- | ------ |
 | M4-1 | Feat | `LinearNDInterpolator<D>`: Delaunay, Jump-and-Walk, tolerances, brute-force fallback, `serde` |       | Todo   |
-| M4-2 | Feat | `CloughTocher2DInterpolator`: global gradient estimate, Bernstein-Bézier patch, `serde` |       | Todo   |
+| M4-2 | Feat | `CloughTocher2DInterpolator`: global gradient estimate, Bernstein-Bézier patch, `serde`       |       | Todo   |
 
 ## P: What the comparison found (before M5-1)
 
 The comparison (`docs/performance.md`) is run again for the cases of a row when the row is done. A row that M4 adds to the comparison and that loses is added here.
 
-| ID  | Kind   | Title                                                                                    | Issue | Status |
-| --- | ------ | ---------------------------------------------------------------------------------------- | ----- | ------ |
-| P-1 | Design | Construction: what it copies and what it checks (grid 180x and more, 1-D 1.3x to 5x)     | #122  | Done   |
-| P-2 | Task   | 1-D evaluation of queries in no order on 10 000 points (2.4x against `ndarray-interp`)   | #123  | Done   |
-| P-3 | Task   | Grid `linear` and `nearest` evaluation (1.1x to 1.6x against `interpn`)                  | #124  | Done   |
-| P-4 | Design | Grid: an axis with one point (SciPy builds it; eight cases of SciPy's suite do not run)  | #125  | Done   |
-| P-5 | Task   | RBF `quintic` at 10 points (1.12x against SciPy, one case)                               | #126  | Done   |
-| P-6 | Feat   | `from_owned` for `NearestNDInterpolator` and `RBFInterpolator` (the types that keep data) | #128  | Done   |
-| P-7 | Task   | `BSpline1D` of degree 1 on 10 000 points: evaluation in order (1.14x against SciPy)      | #130  | Done   |
-| P-8 | Task   | Construction on 10 000 points: `Linear1D` 1.9x, `Nearest1D` 1.1x, `BSpline1D` degree 1 2.9x | #131  | Done   |
-| P-9 | Task   | Search: the time for points in no order moves twofold with where it is built in          | #132  | Done   |
-| P-10 | Task  | Search: the cause of P-9 in the disassembly, the five cases it made slower, a two-place check | #138  | Todo   |
-| P-11 | Task  | Grid: the search on two and three axes against `interpn` (up to 1.5x, part of it unexplained) | #144  | Todo   |
-| P-12 | Bug   | RBF, Gaussian kernel: on an ill-conditioned system the error is three times SciPy's, outside SciPy's own range (it was inside: one order of the points among many) | #159  | Done   |
-| P-13 | Task  | Grid splines: a direct against an iterative solve, inside SciPy and against interpx; whether the solver is the user's to choose | #162  | Todo   |
-| P-14 | Bug   | RBF on real station data: the cubic and quintic kernels give interpolants off by tens to thousands of degrees, far from SciPy's | #164  | Todo   |
-| P-15 | Bug   | compare: eight runs reported as failures of other libraries with no reason; one is our runner's own panic | #165  | Todo   |
-| P-16 | Bug   | compare: SciPy's memory in `docs/performance.md` is that of a 4 MB launcher, not of the interpreter | #166  | Todo   |
+| ID   | Kind   | Title                                                                                                                                                              | Issue | Status |
+| ---- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- | ------ |
+| P-1  | Design | Construction: what it copies and what it checks (grid 180x and more, 1-D 1.3x to 5x)                                                                               | #122  | Done   |
+| P-2  | Task   | 1-D evaluation of queries in no order on 10 000 points (2.4x against `ndarray-interp`)                                                                             | #123  | Done   |
+| P-3  | Task   | Grid `linear` and `nearest` evaluation (1.1x to 1.6x against `interpn`)                                                                                            | #124  | Done   |
+| P-4  | Design | Grid: an axis with one point (SciPy builds it; eight cases of SciPy's suite do not run)                                                                            | #125  | Done   |
+| P-5  | Task   | RBF `quintic` at 10 points (1.12x against SciPy, one case)                                                                                                         | #126  | Done   |
+| P-6  | Feat   | `from_owned` for `NearestNDInterpolator` and `RBFInterpolator` (the types that keep data)                                                                          | #128  | Done   |
+| P-7  | Task   | `BSpline1D` of degree 1 on 10 000 points: evaluation in order (1.14x against SciPy)                                                                                | #130  | Done   |
+| P-8  | Task   | Construction on 10 000 points: `Linear1D` 1.9x, `Nearest1D` 1.1x, `BSpline1D` degree 1 2.9x                                                                        | #131  | Done   |
+| P-9  | Task   | Search: the time for points in no order moves twofold with where it is built in                                                                                    | #132  | Done   |
+| P-10 | Task   | Search: the cause of P-9 in the disassembly, the five cases it made slower, a two-place check                                                                      | #138  | Todo   |
+| P-11 | Task   | Grid: the search on two and three axes against `interpn` (up to 1.5x, part of it unexplained)                                                                      | #144  | Todo   |
+| P-12 | Bug    | RBF, Gaussian kernel: on an ill-conditioned system the error is three times SciPy's, outside SciPy's own range (it was inside: one order of the points among many) | #159  | Done   |
+| P-13 | Task   | Grid splines: a direct against an iterative solve, inside SciPy and against interpx; whether the solver is the user's to choose                                    | #162  | Todo   |
+| P-14 | Bug    | RBF on real station data: the cubic and quintic kernels give interpolants off by tens to thousands of degrees, far from SciPy's                                    | #164  | Todo   |
+| P-15 | Bug    | compare: eight runs reported as failures of other libraries with no reason; all eight were our runners' own panic | #165  | Done   |
+| P-16 | Bug    | compare: SciPy's memory in `docs/performance.md` is that of a 4 MB launcher, not of the interpreter | #166  | Done   |
+| P-17 | Task   | compare: a construction of minutes is built twice, and one run sits at the time limit | #168  | Todo   |
 
 ## M5: Integration and quality
 
-| ID    | Kind | Title                                                                       | Issue | Status |
-| ----- | ---- | --------------------------------------------------------------------------- | ----- | ------ |
-| M5-1  | Feat | `rayon` features: `eval_batch_par`, `eval_batch_into_par`                   | #150  | Done   |
-| M5-3  | Feat | `serde` for all interpolators (topology stored, format version, validation) | #154  | Done   |
-| M5-4  | Test | Property tests (`proptest`) and the SciPy 1.18 golden suite for every type  | #157  | Done   |
-| M5-5  | Task | `compare/perf`: SciPy and other pure-Rust crates, time and memory           | #120  | Done   |
-| M5-6  | Task | `README.md`, `README.ja.md`, and `examples/`                                |       | Todo   |
-| M5-7  | Task | English `docs/design.md`                                                    |       | Todo   |
-| M5-8  | Task | Run `publish-review`, fix rustdoc and README failures                       |       | Todo   |
-| M5-9  | Task | Switch `convx` to the published version; set license and publish fields     |       | Todo   |
-| M5-10 | Task | Release PR for v0.1.0                                                       |       | Todo   |
-| M5-11 | Task | `compare/perf`: the real-world data sets of design section 8.4.7 (left out of M5-5). The data, the cases, and the results are in; SciPy's memory waits for P-16 | #160  | Todo   |
+| ID    | Kind | Title                                                                                                                                                           | Issue | Status |
+| ----- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------ |
+| M5-1  | Feat | `rayon` features: `eval_batch_par`, `eval_batch_into_par`                                                                                                       | #150  | Done   |
+| M5-3  | Feat | `serde` for all interpolators (topology stored, format version, validation)                                                                                     | #154  | Done   |
+| M5-4  | Test | Property tests (`proptest`) and the SciPy 1.18 golden suite for every type                                                                                      | #157  | Done   |
+| M5-5  | Task | `compare/perf`: SciPy and other pure-Rust crates, time and memory                                                                                               | #120  | Done   |
+| M5-6  | Task | `README.md`, `README.ja.md`, and `examples/`                                                                                                                    |       | Todo   |
+| M5-7  | Task | English `docs/design.md`                                                                                                                                        |       | Todo   |
+| M5-8  | Task | Run `publish-review`, fix rustdoc and README failures                                                                                                           |       | Todo   |
+| M5-9  | Task | Switch `convx` to the published version; set license and publish fields                                                                                         |       | Todo   |
+| M5-10 | Task | Release PR for v0.1.0                                                                                                                                           |       | Todo   |
+| M5-11 | Task | `compare/perf`: the real-world data sets of design section 8.4.7 (left out of M5-5) | #160  | Done   |
 
 ## After v0.1.0
 
 Named so that no deferral is anonymous. Each becomes a roadmap row with an Issue when its turn comes.
 
-| ID   | Kind | Title                                                                                                   | Issue | Status |
-| ---- | ---- | ------------------------------------------------------------------------------------------------------- | ----- | ------ |
-| A-1  | Feat | `roots` / `solve` for `PPoly` and `BSpline`                                                             |       | Todo   |
-| A-2  | Feat | `NdPPoly`                                                                                               |       | Todo   |
-| A-3  | Feat | Derivatives for grid and scattered interpolators                                                        |       | Todo   |
-| A-4  | Feat | Runtime dimension and runtime output width for grid and scattered                                       |       | Todo   |
-| A-5  | Feat | RBF pseudo-inverse fallback                                                                             |       | Todo   |
-| A-6  | Feat | `BarycentricInterpolator` and `KroghInterpolator`                                                       |       | Todo   |
-| A-7  | Feat | FITPACK family: `UnivariateSpline`, `splrep`, `splprep`, `RectBivariateSpline`, and related             |       | Todo   |
-| A-8  | Task | `no_std` (`alloc`) feasibility                                                                          |       | Todo   |
-| A-9  | Feat | `BSpline::from_ppoly`: lower the knot multiplicity where the pieces join smoothly                       |       | Todo   |
-| A-10 | Feat | `BSpline1D`: several derivatives at an end (`bc_type` as lists of pairs), and knots given by the caller |       | Todo   |
-| A-11 | Feat | `RBFInterpolator`: a smoothing value for each point                                                     |       | Todo   |
+| ID   | Kind | Title                                                                                                              | Issue | Status |
+| ---- | ---- | ------------------------------------------------------------------------------------------------------------------ | ----- | ------ |
+| A-1  | Feat | `roots` / `solve` for `PPoly` and `BSpline`                                                                        |       | Todo   |
+| A-2  | Feat | `NdPPoly`                                                                                                          |       | Todo   |
+| A-3  | Feat | Derivatives for grid and scattered interpolators                                                                   |       | Todo   |
+| A-4  | Feat | Runtime dimension and runtime output width for grid and scattered                                                  |       | Todo   |
+| A-5  | Feat | RBF pseudo-inverse fallback                                                                                        |       | Todo   |
+| A-6  | Feat | `BarycentricInterpolator` and `KroghInterpolator`                                                                  |       | Todo   |
+| A-7  | Feat | FITPACK family: `UnivariateSpline`, `splrep`, `splprep`, `RectBivariateSpline`, and related                        |       | Todo   |
+| A-8  | Task | `no_std` (`alloc`) feasibility                                                                                     |       | Todo   |
+| A-9  | Feat | `BSpline::from_ppoly`: lower the knot multiplicity where the pieces join smoothly                                  |       | Todo   |
+| A-10 | Feat | `BSpline1D`: several derivatives at an end (`bc_type` as lists of pairs), and knots given by the caller            |       | Todo   |
+| A-11 | Feat | `RBFInterpolator`: a smoothing value for each point                                                                |       | Todo   |
 | A-12 | Feat | `ndarray` interoperability: constructors and batches that take `ArrayView` (was M5-2; needs data that is borrowed) |       | Todo   |
-| A-13 | Feat | Grid: a cubic that solves nothing (centered-difference Hermite, as `interpn` has), to choose beside the spline | #163  | Todo   |
+| A-13 | Feat | Grid: a cubic that solves nothing (centered-difference Hermite, as `interpn` has), to choose beside the spline     | #163  | Todo   |
 
 ## Intentionally out of scope
 
