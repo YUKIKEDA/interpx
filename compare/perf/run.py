@@ -49,13 +49,6 @@ STOPPED = "stopped at the time limit"
 # fifth or more, and by how much more is not known. Half the limit leaves it
 # twice its time.
 NEAR = TIME_LIMIT / 2
-# A library whose construction or evaluation of a case takes this many seconds
-# is run on that case in the first round only. The rounds are there for the
-# spread between processes, which for a call this long is a few percent
-# (three constructions of 107 s read 106 to 124 s); run three times, the
-# cases on real data took four hours, most of it one library solving one
-# system again. The rule goes by the time and not by the library.
-LONG = 2.0
 
 RUST_RUNNERS = ("interpx", "scirs2", "ndarray_interp", "interpn")
 # interpx again, built with `from_owned` (the data handed over, not copied).
@@ -273,10 +266,21 @@ def held_out(directory: Path, library: str) -> dict | None:
 def once(row: dict) -> bool:
     """Whether a library that gave this row on a case is not run on it again
     in a later round: it was stopped at the time limit, or one of its calls
-    is long."""
+    was timed by one call (the runner does that for a call of two seconds or
+    more, `LONG` in the runners).
+
+    The rounds are there for the spread between processes, which for a call
+    that long is a few percent (three constructions of 107 s read 106 to
+    124 s); run three times, the cases on real data took four hours, most of
+    it one library solving one system again. The rule goes by the time and
+    not by the library. It goes by how the runner timed the call and not by
+    the median it reported: a call near two seconds that was timed several
+    times read 1.75 to 1.99 s in one round and 2.2 to 3.7 s in the next, and
+    a rule on the median left the round after out, so that SciPy's time on
+    that case was the median of one usual round and one slow one (#171)."""
     if str(row.get("failed", "")).startswith(STOPPED):
         return True
-    return any(row[what]["median"] >= LONG for what in ("build", "eval") if what in row)
+    return any(row[what]["repeats"] == 1 for what in ("build", "eval") if what in row)
 
 
 def environment() -> dict:
