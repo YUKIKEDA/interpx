@@ -170,7 +170,7 @@ def table(rows: list[dict]) -> str:
                 return f"{value / scale:.3g} {unit}"
         return f"{value / 1e-9:.3g} ns"
 
-    lines = ["| case | way | construction | evaluation | memory added (MB) | distance |", "| :--- | :--- | ---: | ---: | ---: | ---: |"]
+    lines = ["| case | way | construction | evaluation | memory added while building or evaluating (MB) | distance |", "| :--- | :--- | ---: | ---: | ---: | ---: |"]
     for case in dict.fromkeys(row["case"] for row in rows):
         for way in WAYS:
             got = by.get((case, way), [])
@@ -181,7 +181,12 @@ def table(rows: list[dict]) -> str:
                 continue
             build = float(np.median([row["build"]["median"] for row in done]))
             evaluate = float(np.median([row["eval"]["median"] for row in done]))
-            added = max((row["rss"]["overall_peak"] or 0) - (row["rss"]["loaded"] or 0) for row in done) / 2**20
+            # The highest while building or evaluating, over the memory with the
+            # data read. Not the highest of the whole process: the timed repeats
+            # after it hold copies of the data the harness makes (interpx on the
+            # tile: 796 MB at most while evaluating, 994 MB while timed).
+            rss = [row["rss"] for row in done]
+            added = max(max(r["build_peak"] or 0, r["eval_peak"] or 0) - (r["loaded"] or 0) for r in rss) / 2**20
             distance = done[0]["apart"]
             shown = "reference" if way == REFERENCE else ("" if distance is None else f"{distance:.1e}")
             lines.append(f"| `{case}` | {way} | {seconds(build)} | {seconds(evaluate)} | {added:.1f} | {shown} |")
