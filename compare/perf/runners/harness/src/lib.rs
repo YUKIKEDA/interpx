@@ -9,7 +9,9 @@
 //! 2. the interpolator is built once and kept (`built`),
 //! 3. the queries are evaluated once (`evaluated`), and the values are written
 //!    for the driver to compare with the other libraries',
-//! 4. construction and evaluation are each repeated and timed (`timed`).
+//! 4. construction and evaluation are each repeated and timed (`timed`). A
+//!    construction or an evaluation of [`LONG`] or more is not made again: the
+//!    time of its phase above is its measurement.
 //!
 //! Each phase ends with a line of JSON on standard output that holds the time
 //! of day, and the last line holds the times.
@@ -154,11 +156,15 @@ fn pause() {
 const FEWEST: usize = 5;
 const MOST: usize = 2000;
 
-/// A call that takes this long is timed once, by its first call. The samples
-/// of such a call are within a few percent of each other (three constructions
-/// of 107 s read 106 to 124 s, three of 17 s read 16.8 to 17.0), and timing
-/// it as the short calls are timed runs it five times more: one case on real
-/// data took seven minutes for one library that way (#160).
+/// A call that takes this long is timed once, by the call of its phase (the
+/// construction of `built`, the evaluation of `evaluated`), and is not made
+/// again. The samples of such a call are within a few percent of each other
+/// (three constructions of 107 s read 106 to 124 s, three of 17 s read 16.8
+/// to 17.0), and timing it as the short calls are timed runs it five times
+/// more: one case on real data took seven minutes for one library that way
+/// (#160). Timed by a call of its own, and built once more for the timing
+/// of the evaluation, a construction of 250 s was made three times, and the
+/// run sat at the time limit of the driver (#168).
 const LONG: Duration = Duration::from_secs(2);
 
 /// The shortest time that is measured as one sample. The clock of the machine
@@ -262,25 +268,38 @@ pub fn run_given<I, B>(
 ) {
     mark("loaded");
     pause();
-    let built = build(make());
+    let input = make();
+    let start = Instant::now();
+    let built = build(input);
+    let first_build = start.elapsed();
     mark("built");
     pause();
     let mut out = vec![0.0_f64; values];
+    let start = Instant::now();
     eval(&built, &mut out);
+    let first_eval = start.elapsed();
     mark("evaluated");
     pause();
     let bytes: Vec<u8> = out.iter().flat_map(|v| v.to_ne_bytes()).collect();
     fs::write(case.values_path(library), bytes).expect("the values are written");
-    drop(built);
 
-    let build_s = time_given(&make, |input| {
-        black_box(build(input));
-    });
-    let built = build(make());
-    let eval_s = time(|| {
-        eval(black_box(&built), &mut out);
-        black_box(&out);
-    });
+    let (build_s, built) = if first_build >= LONG {
+        (vec![first_build.as_secs_f64()], built)
+    } else {
+        drop(built);
+        let seconds = time_given(&make, |input| {
+            black_box(build(input));
+        });
+        (seconds, build(make()))
+    };
+    let eval_s = if first_eval >= LONG {
+        vec![first_eval.as_secs_f64()]
+    } else {
+        time(|| {
+            eval(black_box(&built), &mut out);
+            black_box(&out);
+        })
+    };
     mark("timed");
     println!(
         "{}",
