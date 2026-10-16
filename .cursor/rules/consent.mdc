@@ -19,3 +19,5 @@ The reason for a recommendation is the library concept, its goal, and its functi
 "Go ahead" and "next" mean the current roadmap row only. They are not consent to add rows, file extra Issues, or widen an open design.
 
 Adding or removing an **Intentionally out of scope** entry, or a roadmap row, goes through a Grill and an Issue. Closing an Issue or PR needs an order that names the operation and the target.
+
+A decision rests on the figures it was given. When a later change moves those figures (a cost, an accuracy, a range), report the new ones with the old, before the PR that carries the change is merged, and let the owner decide again. In P-14 the estimate was approved at a cost of 12 to 20%, and the fix that followed made it 7 to 78%.
