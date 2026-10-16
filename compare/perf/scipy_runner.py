@@ -138,7 +138,12 @@ def main() -> None:
         build, evaluate = grid(case, a)
     else:
         build, evaluate = scattered(case, a)
+    phases(directory, LIBRARY, build, evaluate)
 
+
+def phases(directory: Path, library: str, build, evaluate) -> None:
+    """The phases of a runner for `build` and `evaluate`; the values go to
+    `values.LIBRARY.f64`. Also what `solvers.py` runs SciPy's solvers with."""
     mark("loaded")
     time.sleep(PAUSE)
     start = time.perf_counter()
@@ -151,7 +156,7 @@ def main() -> None:
     first_eval = time.perf_counter() - start
     mark("evaluated")
     time.sleep(PAUSE)
-    np.ascontiguousarray(values, dtype=np.float64).tofile(directory / f"values.{LIBRARY}.f64")
+    np.ascontiguousarray(values, dtype=np.float64).tofile(directory / f"values.{library}.f64")
     del values
 
     if first_build >= LONG:
