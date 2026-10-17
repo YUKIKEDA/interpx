@@ -152,3 +152,16 @@ pub use scalar::Scalar;
 pub use scattered::{NearestNDInterpolator, RBFInterpolator, RbfDegree, RbfKernel, RbfOptions};
 pub use search::Hint;
 pub use value::Value;
+
+/// The examples of the English README, run as doctests. They use every
+/// feature, so they are compiled only when all are on (`cargo test --doc
+/// --all-features`).
+#[cfg(all(doctest, feature = "scattered", feature = "rayon", feature = "serde"))]
+#[doc = include_str!("../README.md")]
+struct Readme;
+
+/// The examples of the Japanese README, run as doctests like those of the
+/// English one.
+#[cfg(all(doctest, feature = "scattered", feature = "rayon", feature = "serde"))]
+#[doc = include_str!("../README.ja.md")]
+struct JapaneseReadme;
