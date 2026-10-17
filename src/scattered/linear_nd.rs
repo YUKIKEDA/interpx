@@ -56,10 +56,10 @@ const RCOND_LIMIT: f64 = 1000.0 * f64::EPSILON;
 ///
 /// - Where four or more points lie on one circle (five on one sphere in three
 ///   dimensions, and so on), more than one Delaunay triangulation exists.
-///   This crate's triangulation splits such a cell by a rule of the points'
-///   indices; SciPy's (Qhull) splits it another way. Inside such a cell the
-///   two interpolants differ; elsewhere they agree to rounding. Points on a
-///   grid are such points.
+///   This crate's triangulation divides the region they bound by a rule of
+///   the points' indices; SciPy's (Qhull) divides it another way. Inside
+///   such a region the two interpolants differ; elsewhere they agree to
+///   rounding. Points on a grid are such points.
 /// - Of points with the same coordinates, the value of the one given first
 ///   is taken. SciPy (Qhull) keeps one of them by its own choice, which is
 ///   not always the first.
