@@ -22,6 +22,7 @@ from scipy.interpolate import (  # noqa: E402
     Akima1DInterpolator,
     BSpline,
     CubicSpline,
+    LinearNDInterpolator,
     NearestNDInterpolator,
     PchipInterpolator,
     PPoly,
@@ -106,9 +107,12 @@ def grid(case, a):
 
 
 def scattered(case, a):
-    points, values, q = a("points").reshape(-1, 2), a("values"), a("q").reshape(-1, 2)
+    dim = case.get("dim", 2)
+    points, values, q = a("points").reshape(-1, dim), a("values"), a("q").reshape(-1, dim)
     if case["family"] == "nearest_nd":
         return (lambda: NearestNDInterpolator(points, values)), lambda built: built(q)
+    if case["family"] == "linear_nd":
+        return (lambda: LinearNDInterpolator(points, values)), lambda built: built(q)
     options = {"kernel": case["kernel"], "neighbors": case["neighbors"]}
     if case["kernel"] in ("multiquadric", "inverse_multiquadric", "inverse_quadratic", "gaussian"):
         options["epsilon"] = case["epsilon"]

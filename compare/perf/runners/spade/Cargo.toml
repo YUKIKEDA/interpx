@@ -1,0 +1,13 @@
+# The `spade` side of the comparison (linear interpolation on a Delaunay
+# triangulation of the plane). Not published.
+[package]
+name = "perf-spade"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+spade = "2.15.1"
+perf-harness = { path = "../harness" }
+
+[workspace]

@@ -40,6 +40,7 @@ MEMORY = (
     "rbf/thin_plate_spline/global/n3000/scattered",
     "rbf/thin_plate_spline/k50/n100000/image",
     "nearest_nd/n100000/image500",
+    "linear_nd/n100000/image500",
     "grid/cubic/2d/each400/eval1000/ascending",
     "grid/linear/2d/each800/eval10000/ascending",
     "grid/linear/4d/max200/eval10000/ascending",
@@ -164,6 +165,39 @@ def nearest_nd(n: int, per_axis: int) -> dict:
     }
 
 
+def linear_nd(n: int, per_axis: int) -> dict:
+    """The points of `nearest_nd`, evaluated by linear interpolation on their
+    Delaunay triangulation (SciPy's suite times it through `griddata`)."""
+    name = f"linear_nd/n{n}/image{per_axis}"
+    rng = rng_for(f"linear_nd/n{n}")
+    points = rng.uniform(0.0, 1.0, (n, 2))
+    return {
+        "name": name,
+        "family": "linear_nd",
+        "dim": 2,
+        "n": n,
+        "n_eval": per_axis * per_axis,
+        "arrays": {"points": points, "values": rng.uniform(-1.0, 1.0, n), "q": image(per_axis, 0.0, 1.0)},
+    }
+
+
+def linear_nd_3d(n: int) -> dict:
+    """`n` points of the unit cube, evaluated at 10 000 points of the cube in
+    no order."""
+    name = f"linear_nd/3d/n{n}/scattered"
+    rng = rng_for(f"linear_nd/3d/n{n}")
+    points = rng.uniform(0.0, 1.0, (n, 3))
+    values = np.sin(3.0 * points).sum(axis=1)
+    return {
+        "name": name,
+        "family": "linear_nd",
+        "dim": 3,
+        "n": n,
+        "n_eval": 10000,
+        "arrays": {"points": points, "values": values, "q": rng.uniform(0.0, 1.0, (10000, 3))},
+    }
+
+
 def rbf(n: int, kernel: str, neighbors: int | None, queries: str) -> dict:
     mode = "global" if neighbors is None else f"k{neighbors}"
     name = f"rbf/{kernel}/{mode}/n{n}/{queries}"
@@ -227,6 +261,7 @@ def real_cases() -> list[dict]:
             "arrays": elevation_arrays,
         })
     cases.append({"name": f"nearest_nd/{day}/heldout", "family": "nearest_nd", "real": day, "arrays": weather_arrays})
+    cases.append({"name": f"linear_nd/{day}/heldout", "family": "linear_nd", "dim": 2, "real": day, "arrays": weather_arrays})
     for kernel in REAL_KERNELS:
         for neighbors in REAL_NEIGHBORS:
             mode = "global" if neighbors is None else f"k{neighbors}"
@@ -280,6 +315,11 @@ def all_cases() -> list[dict]:
     for n in spec["n_samples"] + RUST_ONLY["nearest_nd"]["n_samples"]:
         for per_axis in spec["grid_per_axis"]:
             cases.append(nearest_nd(n, per_axis))
+    for n in spec["n_samples"] + RUST_ONLY["linear_nd"]["n_samples"]:
+        for per_axis in spec["grid_per_axis"]:
+            cases.append(linear_nd(n, per_axis))
+    for n in (1000, *RUST_ONLY["linear_nd"]["n_samples"]):
+        cases.append(linear_nd_3d(n))
 
     spec = SCIPY["rbf_interpolator"]
     for n in spec["n_samples"]:

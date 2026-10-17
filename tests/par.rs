@@ -265,7 +265,9 @@ fn grids_give_the_serial_results() {
 #[cfg(feature = "scattered")]
 #[test]
 fn scattered_types_give_the_serial_results() {
-    use interpx::{NearestNDInterpolator, RBFInterpolator, RbfKernel, RbfOptions};
+    use interpx::{
+        LinearNDInterpolator, NearestNDInterpolator, RBFInterpolator, RbfKernel, RbfOptions,
+    };
 
     let mut rng = Lcg(14);
     let data: Vec<[f64; 2]> = (0..300).map(|_| [rng.next(), rng.next()]).collect();
@@ -289,6 +291,8 @@ fn scattered_types_give_the_serial_results() {
     let options = RbfOptions::new().with_neighbors(12);
     let near = RBFInterpolator::with_options(&data, &values, RbfKernel::Cubic, &options);
     check("RBF, neighbors", &near.expect("valid"), &points, FILL);
+    let linear = LinearNDInterpolator::new(&data, &values).expect("valid");
+    check("LinearND", &linear, &points, FILL);
 }
 
 /// An interpolator of the caller's own, slow enough that the first points

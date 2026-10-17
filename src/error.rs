@@ -101,6 +101,12 @@ pub enum InterpolateError {
         bytes: usize,
     },
 
+    /// The points cannot be divided into simplices: they do not span their
+    /// dimensions, or the exact arithmetic of the triangulation could not be
+    /// carried out.
+    #[error("the points cannot be triangulated: {0}")]
+    DegenerateGeometry(DegeneracyKind),
+
     /// One axis of a grid cannot be used.
     #[error("axis {axis} of the grid: {fault}")]
     GridAxis {
@@ -224,6 +230,42 @@ pub enum ParamReason {
     Negative,
 }
 
+/// Why the points of [`InterpolateError::DegenerateGeometry`] cannot be
+/// triangulated.
+///
+/// The enum is `#[non_exhaustive]`: later versions add reasons.
+///
+/// # Examples
+///
+/// ```
+/// use interpx::{DegeneracyKind, InterpolateError};
+///
+/// // What `LinearNDInterpolator` returns for points on one line in the plane.
+/// let err = InterpolateError::DegenerateGeometry(DegeneracyKind::LowerDimensional {
+///     affine_dim: 1,
+/// });
+/// assert_eq!(
+///     err.to_string(),
+///     "the points cannot be triangulated: the points lie in an affine subspace of dimension 1",
+/// );
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[non_exhaustive]
+pub enum DegeneracyKind {
+    /// The distinct points lie in an affine subspace of fewer dimensions than
+    /// the points have: on a line in the plane, on a plane in space.
+    #[error("the points lie in an affine subspace of dimension {affine_dim}")]
+    LowerDimensional {
+        /// The dimension of the smallest affine subspace that holds them.
+        affine_dim: usize,
+    },
+
+    /// The exact arithmetic that decides the triangulation could not be
+    /// carried out: its working space could not be allocated.
+    #[error("the exact arithmetic could not be carried out")]
+    NumericalLimit,
+}
+
 /// Why a system of equations could not be solved, for
 /// [`InterpolateError::SolverFailed`].
 ///
@@ -255,6 +297,14 @@ mod tests {
             (
                 E::AllocationFailed { bytes: 1 << 40 },
                 "an allocation of 1099511627776 bytes failed",
+            ),
+            (
+                E::DegenerateGeometry(super::DegeneracyKind::LowerDimensional { affine_dim: 1 }),
+                "the points cannot be triangulated: the points lie in an affine subspace of dimension 1",
+            ),
+            (
+                E::DegenerateGeometry(super::DegeneracyKind::NumericalLimit),
+                "the points cannot be triangulated: the exact arithmetic could not be carried out",
             ),
             (
                 E::SolverFailed(super::SolverError::Singular),
