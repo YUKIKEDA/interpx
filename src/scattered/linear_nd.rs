@@ -100,9 +100,10 @@ pub struct LinearNDInterpolator<const D: usize, V: Value<f64> = f64> {
     /// The `D + 1` simplices across the faces of each simplex: the one across
     /// the face opposite each vertex, or [`NO_NEIGHBOR`] on the hull.
     neighbors: Vec<u32>,
-    /// For each simplex, the inverse of the matrix whose columns are its first
-    /// `D` vertices less the last one (`D * D` numbers, row by row), then the
-    /// last vertex (`D` numbers). All NaN for a degenerate simplex.
+    /// For each simplex, what its barycentric coordinates are solved with
+    /// (see `push_transform`): `L^-1 P` and `U` of the matrix whose columns
+    /// are its first `D` vertices less the last one (`D * D` numbers each),
+    /// then the last vertex (`D`). All NaN for a degenerate simplex.
     transforms: Vec<f64>,
     /// The smallest and the largest coordinate of the points on each axis.
     lower: [f64; D],
@@ -303,7 +304,7 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
         neighbors: Vec<u32>,
         scaling: Option<Scaling<D>>,
     ) -> Result<Self, InterpolateError> {
-        let mut transforms = Vec::with_capacity(simplices.len() / (D + 1) * (D * D + D));
+        let mut transforms = Vec::with_capacity(simplices.len() / (D + 1) * (2 * D * D + D));
         for simplex in simplices.chunks_exact(D + 1) {
             push_transform(&points, simplex, &mut transforms);
         }
@@ -453,9 +454,9 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
         self.simplices.len() / (D + 1)
     }
 
-    /// The transform of a simplex: the inverse matrix, then the last vertex.
+    /// The transform of a simplex: `L^-1 P`, `U`, the last vertex.
     fn transform(&self, simplex: u32) -> &[f64] {
-        let stride = D * D + D;
+        let stride = 2 * D * D + D;
         let start = simplex as usize * stride;
         &self.transforms[start..start + stride]
     }
@@ -642,91 +643,150 @@ fn too_many() -> InterpolateError {
     }
 }
 
-/// Appends the transform of a simplex: the inverse of the matrix `A` whose
-/// column `j` is vertex `j` less the last vertex, row by row, then the last
-/// vertex. The barycentric coordinates of `x` are `A^-1 (x - last)`, and one
-/// less their sum. A matrix that is singular, or whose reciprocal condition
-/// number in the 1-norm is below [`RCOND_LIMIT`], gives NaN throughout: the
-/// simplex is degenerate (SciPy's rule, which estimates the condition number
-/// where this computes it).
+/// Appends the transform of a simplex, from the LU decomposition with
+/// partial pivoting `P A = L U` of the matrix `A` whose column `j` is vertex
+/// `j` less the last vertex: `M = L^-1 P` (`D * D` numbers, row by row), then
+/// `U` with the reciprocals of its diagonal in place of the diagonal (`D * D`,
+/// row by row, what is below the diagonal unused), then the last vertex. The
+/// barycentric coordinates of `x` solve `U c = M (x - last)`, and the last is
+/// one less their sum.
+///
+/// A matrix that is singular, or whose reciprocal condition number in the
+/// 1-norm is below [`RCOND_LIMIT`], gives NaN throughout: the simplex is
+/// degenerate (SciPy's rule; SciPy estimates the condition number where this
+/// computes it from the inverse).
+///
+/// SciPy keeps the inverse of `A` and multiplies by it. That is less
+/// accurate: the inverse holds the large numbers of `U^-1`, which the solve
+/// with `U` does not form. On a thin tetrahedron (a condition number of
+/// 10^4), the inverse put a vertex of it at coordinates off by 1.8e-13 where
+/// the solve put it exactly, and the value at a data point came out 1.5e-12
+/// off. `M` and the solve with `U` are 1.5 times the multiplications of the
+/// inverse, with no division and no reordering at a query.
 fn push_transform<const D: usize>(points: &[[f64; D]], simplex: &[u32], out: &mut Vec<f64>) {
     let last = points[simplex[D] as usize];
-    // The matrix and the identity beside it, reduced together.
     let mut a = [[0.0; D]; D];
     for (j, &v) in simplex[..D].iter().enumerate() {
         let vertex = points[v as usize];
-        for k in 0..D {
-            a[k][j] = vertex[k] - last[k];
+        for (k, row) in a.iter_mut().enumerate() {
+            row[j] = vertex[k] - last[k];
         }
     }
     let norm = norm1(&a);
-    match invert(a) {
-        Some(inverse) if 1.0 / (norm * norm1(&inverse)) >= RCOND_LIMIT => {
-            for row in &inverse {
+    let usable = decompose(a).and_then(|(lu, order)| {
+        let m = forward(&lu, &order);
+        let inverse = back_all(&lu, &m);
+        let finite = inverse
+            .iter()
+            .flatten()
+            .chain(m.iter().flatten())
+            .all(|c| c.is_finite());
+        (finite && 1.0 / (norm * norm1(&inverse)) >= RCOND_LIMIT).then_some((lu, m))
+    });
+    match usable {
+        Some((mut lu, m)) => {
+            for row in &m {
+                out.extend_from_slice(row);
+            }
+            for (i, row) in lu.iter_mut().enumerate() {
+                row[i] = 1.0 / row[i];
                 out.extend_from_slice(row);
             }
             out.extend_from_slice(&last);
         }
-        _ => out.extend(core::iter::repeat_n(f64::NAN, D * D + D)),
+        None => out.extend(core::iter::repeat_n(f64::NAN, 2 * D * D + D)),
     }
+}
+
+/// `M = L^-1 P`, column by column: `L z = P e_k` forward.
+fn forward<const D: usize>(lu: &[[f64; D]; D], order: &[usize; D]) -> [[f64; D]; D] {
+    let mut m = [[0.0; D]; D];
+    for k in 0..D {
+        let mut z = [0.0; D];
+        for i in 0..D {
+            let mut sum = f64::from(u8::from(order[i] == k));
+            for j in 0..i {
+                sum -= lu[i][j] * z[j];
+            }
+            z[i] = sum;
+        }
+        for (row, value) in m.iter_mut().zip(z) {
+            row[k] = value;
+        }
+    }
+    m
+}
+
+/// `U^-1 M`, the inverse of `A`, column by column: `U x = M e_k` back.
+fn back_all<const D: usize>(lu: &[[f64; D]; D], m: &[[f64; D]; D]) -> [[f64; D]; D] {
+    let mut inverse = [[0.0; D]; D];
+    for k in 0..D {
+        let mut x = [0.0; D];
+        for i in (0..D).rev() {
+            let mut sum = m[i][k];
+            for j in i + 1..D {
+                sum -= lu[i][j] * x[j];
+            }
+            x[i] = sum / lu[i][i];
+        }
+        for (row, value) in inverse.iter_mut().zip(x) {
+            row[k] = value;
+        }
+    }
+    inverse
 }
 
 /// The largest sum of the magnitudes of a column.
 fn norm1<const D: usize>(a: &[[f64; D]; D]) -> f64 {
     (0..D)
-        .map(|j| (0..D).map(|k| a[k][j].abs()).sum::<f64>())
+        .map(|j| a.iter().map(|row| row[j].abs()).sum::<f64>())
         .fold(0.0, f64::max)
 }
 
-/// The inverse of `a`, by elimination with partial pivoting; none when a pivot
-/// is zero or a number is not finite.
-fn invert<const D: usize>(mut a: [[f64; D]; D]) -> Option<[[f64; D]; D]> {
-    let mut inverse = [[0.0; D]; D];
-    for (k, row) in inverse.iter_mut().enumerate() {
-        row[k] = 1.0;
-    }
+/// The LU decomposition of `a` with partial pivoting, in place, and the row of
+/// `a` each row came from; none when a pivot is zero.
+fn decompose<const D: usize>(mut a: [[f64; D]; D]) -> Option<([[f64; D]; D], [usize; D])> {
+    let mut order: [usize; D] = core::array::from_fn(|k| k);
     for col in 0..D {
         let pivot = (col..D).max_by(|&i, &j| a[i][col].abs().total_cmp(&a[j][col].abs()))?;
         if a[pivot][col] == 0.0 {
             return None;
         }
         a.swap(col, pivot);
-        inverse.swap(col, pivot);
-        let p = a[col][col];
-        for j in 0..D {
-            a[col][j] /= p;
-            inverse[col][j] /= p;
-        }
-        for i in 0..D {
-            if i != col {
-                let f = a[i][col];
-                if f != 0.0 {
-                    for j in 0..D {
-                        a[i][j] -= f * a[col][j];
-                        inverse[i][j] -= f * inverse[col][j];
-                    }
-                }
+        order.swap(col, pivot);
+        let (above, below) = a.split_at_mut(col + 1);
+        let top = &above[col];
+        for row in below {
+            let factor = row[col] / top[col];
+            row[col] = factor;
+            for (entry, &up) in row[col + 1..].iter_mut().zip(&top[col + 1..]) {
+                *entry -= factor * up;
             }
         }
     }
-    let finite = inverse.iter().flatten().all(|c| c.is_finite());
-    finite.then_some(inverse)
+    Some((a, order))
 }
 
-/// The barycentric coordinates of `x` from a transform, in SciPy's order of
-/// operations (`_barycentric_coordinates`): each of the first `D` a sum over
-/// the axes, and the last one less their sum.
+/// The barycentric coordinates of `x` from a transform: the first `D` solve
+/// `U c = M (x - last)`, and the last is one less their sum (summed in order,
+/// as SciPy sums them).
 fn barycentric<const D: usize>(transform: &[f64], x: &[f64; D]) -> ([f64; D], f64) {
-    let origin = &transform[D * D..];
-    let mut c = [0.0; D];
-    let mut last = 1.0;
-    for i in 0..D {
-        let mut sum = 0.0;
-        for j in 0..D {
-            sum += transform[D * i + j] * (x[j] - origin[j]);
+    let (m, rest) = transform.split_at(D * D);
+    let (u, origin) = rest.split_at(D * D);
+    let y: [f64; D] = core::array::from_fn(|k| x[k] - origin[k]);
+    let mut c: [f64; D] =
+        core::array::from_fn(|i| m[D * i..D * i + D].iter().zip(&y).map(|(a, b)| a * b).sum());
+    for i in (0..D).rev() {
+        let row = &u[D * i..D * i + D];
+        let mut sum = c[i];
+        for j in i + 1..D {
+            sum -= row[j] * c[j];
         }
-        c[i] = sum;
-        last -= sum;
+        c[i] = sum * row[i];
+    }
+    let mut last = 1.0;
+    for value in &c {
+        last -= value;
     }
     (c, last)
 }
@@ -874,40 +934,39 @@ mod tests {
     use super::{LinearNDInterpolator, Walked, EPS};
 
     /// Points of the cube, many on its faces, the corners of a tetrahedron
-    /// last: from one simplex a vertex of it was measured at -2.8e-14, beyond
-    /// a face of the hull (found by the property test of the crate's tests).
+    /// last: from some simplices a walk to a data point leaves the hull by
+    /// rounding (found by a search over 20 000 such sets, 539 of which do
+    /// this; the first set the property test found stopped doing it when the
+    /// coordinates came from an LU decomposition instead of the inverse).
     fn faces() -> Vec<[f64; 3]> {
         let mut points = vec![
-            [0.01855029732426409, 0.4189100396648029, 0.9878574621282309],
-            [0.36193556987925546, 0.0, 0.0],
-            [0.7843633632952304, 0.653731011210593, 0.33376661413161524],
-            [0.0, 0.9709120991315361, 0.8511377088721644],
-            [0.8315244649727277, 0.9290769372512558, 0.5567199593697773],
-            [0.7806416091605959, 0.7537200910363946, 0.0],
-            [0.8732260078640668, 0.18876222144571253, 0.7324975500244549],
-            [0.9563382026194267, 0.24790925355179655, 0.8152721782673668],
-            [0.9469698999924424, 0.8620380150821337, 0.478236157411085],
-            [0.0, 0.4436120884715504, 0.0],
-            [0.898631835153527, 0.10775013641625633, 0.25155815584246183],
-            [0.0, 0.0, 0.07626251099751173],
-            [0.1836053525164637, 0.12840909092806518, 0.9230920256445325],
+            [0.5840273880650761, 0.0, 0.29776683281999905],
+            [0.7887697228607375, 0.0, 0.0],
+            [0.7876449995383649, 0.8482870597656559, 0.0],
+            [0.11013092240014277, 0.5642652099978088, 0.766618708512923],
+            [0.0, 0.12887281267446582, 0.0],
+            [0.06562029169092043, 0.7760534993474162, 0.7190231567724078],
+            [0.0, 0.39189613554591596, 0.43322302906748944],
+            [0.0, 0.84377177832942, 0.0],
+            [0.015872575120935206, 0.0, 0.13668197412623584],
+            [0.8962620857160368, 0.0, 0.2963248552207749],
+            [0.0, 0.18161392058810888, 0.3633748190675532],
+            [0.3993336928819621, 0.0, 0.0],
+            [0.46366610551977316, 0.0, 0.7452603066909818],
+            [0.4403637067996585, 0.0, 0.0],
+            [0.759357153932266, 0.0, 0.20163702652700322],
+            [0.0, 0.1242513710432015, 0.5428371255840139],
+            [0.9972511880636947, 0.5069192550161593, 0.0],
+            [0.925627308946488, 0.1844727134377805, 0.977486742272565],
+            [0.0, 0.0571139320833719, 0.7637884613349173],
             [0.0, 0.0, 0.0],
-            [0.8728169810583641, 0.0, 0.6330264227718598],
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.171654320720206],
-            [0.5073135347364379, 0.651661049074369, 0.3530479578165536],
-            [0.054945725420766214, 0.0, 0.38628792332297174],
-            [0.15096494212266162, 0.8966487811053174, 0.0],
-            [0.7688916685756781, 0.1733312401021074, 0.9846908700392136],
-            [0.9068401373632985, 0.3219005406327637, 0.7122078440897608],
-            [0.0, 0.3275146390404187, 0.3553889670200437],
-            [0.5432056873632348, 0.8867315711200432, 0.20128715609062459],
-            [0.3179714535738961, 0.4041479123423767, 0.7199495947101067],
-            [0.758088262493234, 0.5563597536656779, 0.0],
-            [0.0, 0.8957314652636468, 0.29646767136394586],
-            [0.506951858029448, 0.8298281977491287, 0.9652216748206536],
-            [0.0, 0.0, 0.8213083640932333],
+            [0.0, 0.4044753825230042, 0.0],
+            [0.0, 0.2881970878997515, 0.9808982126587361],
+            [0.7724729514036233, 0.0, 0.8768541173058809],
+            [0.00420881472699941, 0.0, 0.35924430590745415],
+            [0.5430749905749186, 0.8800838478470157, 0.1601621397566283],
+            [0.3592201432304133, 0.0, 0.0],
+            [0.7624082887132098, 0.45579881603055306, 0.0],
         ];
         points.extend([
             [0.0, 0.0, 0.0],

@@ -415,6 +415,38 @@ fn a_thin_simplex_is_looked_through_to_its_neighbors() {
     assert!((above - 1.25).abs() < 1e-12, "{above}");
 }
 
+#[test]
+fn the_data_values_come_back_at_the_vertices_of_a_thin_tetrahedron() {
+    // Found by the property test below on CI: a data point is a vertex of a
+    // tetrahedron with a condition number of 10^4. With the inverse of its
+    // matrix the value there came out 1.5e-12 off (SciPy, which finds the
+    // point in a well-conditioned tetrahedron, 1.8e-15); with its LU
+    // decomposition the coordinates of a vertex come out as they are.
+    let mut points = vec![
+        [0.042693381611414366, 0.3890558422117542, 0.7940582959686024],
+        [0.6125880437154237, 0.9472302659307226, 0.8112851235989772],
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.7785790445215961, 0.9893039824225027, 0.8887853078116238],
+        [0.28942934674679066, 0.7174686133446314, 0.0],
+        [0.7553268439579649, 0.6297163868201694, 0.0],
+        [0.29863708187555077, 0.0, 0.0],
+    ];
+    points.extend([
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ]);
+    let f = |p: &[f64; 3]| 4.920027376003285 * p[0] + 3.343642051541309 * p[1];
+    let values: Vec<f64> = points.iter().map(f).collect();
+    let linear = Linear::new(&points, &values).expect("valid");
+    for p in &points {
+        let got = linear.eval(p).expect("a data point is in the hull");
+        assert!((got - f(p)).abs() < 1e-14, "{p:?}: {got} against {}", f(p));
+    }
+}
+
 // --- Properties -----------------------------------------------------------------
 
 proptest! {
