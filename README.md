@@ -11,7 +11,7 @@ interpx = "0.1"
 
 Features:
 
-- `scattered` (on by default): `NearestNDInterpolator` and `RBFInterpolator`, and the dependencies only they need.
+- `scattered` (on by default): `NearestNDInterpolator`, `LinearNDInterpolator`, and `RBFInterpolator`, and the dependencies only they need.
 - `rayon`: batches evaluated on several threads (`ParInterpolator`), with the same results as the serial batches, bit for bit.
 - `serde`: `Serialize` and `Deserialize` for every interpolator and the parameters it is built with.
 
@@ -28,6 +28,7 @@ What differs from SciPy, before the first example:
 - **Input is checked, and rejected where SciPy would compute something else.** In one variable the coordinates must be increasing and distinct (SciPy's `interp1d` sorts them), and data must be finite everywhere: NaN or infinity in the data is an error (`InterpolateError::NonFinite`). A NaN of the data never ends up in the values.
 - **The grid's `cubic` and `quintic` are solved exactly.** SciPy's default solves them with an iterative solver, whose values are 1e-5 to 1e-2 of the largest value away from the spline on smooth data (2-D and 3-D grids, evenly spaced or not), and as far as the values themselves on random values. interpx gives the spline itself: SciPy's `method="cubic_legacy"` to rounding.
 - **`RBFInterpolator` has no default kernel**, solves its system by an LU decomposition (SciPy: a symmetric one; the values differ by less than 1e-12), and refuses duplicate points and a polynomial degree below the minimum its kernel needs (for the degree, SciPy only warns).
+- **`LinearNDInterpolator` splits four or more points on one circle (five on one sphere, ...) by its own rule.** Inside such a cell its values differ from SciPy's, whose triangulation (Qhull) splits it otherwise; points on a grid are such points. Of points with the same coordinates it takes the value of the one given first (Qhull keeps one, not always the first), and it takes one-dimensional points, which SciPy refuses.
 - **Values are real.** No complex dtypes. A value can be a fixed-size array, `[T; M]`, for `M` columns interpolated at once.
 - **Methods are chosen at construction**, not at each evaluation.
 
@@ -59,14 +60,14 @@ The same with prints: `cargo run --example one_variable`. The other examples: `g
 
 ## What a caller must know
 
-- **Every interpolator owns its data** and is `Send + Sync + 'static`: it can be kept, moved to another thread, and shared. Constructors copy what they are given. The types that keep some of their data as it is given (`PPoly`, `BSpline`, `RegularGridInterpolator`, `NearestNDInterpolator`, `RBFInterpolator`) also have `from_owned`, which takes that data as a `Vec` and keeps it without a copy.
+- **Every interpolator owns its data** and is `Send + Sync + 'static`: it can be kept, moved to another thread, and shared. Constructors copy what they are given. The types that keep some of their data as it is given (`PPoly`, `BSpline`, `RegularGridInterpolator`, `NearestNDInterpolator`, `LinearNDInterpolator`, `RBFInterpolator`) also have `from_owned`, which takes that data as a `Vec` and keeps it without a copy.
 - **Coordinates are `f32` or `f64`** in one variable, curves, and grids. Scattered data is `f64` only.
 - **Grid values are in C order**: the last axis fastest, as NumPy lays out `values[i, j, k]`.
 - **NaN and infinity**: in the data they are an error at construction. A NaN query gives no value (`None`, or the fill value). An infinite query is outside the domain: no value under `Forbid` and `Periodic`, the end value under `Clamp`, and under `Extend` the value of the end piece there, which can be infinite or NaN.
 - **`RBFInterpolator` over all points holds an `N` by `N` matrix while it is built**: 940 MB for 10 838 points. Over the nearest points (`RbfOptions::with_neighbors`) it solves a small system at each query instead. `reciprocal_condition` says how well the system over all points was solved.
 - **Evaluation does not allocate**, except `eval_batch` and `eval_batch_par`, which return a `Vec`, and the first evaluation on a thread of an `RBFInterpolator` over neighbors, which allocates the working space the thread keeps.
 - **0.x releases**: a minor version (0.1 to 0.2) may break the public API. The API is what the default features export.
-- **Not in this crate**: `interp2d` (removed from SciPy), and `interp1d` as a type (`Linear1D`, `Nearest1D`, and `BSpline1D` cover its kinds). There is no `griddata` function either: build the interpolator of its `method` and evaluate it (`NearestNDInterpolator` for `nearest`, `LinearNDInterpolator` for `linear`, `CloughTocher2DInterpolator` for `cubic`; the last two are not yet here). Not yet: `LinearNDInterpolator` and `CloughTocher2DInterpolator`, derivatives of grid and scattered interpolants, `roots`, `NdPPoly`, `BarycentricInterpolator` and `KroghInterpolator`, the FITPACK family (`UnivariateSpline`, `splrep`, `RectBivariateSpline`), and dimensions or output widths chosen at run time.
+- **Not in this crate**: `interp2d` (removed from SciPy), and `interp1d` as a type (`Linear1D`, `Nearest1D`, and `BSpline1D` cover its kinds). There is no `griddata` function either: build the interpolator of its `method` and evaluate it (`NearestNDInterpolator` for `nearest`, `LinearNDInterpolator` for `linear`, `CloughTocher2DInterpolator` for `cubic`; the last is not yet here). Not yet: `CloughTocher2DInterpolator`, derivatives of grid and scattered interpolants, `roots`, `NdPPoly`, `BarycentricInterpolator` and `KroghInterpolator`, the FITPACK family (`UnivariateSpline`, `splrep`, `RectBivariateSpline`), and dimensions or output widths chosen at run time.
 
 ## Usage
 
@@ -416,6 +417,27 @@ fn main() -> Result<(), InterpolateError> {
 
     let rescaled = NearestNDInterpolator::rescaled(&points, &[1.0, 2.0, 3.0])?;
     assert_eq!(rescaled.len(), 3);
+    Ok(())
+}
+```
+
+### `LinearNDInterpolator`
+
+Linear interpolation on the Delaunay triangulation of the points, in `D` dimensions (SciPy's `LinearNDInterpolator`). No value outside the convex hull of the points. `rescaled` triangulates after each coordinate is brought to the same range (`rescale=True`).
+
+```rust
+use interpx::{InterpolateError, Interpolator, LinearNDInterpolator};
+
+fn main() -> Result<(), InterpolateError> {
+    // f(x, y) = 1 + 2x + 3y at the corners of the unit square.
+    let points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
+    let linear = LinearNDInterpolator::new(&points, &[1.0, 3.0, 4.0, 6.0])?;
+    let v = linear.eval(&[0.25, 0.5]).unwrap_or(f64::NAN);
+    assert!((v - 3.0).abs() < 1e-12);
+    assert_eq!(linear.eval(&[1.5, 0.5]), None);
+
+    let rescaled = LinearNDInterpolator::rescaled(&points, &[1.0, 3.0, 4.0, 6.0])?;
+    assert_eq!(rescaled.simplex_count(), 2);
     Ok(())
 }
 ```

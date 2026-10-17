@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-The rows of M5 that do not wait for `convx` are done. `convx` 0.1.0 is published, so M4 starts: M4-1 (#180) next, then M4-2; each brings its own `serde`, its own tests of M5-4, and its part of the documents. Then M5-9 and the release PR M5-10, which runs `publish-review` again on the commit that is published and points the README's links to the comparison page and the crate rustdoc's link to the README at the tag `v0.1.0`. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them. P-19 is beside them too: after the warm-up of P-18, some constructions at 10 000 points still take 1.3 to 1.6 times as long in some rounds.
+The rows of M5 that do not wait for `convx` are done. `convx` 0.1.0 is published, and M4 has started: M4-1 (#180) is done, M4-2 next; it brings its own `serde`, its own tests of M5-4, and its part of the documents. Then M5-9 and the release PR M5-10, which runs `publish-review` again on the commit that is published and points the README's links to the comparison page and the crate rustdoc's link to the README at the tag `v0.1.0`. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them. P-19 is beside them too: after the warm-up of P-18, some constructions at 10 000 points still take 1.3 to 1.6 times as long in some rounds.
 
 ## Dependencies
 
@@ -61,7 +61,7 @@ The rows of M5 that do not wait for `convx` are done. `convx` 0.1.0 is published
 
 | ID   | Kind | Title                                                                                         | Issue | Status |
 | ---- | ---- | --------------------------------------------------------------------------------------------- | ----- | ------ |
-| M4-1 | Feat | `LinearNDInterpolator<D>`: Delaunay, Jump-and-Walk, tolerances, brute-force fallback, `serde` | #180  | Todo   |
+| M4-1 | Feat | `LinearNDInterpolator<D>`: Delaunay, a walk from cells, tolerances, brute-force fallback, `serde` | #180  | Done   |
 | M4-2 | Feat | `CloughTocher2DInterpolator`: global gradient estimate, Bernstein-Bézier patch, `serde`       |       | Todo   |
 
 ## P: What the comparison found (before M5-1)

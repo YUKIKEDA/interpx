@@ -519,7 +519,10 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
     /// unless its coordinate is within [`EPS_BROAD`] of zero: then the
     /// transform's rounding may have put a point of the hull outside (a vertex
     /// of the simplex was measured at `-2.8e-14`), and every simplex is looked
-    /// at. SciPy takes such a point as outside.
+    /// at. SciPy's walk stops at a face of the hull without this look; on
+    /// the set where this was found, SciPy (another triangulation, other
+    /// transforms) gives every data point a value, from whatever point its
+    /// walk starts.
     fn locate(&self, x: &[f64; D], start: u32) -> Option<(u32, [f64; D], f64)> {
         match self.walk(x, start) {
             Walked::Found(simplex, c, last) => Some((simplex, c, last)),

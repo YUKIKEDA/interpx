@@ -30,14 +30,14 @@ Rust の科学計算エコシステムにおける最大の課題は「断片化
 | :------------------- | :--------------- | :------------------------------------------------------------------------------------------------------------- |
 | **幾何計算エンジン** | **`convx`**      | Pure Rust の $N$ 次元 Delaunay 単体分割・隣接トポロジー。`scattered` のみ。                                    |
 | **線形代数エンジン** | **`faer`**       | RBF の密行列 LU 分解のみ。`default-features = false, features = ["std"]`、版は `convx` と揃える（現在 0.24）。 |
-| **空間近傍探索**     | **`kiddo`**      | k-d tree（const generic 次元）。`NearestND`・Jump・RBF 局所近傍。`scattered` のみ。                            |
+| **空間近傍探索**     | **`kiddo`**      | k-d tree（const generic 次元）。`NearestND`・RBF 局所近傍。`scattered` のみ。                            |
 | **スカラー抽象化**   | **`num-traits`** | 1D / curve / grid の `Float` ジェネリクス（f32 / f64）。                                                       |
 | **並列処理 (opt)**   | **`rayon`**      | 並列バッチ評価。                                                                                               |
 | **直列化 (opt)**     | **`serde`**      | 補間器の保存・復元（§6.5）。                                                                                   |
 | **エラー定義**       | **`thiserror`**  | エラー型。                                                                                                     |
 
 * 三重対角系（CubicSpline 等）は **O(n) の Thomas 法を自前実装**する（周期境界は Sherman–Morrison による巡回三重対角）。帯行列系（`BSpline1D`、グリッドの `cubic` / `quintic`）は部分ピボットつきの帯行列 LU を自前実装する（§6.1）。どちらにも `faer` は使わない。
-* `convx` は現状 crates.io 未公開（ローカル 0.0.0、ライセンス未設定）。`interpx` の公開前に `MIT OR Apache-2.0` を設定して公開する。開発中は `version` 併記の path 依存を使う。
+* `convx` は crates.io の 0.1.0（`MIT OR Apache-2.0`）に依存する（M4-1）。
 * MSRV は `convx`・`kiddo` に合わせ **1.89**。
 
 ### 2.1 開発用依存 (dev-dependencies)
@@ -222,7 +222,7 @@ pub enum EndCondition<V> { NotAKnot, FirstDerivative(V), SecondDerivative(V) }
 
 ### 3.4 所有権・スレッド安全性
 * すべての補間器は **owned** で、ライフタイム引数を持たない。`T: 'static` の制約は課さない。
-* コンストラクタは `::new(&[...])`（借用から構築）を提供する。渡されたデータをそのまま持つ型は、`::from_owned(...)`（ゼロコピー移動）も提供する: `PPoly`、`BSpline`、`RegularGridInterpolator`、`NearestNDInterpolator`、`RBFInterpolator`（後の 2 つは P-6、#128 で足した）。移すのは、型がそのまま持つ配列だけである: `NearestNDInterpolator::from_owned(points: &[..], values: Vec<V>)` は値を移し、点は借りる（点は木に入り、渡された配列は持たない）。`RBFInterpolator::from_owned(points: Vec<..>, values: Vec<V>, kernel, &options)` は点を移し、近傍モードでは値も移す（全域では、値は解く系に入って残らない）。この 2 型では、構築の時間は変わらない（木の組み立てと求解が占める。$10^5$ 点の `NearestNDInterpolator` で 9.2 ms と 8.5 ms）。得るものは、大きい配列を 2 つ持たずに済むことである。1 次元の各型と曲線は、データから係数を作り、座標のほかは持たないので、`from_owned` を持たない（省けるのは座標の複製 1 回だけである）。
+* コンストラクタは `::new(&[...])`（借用から構築）を提供する。渡されたデータをそのまま持つ型は、`::from_owned(...)`（ゼロコピー移動）も提供する: `PPoly`、`BSpline`、`RegularGridInterpolator`、`NearestNDInterpolator`、`RBFInterpolator`（この 2 つは P-6、#128 で足した）、`LinearNDInterpolator`（M4-1。点と値を移す）。移すのは、型がそのまま持つ配列だけである: `NearestNDInterpolator::from_owned(points: &[..], values: Vec<V>)` は値を移し、点は借りる（点は木に入り、渡された配列は持たない）。`RBFInterpolator::from_owned(points: Vec<..>, values: Vec<V>, kernel, &options)` は点を移し、近傍モードでは値も移す（全域では、値は解く系に入って残らない）。この 2 型では、構築の時間は変わらない（木の組み立てと求解が占める。$10^5$ 点の `NearestNDInterpolator` で 9.2 ms と 8.5 ms）。得るものは、大きい配列を 2 つ持たずに済むことである。1 次元の各型と曲線は、データから係数を作り、座標のほかは持たないので、`from_owned` を持たない（省けるのは座標の複製 1 回だけである）。
   * **構築が複製し、検査すること**（P-1、#122。オーナーの決定）: 他のライブラリとの比較（§8.3）で、構築がいちばん負けていた。相手（`interpn`、`ndarray-interp`、SciPy）はデータを借りるだけで、検査もしないからである。次のとおり決めた。
     * **検査をしない入口は足さない**（#146。通しの測定のあとで確かめた決定）: グリッドの構築は、`from_owned` で複製をなくしても、87 ケース中 36 で SciPy より、43 中 43 で `interpn` より遅い（200 MB の格子で、`new` 56 ms、`from_owned` 18 ms、SciPy 0.009 ms）。残っているのは値の検査である。検査を外す入口（`from_owned_unchecked` のようなもの）を足せば同じ桁になるが、NaN の入ったデータで評価が黙って NaN を返す入口ができる。構築が効くのは大きい格子を短い間隔で作り直す使い方に限られるので、約束のほうを取る。比較の表では、この差は「検査の分」として残る。
     * **借りる形は足さない。** 補間器はデータを所有し、ライフタイムを持たない（`Send + Sync + 'static` で持ち回れる）。複製を避けたい呼び出し側は `from_owned` を使う。ライフタイムつきの型や `Arc` の入口は足さない（型が 2 系統になる、入口が 3 つになる）。
@@ -303,13 +303,12 @@ pub enum InterpolateError {
 * 文字列のペイロードは持たない（パターンマッチできる型付きの値だけ）。`ParamReason`・`AxisFault`・`SolverError`・`DegeneracyKind` も `#[non_exhaustive]`。
 * 次元の不一致を表す variant は持たない（`const D` のみなので、型で表現できない）。
 * `NotSorted { index }` の `index` は、直前の座標より小さい最初の要素。`LengthMismatch` の `expected` は座標（またはクエリ）の長さ、`actual` は値（または出力バッファ）の長さ。
-* **`convx::ConvexHullError` は公開しない**（`convx` の版と SemVer を結合させないため）。M4 で、内部で次のように変換する（`From` は `pub(crate)`）:
-  * `InsufficientPoints` → `InsufficientPoints`
-  * `NonFiniteCoordinate{index}` → `NonFinite{index}`
-  * `LengthMismatch` → `LengthMismatch`
+* **`convx::Error` は公開しない**（`convx` の版と SemVer を結合させないため）。M4-1 で、内部で次のように変換する。`convx::Error` は `#[non_exhaustive]` なので、知らない種類の受け皿を持つ:
+  * `InsufficientPoints` → `InsufficientPoints`（`actual` は統合したあとの相異なる点の数）
   * `DegenerateDimension{actual_dim,..}` → `DegenerateGeometry(LowerDimensional{affine_dim})`
   * `ExactEvaluationExhausted` → `DegenerateGeometry(NumericalLimit)`
-  * `TooManyPoints` → `InvalidParameter`
+  * 構築の検査が先に通るので起きないが、取りこぼさないために変換するもの: `NonFiniteCoordinate{index}` → `NonFinite{index}`、`LengthMismatch` → `LengthMismatch`、`TooManyPoints` → `InvalidParameter`（`TooLarge { max: u32::MAX }`）
+  * Delaunay の構築が返さないもの（`NonPositiveDimension`（0 次元では `convx` を呼ばない）、`NonFiniteFacetPlane`、`NonFiniteCircumcenter`）と、後の版が足す種類 → `DegenerateGeometry(NumericalLimit)`
 * **確保の大きさと失敗**: ライブラリは、利用側が扱えない形（panic、プロセスの終了）で失敗しない。確保については、次の 2 段で守る。
   1. **`Vec` の上限**: 呼び出し側の引数で確保の大きさが決まり、それが `Vec` の持てる上限（`isize::MAX` バイト）を超えるなら、確保の前に検査して `InvalidParameter { reason: TooLarge { max } }` を返す（そのまま確保すると panic する）。`max` は「この値までなら `Vec` に収まる」である。
   2. **メモリ不足**: 上限内でも、機械のメモリに収まらない確保がある。**入力の大きさの定数倍を超えうる確保**は、失敗をエラーで返す形（`Vec::try_reserve_exact`）で行い、失敗したら `AllocationFailed { bytes }` を返す（`bytes` は確保しようとした大きさ）。小さい入力が巨大な確保を引き起こす箇所で、いま該当するのは次の 3 つである。
@@ -350,7 +349,7 @@ interpx/
 │   └── regular_grid  # RegularGridInterpolator
 └── scattered/        # N次元不規則散乱データ補間
     ├── nearest_nd    # NearestNDInterpolator (kiddo)
-    ├── linear_nd     # LinearNDInterpolator (convx + Jump-and-Walk)
+    ├── linear_nd     # LinearNDInterpolator (convx + walk from cells)
     ├── clough_tocher # CloughTocher2DInterpolator
     └── rbf           # RBFInterpolator (faer + kiddo)
 ```
@@ -377,7 +376,7 @@ interpx/
 | **N-D Grid**      | `cubic` / `quintic`                             | 同上                                          | 構築時テンソル積 B-spline 係数（§6.4） |
 | **N-D Grid**      | `pchip`                                         | 同上                                          | 軸ごとの PCHIP を最後の軸から（§6.4） |
 | **N-D Scattered** | `NearestNDInterpolator`                         | `NearestNDInterpolator<D>`                    | `kiddo`                                |
-| **N-D Scattered** | `LinearNDInterpolator`                          | `LinearNDInterpolator<D>`                     | `convx` + Jump-and-Walk                |
+| **N-D Scattered** | `LinearNDInterpolator`                          | `LinearNDInterpolator<D>`                     | `convx` + セルからの歩き               |
 | **N-D Scattered** | `CloughTocher2DInterpolator`                    | `CloughTocher2DInterpolator`                  | `convx` + 勾配推定 + Bernstein-Bézier  |
 | **N-D Scattered** | `RBFInterpolator`                               | `RBFInterpolator<D>`                          | `faer` LU + `kiddo`                    |
 
@@ -673,13 +672,34 @@ interpx/
 ### 6.2 散乱データ幾何探索（`convx` 連携）
 * **Delaunay 分割**: `[[f64; D]]` をコピーなしで `&[f64]`（row-major）にフラット化して `convx` に渡す。
 * **重複点**: `convx` の `representative()` は同一座標を最小 index に統合する。`NearestND` / `LinearND` / `CloughTocher2D` は**エラーにせず受理**し、値は最小 index の点のものを使う（doc に明記）。`RBFInterpolator` は `Err(DuplicatePoints)`。
-* **Point Location (Jump-and-Walk)**:
-  1. **Jump**: `kiddo` で最近傍入力頂点を求め、その頂点を含む単体を開始点とする（頂点→単体の逆引きを `interpx` が構築・保持）。
-  2. **Walk**: `neighbors` を辿ってクエリ点方向へ移動。ステップ上限は `n_simplices`。上限到達・巡回検知時は全単体の総当たりにフォールバックする。
-  3. **重心座標**: 内部判定は `w_i >= -eps`、`eps = 100 * f64::EPSILON`。総当たりでは `eps_broad = sqrt(f64::EPSILON)`。境界上の点は許容誤差内なら内部扱い（SciPy に合わせる）。
-  4. 総当たりでも見つからなければ `None`（凸包外）。
-* **境界センチネル**: `NO_NEIGHBOR = u32::MAX`。`convx` は公開定数を持たないため、`interpx` 内の一箇所に定義し、`convx` 側での公開定数化を依頼する。
+* **点の位置の探し方**（M4-1、#180。歩き始めの決め方はオーナーが決めた）:
+  1. **歩き始め**: 点の箱を、軸ごとに $\lceil n^{1/D} \rceil$ 個（$n$ は点の数）のセルに分ける。構築時に、各セルの中心まで 1 つ前のセルの始点から歩き、その歩きの最後の単体（中心を含む単体か、中心へ向かう凸包上の単体）をそのセルの始点にする。問い合わせは、入っているセル（箱のすぐ外なら、いちばん近いセル）の始点から歩く。始点は問い合わせの座標だけで決まるので、`eval`・バッチ・並列の結果はビットで同じになる。
+     * 設計時は、`kiddo` で最も近い点を求め、その点を含む単体へ跳ぶ形だった。比較で、画像の画素を問い合わせるケースの評価が SciPy の 1.6〜3.6 倍になった（SciPy は直前に見つけた単体から歩くので、隣の画素ではほとんど歩かない）。時間は、問い合わせごとの木の探索（1000 点で約 100 ns）が占めていた。セルにすると、評価は 5〜9 倍速くなり（2 次元 10 万点で 1 問い合わせ 245 → 28 ns、3 次元で 480 → 79 ns）、構築は変わらなかった（2 次元 10 万点で 70.7 ms と 69.7 ms）。比較での評価の負けはなくなった。
+     * セルを単体の数ほどにすると評価はもう少し速い（2 次元 10 万点で 23 ns）が、3 次元の構築が 2 割増えたので、点の数ほどにした。
+     * SciPy のように直前の単体から歩く形は採らない。面の上の点はどちらの単体でも見つかるので、バッチの切り方で、見つかる単体と結果のビットが変わる。
+  2. **歩き**: 重心座標が `-eps` を下回る最初の頂点の向かいの面を越えて進む（SciPy の `_find_simplex_directed`）。上限は単体の数の歩数。重心座標が NaN か `1 + eps` を超える（退化した単体が途中にある）か、上限に達したら、全単体の総当たりにする。
+  3. **凸包の外**: 凸包の面を越える向きになったら外とする。ただし、そのときの重心座標が `-eps_broad` 以上（丸めの範囲）なら、総当たりで探す。性質テストで、データ点そのものが、ある単体からの歩きで重心座標 $-2.8 \times 10^{-14}$ と測られ、外とされた（変換行列の丸め）。同じ 34 点で、SciPy はすべてのデータ点に値を返した（三角形分割と変換行列が違い、同じ丸めにならない。どの点の次に問い合わせても同じ）。
+  4. **重心座標と許容誤差**（SciPy と同じ規則）: 単体ごとに、ほかの頂点から最後の頂点を引いた行列の逆行列を、構築時に作る。内部の判定は `-eps <= c_i <= 1 + eps`、`eps = 100 * f64::EPSILON`。1 ノルムの条件数の逆数が `1000 * f64::EPSILON` 未満の単体は退化とする（SciPy は LAPACK の見積もりを使い、ここでは逆行列から計算する）。総当たりでは、退化した単体の隣で、退化した単体の向きに `eps_broad = sqrt(f64::EPSILON)` の幅を許す（SciPy の `_find_simplex_bruteforce`）。点の箱の外に `eps` より出た点は、歩かずに外とする。
+  5. **値**: 重心座標で頂点の値を足す。足す順は SciPy と同じ（0 から、頂点の順に）。
+* **境界センチネル**: `NO_NEIGHBOR = u32::MAX`。`convx` の rustdoc がこの値を約束しているので、`interpx` の中の 1 か所で定義する。`convx` に公開定数は頼まない（オーナーの決定、#180）。
 * `convx` の `simplices` 順序はバージョン間で保証されないため、再三角形分割に依存しない（§6.5）。
+
+* **`LinearNDInterpolator<const D: usize, V: Value<f64> = f64>`（M4-1、#180、SciPy の `LinearNDInterpolator`）**: 点の Delaunay 分割の単体ごとに線形な補間。`Point = [f64; D]`、`Output = V`。
+  * **構築**: `new(points, values)`、`from_owned(points: Vec<..>, values: Vec<V>)`（点と値を移す）、`rescaled`（SciPy の `rescale=True`。`NearestND` と同じ変換のあとで三角形分割する）、`rescaled_from_owned`（移した点をその場で変換する）。点と値を持つ。`points()` は三角形分割した点を返す（SciPy の `points` と同じく、変換のあとのもの）。
+  * **検査の順**: 長さ → 点の数（$D + 1$ 以上）→ 点の数の上限（`u32`）→ 座標 → 値 →（`rescaled` だけ）平均と範囲 → 三角形分割（相異なる点が $D + 1$ 未満、低次元、正確な計算の作業領域）。
+  * **0 次元と 1 次元**: 0 次元では全部の点が同じ 1 点なので、最初の値を返す（`convx` は呼ばない。`NearestND` と同じ）。1 次元では、隣り合う点の間の線形補間になる。SciPy は 1 次元の点を受け付けない（`ValueError: Need at least 2-D data`）。
+  * **SciPy との一致**（golden 21 件、`compare/goldens/scattered.json`。2・3・4 次元）: 相対の差は最大 $2.6 \times 10^{-15}$（許容は $10^{-13}$）。格子から点を抜いたケースは 4 点以上が同じ円の上にあり、64 問い合わせのうち 20 で値が違う（三角形分割が違うセル）。そこでも、1 次関数は両方で厳密に再現される（テスト）。
+  * **SciPy との差**: 同じ円（球）の上の点の分け方（上）。同じ座標の点では、SciPy（Qhull）は最初の点とは限らない 1 つを残す（golden の重複のケースで 25 組中 6 組が別の点）。interpx は最初の点の値を使う。1 次元を受け付ける。凸包の面を丸めの範囲で越えた点を総当たりで探す（上の 3）。
+  * **測った速さ**（criterion、この機械、単位正方形・単位立方体の一様な点、1000 問い合わせ）: 評価は 1 問い合わせ、2 次元で 15〜28 ns、3 次元で 25〜79 ns（100〜10 万点）。構築は 10 万点で、2 次元 71 ms、3 次元 484 ms。
+  * **構築の 70〜83% は `convx` の三角形分割である**（2 次元、1 プロセス、1 コア、中央値）。`convx` だけで、`spade` の構築全体より遅い:
+
+    | 点の数 | interpx 全体 | うち `convx` | `spade`（`bulk_load`） |
+    | ---: | ---: | ---: | ---: |
+    | 10 | 4.8 µs | 4.0 µs | 1.7 µs |
+    | 1000 | 615 µs | 438 µs | 294 µs |
+    | 10 万 | 74.9 ms | 60.8 ms | 46.5 ms |
+
+    残り（単体ごとの逆行列とセルの始点）は 10 万点で 14 ms である。比較で `spade` に構築が負けるのはこのためで、比較の負けとして残し、`convx` に速さの Issue を立てた（YUKIKEDA/convx#667。オーナーの決定）。
 
 * **`NearestNDInterpolator<const D: usize, V: Value<f64> = f64>`（M3-1、SciPy の `NearestNDInterpolator`）**: 問い合わせの点にいちばん近いデータ点の値を返す。`Point = [f64; D]`、`Output = V`。座標は `f64`（§3.1 の散乱系の規則）。
   * **構築**: `new(points: &[[f64; D]], values: &[V])` と `rescaled(points, values)`。点と値は複製して持つ。
@@ -1136,6 +1156,7 @@ M3-2 は、連立方程式を組み立てるところまでの部品を crate �
     | `BSplineCurve` | `BSpline1D`、データ点のパラメータ | 同上 |
     | `RegularGridInterpolator` | 軸（昇順。持っているとおり）、値、方式、外側の扱い、方式が解いたもの（`cubic`・`quintic` は係数、`pchip` は傾き） | ストライド、スプラインのノット、軸が等間隔かどうか |
     | `NearestNDInterpolator` | 木の点（座標ごとに 1 つ。`rescaled` なら座標変換のあと）、各点の値の位置、値、座標変換、距離の上限 | k-d 木 |
+    | `LinearNDInterpolator` | 点（`rescaled` なら座標変換のあと）、値、単体の頂点、単体の隣、座標変換 | 単体ごとの逆行列、点の箱、セルの始点 |
     | `RBFInterpolator` | 点、カーネル、平滑化、多項式の次数、近傍の数、全点で解いたときは係数と条件数の逆数の見積もり・近傍のときは値 | 単項式のべき、多項式の座標変換、近傍の k-d 木 |
 
     * k-d 木を保存しないのは、保存形式を `kiddo` のバージョンの内部の並びに結びつけないためである（`convx` と同じ理由）。同じ点から作り直した木は、同じ木になる。
@@ -1211,6 +1232,7 @@ serde   = ["dep:serde"]
   | `scirs2-interpolate` | 0.6.5 | 1 次元、グリッド、RBF | SciPy の移植を掲げる、範囲がいちばん広い Rust のクレート |
   | `ndarray-interp` | 0.6.0 | 1 次元（線形、3 次スプライン）、2 次元の双線形 | 1 次元でいちばん使われている |
   | `interpn` | 0.11.2 | 直交グリッド（線形、最近傍、3 次） | グリッド専用で、速さを掲げている |
+  | `spade` | 2.15.1 | 平面の Delaunay 分割と、その上の補間 | `LinearNDInterpolator` の 2 次元と同じもの（Delaunay 分割の上の重心座標の補間）を計算する（M4-1 で調べた）。`scirs2-interpolate` は、`griddata` の linear が自然近傍による近似で、Delaunay の上の 1 次の補間（`LinearTriangulationInterp`）は公開されていないモジュールにあるので、`LinearND` の相手にしない |
 
   * **いまの結果**（構築を測る前に 1 秒慣らす P-18 のコミット `79b6ced` で、全 291 ケースを 1 回の実行で測った。3 巡。1 回が 2 秒以上かかり 1 回で測った組は 1 巡。`docs/performance.md` はこの実行の結果である。実行の前に、ドライバの検査（`just compare-check`）を通している）:
 
@@ -1400,7 +1422,7 @@ serde   = ["dep:serde"]
   | `BSpline1D`（次数 $k$）                     | $k + 1$        |
   | グリッド `quintic`                          | 6              |
 
-  上に無い補間のうち、`LinearND` と `CloughTocher2D` の次数は、その行の Issue に出典付きで書く。
+  上に無い補間のうち、`CloughTocher2D` の次数は、その行の Issue に出典付きで書く。`LinearND` は下の表にある（M4-1）。
 * **測った次数と、表に無かった型**（M5-4、#157。`tests/convergence.rs`）。関数は $\sin(1.3x + 0.4) + 0.5\,e^{0.7x}$（$[0, 3]$。対称でなく、極値を持つ）。点は、等間隔と、等間隔でないもの（最も広い区間が最も狭い区間の約 3 倍）の両方。最後の 2 回の半減で読んだ次数:
 
   | 補間 | 次数 | 測った値 | 根拠 |
@@ -1418,6 +1440,7 @@ serde   = ["dep:serde"]
   | グリッド `nearest` / `linear` / `cubic` / `pchip`（2 次元） | 1 / 2 / 4 / 3 | 0.94〜1.09 / 1.87〜1.96 / 3.60〜3.93 / 2.85〜3.03 | 1 次元の方式のテンソル積。2 次元では間隔を細かくできず、極限からやや遠い |
   | グリッド `quintic`（2 次元） | 6 | 5.42 → 5.77 → 5.87（等間隔）、4.55 → 5.05 → 5.70（等間隔でない） | まだ次数へ上がっていく途中。テストは、最後の次数と、上がっていくことを見る |
   | グリッド `linear` / `cubic`（3 次元、Genz の振動） | 2 / 4 | 幅 0.2 / 0.45 に入る | §8.4.4 の関数 |
+  | `LinearNDInterpolator`（2 次元、Franke の第 1 関数） | 2 | 1.55 → 2.01 → 2.01（格子の内側の点を 0.15 h までずらした点）。Halton 点では、点を 16 倍にして誤差が 12.8 分の 1 | 角が 0 に寄らない三角形分割の上の区分 1 次補間の誤差は $C h^2$（Ciarlet, *The Finite Element Method for Elliptic Problems*, 1978, 定理 3.1.6） |
 
   * テストの幅（期待する次数からの許容）は、測った値から決めてテストに固定した。隣の次数までの距離（1）より狭い。
   * **誤差を測る点は、いちばん狭いセルに 3 点以上置く。** 3 次元のグリッドで、セルあたり 1 点以下の格子で測ると、最大の誤差（not-a-knot の端のセル）が測る点の間に落ち、次数が 5.9 や 7.0 と読めた（正しくは 4）。
@@ -1560,7 +1583,7 @@ serde   = ["dep:serde"]
   - [ ] `NearestNDInterpolator`（`kiddo`）
   - [ ] `RBFInterpolator`（`faer` LU、8 カーネル、多項式項、局所近傍）
 - [ ] **M4: `convx` 依存の散乱系**（`convx` 公開後に着手）
-  - [ ] `LinearNDInterpolator`（Delaunay + Jump-and-Walk、§6.2）
+  - [ ] `LinearNDInterpolator`（Delaunay + セルからの歩き、§6.2）
   - [ ] `CloughTocher2DInterpolator`（勾配推定 + Bernstein-Bézier）
 - [ ] **M5: 統合と品質**
   - [ ] `rayon` 並列バッチ評価、`serde`（`ndarray` の相互運用は v0.1.0 のあと。§7）

@@ -32,14 +32,14 @@ The largest problem of Rust's scientific computing ecosystem is fragmentation. I
 | :-------------------- | :--------------- | :------------------------------------------------------------------------------------------------------------- |
 | **Geometry engine**   | **`convx`**      | Pure Rust $N$-dimensional Delaunay simplicial decomposition and neighbor topology. `scattered` only.           |
 | **Linear algebra**    | **`faer`**       | Only the dense LU factorization of RBF. `default-features = false, features = ["std"]`, the version the same as `convx`'s (now 0.24). |
-| **Spatial neighbors** | **`kiddo`**      | k-d tree (const generic dimension). `NearestND`, Jump, the local neighbors of RBF. `scattered` only.           |
+| **Spatial neighbors** | **`kiddo`**      | k-d tree (const generic dimension). `NearestND`, the local neighbors of RBF. `scattered` only.           |
 | **Scalar abstraction**| **`num-traits`** | The `Float` generics of 1D / curve / grid (f32 / f64).                                                         |
 | **Parallelism (opt)** | **`rayon`**      | Parallel batch evaluation.                                                                                     |
 | **Serialization (opt)** | **`serde`**    | Saving and restoring interpolators (§6.5).                                                                     |
 | **Errors**            | **`thiserror`**  | The error types.                                                                                               |
 
 * Tridiagonal systems (CubicSpline and others) are solved by **an O(n) Thomas algorithm of the crate's own** (periodic boundaries as a cyclic tridiagonal system by Sherman–Morrison). Banded systems (`BSpline1D`, the grid's `cubic` / `quintic`) are solved by a banded LU with partial pivoting of the crate's own (§6.1). Neither uses `faer`.
-* `convx` is not yet published on crates.io (locally 0.0.0, no license set). Before `interpx` is published, it is published with `MIT OR Apache-2.0`. During development it is a path dependency with its `version` written beside it.
+* `convx` is a dependency on 0.1.0 from crates.io (`MIT OR Apache-2.0`) (M4-1).
 * The MSRV is **1.89**, that of `convx` and `kiddo`.
 
 ### 2.1 Development dependencies (dev-dependencies)
@@ -224,7 +224,7 @@ pub enum EndCondition<V> { NotAKnot, FirstDerivative(V), SecondDerivative(V) }
 
 ### 3.4 Ownership and thread safety
 * Every interpolator is **owned** and has no lifetime parameter. No `T: 'static` bound is imposed.
-* Constructors provide `::new(&[...])` (built from borrowed data). The types that keep the data they are given as it is also provide `::from_owned(...)` (a zero-copy move): `PPoly`, `BSpline`, `RegularGridInterpolator`, `NearestNDInterpolator`, `RBFInterpolator` (the last two added in P-6, #128). What is moved is only the arrays the type keeps as they are: `NearestNDInterpolator::from_owned(points: &[..], values: Vec<V>)` moves the values and borrows the points (the points go into the tree, and the array given is not kept). `RBFInterpolator::from_owned(points: Vec<..>, values: Vec<V>, kernel, &options)` moves the points, and in the neighbors mode the values too (over all points the values go into the system solved and are not kept). For these two types the time of construction does not change (building the tree and solving take it: 9.2 ms and 8.5 ms for a `NearestNDInterpolator` of $10^5$ points). What they gain is not holding two large arrays. The one-dimensional types and the curve make coefficients from the data and keep nothing but the coordinates, so they have no `from_owned` (all it would save is one copy of the coordinates).
+* Constructors provide `::new(&[...])` (built from borrowed data). The types that keep the data they are given as it is also provide `::from_owned(...)` (a zero-copy move): `PPoly`, `BSpline`, `RegularGridInterpolator`, `NearestNDInterpolator`, `RBFInterpolator` (these two added in P-6, #128), `LinearNDInterpolator` (M4-1; moves the points and the values). What is moved is only the arrays the type keeps as they are: `NearestNDInterpolator::from_owned(points: &[..], values: Vec<V>)` moves the values and borrows the points (the points go into the tree, and the array given is not kept). `RBFInterpolator::from_owned(points: Vec<..>, values: Vec<V>, kernel, &options)` moves the points, and in the neighbors mode the values too (over all points the values go into the system solved and are not kept). For these two types the time of construction does not change (building the tree and solving take it: 9.2 ms and 8.5 ms for a `NearestNDInterpolator` of $10^5$ points). What they gain is not holding two large arrays. The one-dimensional types and the curve make coefficients from the data and keep nothing but the coordinates, so they have no `from_owned` (all it would save is one copy of the coordinates).
   * **What construction copies and checks** (P-1, #122. The owner's decision): in the comparison with other libraries (§8.3), construction lost most, because the others (`interpn`, `ndarray-interp`, SciPy) only borrow the data and do not check it. It was decided as follows.
     * **No entry that skips the checks** (#146. A decision confirmed after the full measurement): grid construction, even without the copy by `from_owned`, is slower than SciPy in 36 of 87 cases and than `interpn` in 43 of 43 (on a grid of 200 MB: `new` 56 ms, `from_owned` 18 ms, SciPy 0.009 ms). What is left is the check of the values. An entry without the checks (something like `from_owned_unchecked`) would bring it to the same order, but it would be an entry where data with NaN makes evaluation return NaN silently. Construction matters only to uses that rebuild a large grid at short intervals, so the promise is kept. In the comparison's tables, the difference stays as "the cost of the checks".
     * **No borrowing form.** An interpolator owns its data and has no lifetime (it can be carried as `Send + Sync + 'static`). A caller who wants to avoid the copy uses `from_owned`. Types with a lifetime or an entry with `Arc` are not added (the types would split into two families, and there would be three entries).
@@ -305,13 +305,12 @@ pub enum InterpolateError {
 * No string payloads (only typed values that can be matched). `ParamReason`, `AxisFault`, `SolverError`, and `DegeneracyKind` are `#[non_exhaustive]` too.
 * There is no variant for a mismatch of dimensions (with `const D` only, the type cannot express it).
 * The `index` of `NotSorted { index }` is the first element smaller than the coordinate before it. The `expected` of `LengthMismatch` is the length of the coordinates (or queries), and `actual` the length of the values (or the output buffer).
-* **`convx::ConvexHullError` is not public** (so that `convx`'s version and SemVer are not tied to this crate's). In M4 it is converted inside as follows (`From` is `pub(crate)`):
-  * `InsufficientPoints` → `InsufficientPoints`
-  * `NonFiniteCoordinate{index}` → `NonFinite{index}`
-  * `LengthMismatch` → `LengthMismatch`
+* **`convx::Error` is not public** (so that `convx`'s version and SemVer are not tied to this crate's). In M4-1 it is converted inside as follows. `convx::Error` is `#[non_exhaustive]`, so there is a place for kinds not known:
+  * `InsufficientPoints` → `InsufficientPoints` (`actual` is the number of distinct points after merging)
   * `DegenerateDimension{actual_dim,..}` → `DegenerateGeometry(LowerDimensional{affine_dim})`
   * `ExactEvaluationExhausted` → `DegenerateGeometry(NumericalLimit)`
-  * `TooManyPoints` → `InvalidParameter`
+  * Converted so that none is lost, though the checks of the constructor come first and they do not happen: `NonFiniteCoordinate{index}` → `NonFinite{index}`, `LengthMismatch` → `LengthMismatch`, `TooManyPoints` → `InvalidParameter` (`TooLarge { max: u32::MAX }`)
+  * What the Delaunay build does not return (`NonPositiveDimension` (`convx` is not called with zero dimensions), `NonFiniteFacetPlane`, `NonFiniteCircumcenter`), and kinds a later version adds → `DegenerateGeometry(NumericalLimit)`
 * **The size of allocations and their failure**: the library does not fail in a way the caller cannot handle (a panic, the end of the process). For allocations it holds to this in two steps.
   1. **The limit of a `Vec`**: when the caller's arguments decide the size of an allocation, and it exceeds what a `Vec` can hold (`isize::MAX` bytes), it is checked before the allocation and `InvalidParameter { reason: TooLarge { max } }` is returned (allocating it as it is would panic). `max` means "up to this value it fits in a `Vec`".
   2. **Lack of memory**: within the limit there are still allocations that do not fit in the machine's memory. **An allocation that can exceed a constant multiple of the size of the input** is made in the form that returns its failure as an error (`Vec::try_reserve_exact`), and a failure returns `AllocationFailed { bytes }` (`bytes` the size it tried to allocate). Of the places where a small input can cause a huge allocation, three apply now.
@@ -352,7 +351,7 @@ interpx/
 │   └── regular_grid  # RegularGridInterpolator
 └── scattered/        # interpolation of N-dimensional irregular scattered data
     ├── nearest_nd    # NearestNDInterpolator (kiddo)
-    ├── linear_nd     # LinearNDInterpolator (convx + Jump-and-Walk)
+    ├── linear_nd     # LinearNDInterpolator (convx + walk from cells)
     ├── clough_tocher # CloughTocher2DInterpolator
     └── rbf           # RBFInterpolator (faer + kiddo)
 ```
@@ -379,7 +378,7 @@ interpx/
 | **N-D Grid**      | `cubic` / `quintic`                             | the same                                      | tensor-product B-spline coefficients at construction (§6.4) |
 | **N-D Grid**      | `pchip`                                         | the same                                      | PCHIP along each axis, from the last axis (§6.4) |
 | **N-D Scattered** | `NearestNDInterpolator`                         | `NearestNDInterpolator<D>`                    | `kiddo`                                |
-| **N-D Scattered** | `LinearNDInterpolator`                          | `LinearNDInterpolator<D>`                     | `convx` + Jump-and-Walk                |
+| **N-D Scattered** | `LinearNDInterpolator`                          | `LinearNDInterpolator<D>`                     | `convx` + walk from cells              |
 | **N-D Scattered** | `CloughTocher2DInterpolator`                    | `CloughTocher2DInterpolator`                  | `convx` + gradient estimate + Bernstein-Bézier |
 | **N-D Scattered** | `RBFInterpolator`                               | `RBFInterpolator<D>`                          | `faer` LU + `kiddo`                    |
 
@@ -675,13 +674,34 @@ interpx/
 ### 6.2 Geometric search for scattered data (with `convx`)
 * **Delaunay decomposition**: `[[f64; D]]` is flattened to `&[f64]` (row-major) without a copy and passed to `convx`.
 * **Duplicate points**: `convx`'s `representative()` merges identical coordinates into the smallest index. `NearestND` / `LinearND` / `CloughTocher2D` **accept them without an error**, and use the value of the point with the smallest index (stated in the doc). `RBFInterpolator` returns `Err(DuplicatePoints)`.
-* **Point Location (Jump-and-Walk)**:
-  1. **Jump**: find the nearest input vertex with `kiddo`, and start from a simplex containing that vertex (`interpx` builds and keeps the reverse lookup from vertex to simplex).
-  2. **Walk**: follow `neighbors` toward the query point. The limit of steps is `n_simplices`. On reaching the limit or detecting a cycle, fall back to a brute-force search over every simplex.
-  3. **Barycentric coordinates**: the inside test is `w_i >= -eps`, `eps = 100 * f64::EPSILON`. In the brute-force search `eps_broad = sqrt(f64::EPSILON)`. A point on the boundary counts as inside within the tolerance (as SciPy).
-  4. If the brute-force search finds nothing either, `None` (outside the convex hull).
-* **Boundary sentinel**: `NO_NEIGHBOR = u32::MAX`. `convx` has no public constant, so it is defined in one place inside `interpx`, and `convx` is asked to make it a public constant.
+* **How a point is located** (M4-1, #180; how the walk starts is the owner's decision):
+  1. **Where the walk starts**: the box of the points is cut into $\lceil n^{1/D} \rceil$ cells along each axis ($n$ is the number of points). At construction, a walk goes to the middle of each cell from the start of the cell before it, and the last simplex of that walk (the one that holds the middle, or one on the hull toward it) is the start of the cell. A query walks from the start of the cell it is in (the nearest cell, just outside the box). The start depends on the query's coordinates alone, so `eval`, a batch, and a parallel batch give the same results bit for bit.
+     * The design first had a jump: the nearest point found with `kiddo`, and a simplex at it. In the comparison, evaluation at the pixels of an image took 1.6 to 3.6 times SciPy's (SciPy walks from the simplex it found last, and hardly walks from one pixel to the next). The time was the search of the tree for every query (about 100 ns at 1000 points). With cells, evaluation is 5 to 9 times faster (at 100 000 points, 245 → 28 ns a query in 2-D, 480 → 79 ns in 3-D), and construction did not change (70.7 ms and 69.7 ms at 100 000 points in 2-D). The losses in evaluation in the comparison are gone.
+     * As many cells as simplices make evaluation a little faster (23 ns at 100 000 points in 2-D), but made construction in 3-D a fifth longer, so there are as many as points.
+     * Walking from the last simplex, as SciPy does, is not taken: a point on a face is found in either simplex, so how a batch is cut would change the simplex found, and the bits of the result.
+  2. **The walk**: across the face opposite the first vertex whose barycentric coordinate is below `-eps` (SciPy's `_find_simplex_directed`). At most as many steps as there are simplices. When a coordinate is NaN or above `1 + eps` (a degenerate simplex in the way), or the steps run out, every simplex is looked at.
+  3. **Outside the hull**: a walk that would cross a face of the hull is outside it, unless the coordinate is `-eps_broad` or above (within rounding): then every simplex is looked at. In the property test, a data point itself was measured at $-2.8 \times 10^{-14}$ from one simplex, and taken as outside (the rounding of the transform). On the same 34 points SciPy gave every data point a value (another triangulation and other transforms do not round the same way; the same after any other point).
+  4. **Barycentric coordinates and tolerances** (SciPy's rules): for each simplex, the inverse of the matrix of the other vertices less the last one is made at construction. Inside is `-eps <= c_i <= 1 + eps`, `eps = 100 * f64::EPSILON`. A simplex whose reciprocal condition number in the 1-norm is below `1000 * f64::EPSILON` is degenerate (SciPy uses LAPACK's estimate; here it is computed from the inverse). In the look at every simplex, next to a degenerate simplex, a leeway of `eps_broad = sqrt(f64::EPSILON)` is allowed toward it (SciPy's `_find_simplex_bruteforce`). A point outside the box of the points by more than `eps` is outside without a walk.
+  5. **The value**: the vertices' values summed with the barycentric coordinates, in SciPy's order (from zero, the vertices in turn).
+* **Boundary sentinel**: `NO_NEIGHBOR = u32::MAX`. `convx`'s rustdoc promises this value, so it is defined in one place inside `interpx`. `convx` is not asked for a public constant (the owner's decision, #180).
 * The order of `convx`'s `simplices` is not guaranteed across versions, so nothing depends on re-triangulation (§6.5).
+
+* **`LinearNDInterpolator<const D: usize, V: Value<f64> = f64>` (M4-1, #180, SciPy's `LinearNDInterpolator`)**: linear on each simplex of the Delaunay triangulation of the points. `Point = [f64; D]`, `Output = V`.
+  * **Construction**: `new(points, values)`, `from_owned(points: Vec<..>, values: Vec<V>)` (moves the points and the values), `rescaled` (SciPy's `rescale=True`; triangulates after the change of `NearestND`), `rescaled_from_owned` (changes the moved points in place). It keeps the points and the values. `points()` returns the points as triangulated (after the change, as SciPy's `points`).
+  * **The order of the checks**: length → number of points ($D + 1$ or more) → the limit of the number (`u32`) → coordinates → values → (`rescaled` only) mean and range → the triangulation (fewer than $D + 1$ distinct points, a lower dimension, the working space of the exact arithmetic).
+  * **Zero and one dimension**: with zero dimensions all points are one point, and the first value is returned (`convx` is not called; as `NearestND`). With one, it is linear interpolation between neighboring points. SciPy refuses one-dimensional points (`ValueError: Need at least 2-D data`).
+  * **Agreement with SciPy** (21 golden cases, `compare/goldens/scattered.json`; 2, 3, and 4 dimensions): the largest relative difference is $2.6 \times 10^{-15}$ (the tolerance $10^{-13}$). In the case of a grid with points taken out, four or more points lie on one circle, and 20 of 64 queries differ (cells split otherwise). There too an affine function comes back exactly from both (a test).
+  * **Differences from SciPy**: how points on one circle (sphere) are split (above). Of points with the same coordinates, SciPy (Qhull) keeps one that is not always the first (6 of 25 sets in the golden case of duplicates); interpx takes the value of the first. One dimension is taken. A point beyond a face of the hull by rounding is looked for in every simplex (3 above).
+  * **Measured speed** (criterion, this machine, uniform points of the unit square and cube, 1000 queries): evaluation 15 to 28 ns a query in 2-D, 25 to 79 ns in 3-D (100 to 100 000 points). Construction at 100 000 points: 71 ms in 2-D, 484 ms in 3-D.
+  * **70 to 83% of construction is `convx`'s triangulation** (2-D, one process, one core, medians). `convx` alone is longer than `spade`'s whole construction:
+
+    | points | interpx, whole | of it `convx` | `spade` (`bulk_load`) |
+    | ---: | ---: | ---: | ---: |
+    | 10 | 4.8 µs | 4.0 µs | 1.7 µs |
+    | 1000 | 615 µs | 438 µs | 294 µs |
+    | 100 000 | 74.9 ms | 60.8 ms | 46.5 ms |
+
+    The rest (the inverse of every simplex's matrix and the starts of the cells) is 14 ms at 100 000 points. This is why construction loses to `spade` in the comparison: it stays a loss of the comparison, and an Issue on speed was opened on `convx` (YUKIKEDA/convx#667; the owner's decision).
 
 * **`NearestNDInterpolator<const D: usize, V: Value<f64> = f64>` (M3-1, SciPy's `NearestNDInterpolator`)**: returns the value of the data point nearest to the query point. `Point = [f64; D]`, `Output = V`. The coordinates are `f64` (the rule of §3.1 for scattered data).
   * **Construction**: `new(points: &[[f64; D]], values: &[V])` and `rescaled(points, values)`. The points and values are copied and kept.
@@ -1138,6 +1158,7 @@ M3-2 puts the parts up to assembling the linear system into the crate. It expose
     | `BSplineCurve` | the `BSpline1D`, the parameters of the data points | the same |
     | `RegularGridInterpolator` | the axes (ascending, as kept), values, method, extrapolation, what the method solved (coefficients for `cubic` and `quintic`, slopes for `pchip`) | strides, the spline knots, whether each axis is evenly spaced |
     | `NearestNDInterpolator` | the tree's points (one per coordinate; after the change of coordinates for `rescaled`), the position of each point's value, the values, the change of coordinates, the distance bound | the k-d tree |
+    | `LinearNDInterpolator` | the points (after the change of coordinates for `rescaled`), the values, the vertices of the simplices, their neighbors, the change of coordinates | the inverse of every simplex's matrix, the box of the points, the starts of the cells |
     | `RBFInterpolator` | points, kernel, smoothing, degree of the polynomial, number of neighbors; when solved over all points the coefficients and the estimate of the reciprocal condition number, with neighbors the values | the powers of the monomials, the change of coordinates of the polynomial, the k-d tree of the neighbors |
 
     * The k-d tree is not stored so that the stored form is not tied to the internal order of a version of `kiddo` (the same reason as for `convx`). A tree rebuilt from the same points is the same tree.
@@ -1213,6 +1234,7 @@ serde   = ["dep:serde"]
   | `scirs2-interpolate` | 0.6.5 | one variable, grids, RBF | aims to port SciPy; the widest Rust crate |
   | `ndarray-interp` | 0.6.0 | one variable (linear, cubic spline), bilinear in two dimensions | the most used for one variable |
   | `interpn` | 0.11.2 | rectilinear grids (linear, nearest, cubic) | dedicated to grids, and claims speed |
+  | `spade` | 2.15.1 | the Delaunay triangulation of the plane, and interpolation on it | computes what `LinearNDInterpolator` does in 2-D (barycentric interpolation on the Delaunay triangulation; looked up in M4-1). `scirs2-interpolate` is not compared for `LinearND`: the linear method of its `griddata` is an approximation by natural neighbors, and its linear interpolation on a Delaunay triangulation (`LinearTriangulationInterp`) is in a module that is not public |
 
   * **The current results** (all 291 cases measured in one run at commit `79b6ced` of P-18, which warms construction up for 1 second before it is timed. 3 rounds; a pair whose call took 2 seconds or more and was timed by one call, 1 round. `docs/performance.md` is the result of this run. The check of the driver (`just compare-check`) was passed before the run):
 
@@ -1402,7 +1424,7 @@ The data the tests (§8.1) and benchmarks (§8.3) use is divided by purpose into
   | `BSpline1D` (degree $k$)                    | $k + 1$        |
   | grid `quintic`                              | 6              |
 
-  Of the interpolants not above, the orders of `LinearND` and `CloughTocher2D` are written, with their sources, in the Issue of their row.
+  Of the interpolants not above, the order of `CloughTocher2D` is written, with its source, in the Issue of its row. `LinearND` is in the table below (M4-1).
 * **The orders measured, and the types not in the table** (M5-4, #157; `tests/convergence.rs`). The function is $\sin(1.3x + 0.4) + 0.5\,e^{0.7x}$ (on $[0, 3]$; not symmetric, with an extremum). The points are both evenly spaced and not (the widest interval about 3 times the narrowest). The orders read over the last 2 halvings:
 
   | Interpolant | Order | Measured | Grounds |
@@ -1420,6 +1442,7 @@ The data the tests (§8.1) and benchmarks (§8.3) use is divided by purpose into
   | Grid `nearest` / `linear` / `cubic` / `pchip` (2-D) | 1 / 2 / 4 / 3 | 0.94–1.09 / 1.87–1.96 / 3.60–3.93 / 2.85–3.03 | tensor products of the one-dimensional methods. In 2 dimensions the spacing cannot be made as fine, and it is somewhat far from the limit |
   | Grid `quintic` (2-D) | 6 | 5.42 → 5.77 → 5.87 (even), 4.55 → 5.05 → 5.70 (uneven) | still on its way up to the order. The test looks at the last order and at the rise |
   | Grid `linear` / `cubic` (3-D, Genz's oscillatory) | 2 / 4 | within widths 0.2 / 0.45 | the function of §8.4.4 |
+  | `LinearNDInterpolator` (2-D, Franke's first function) | 2 | 1.55 → 2.01 → 2.01 (a lattice with its inner points moved by up to 0.15 h). On Halton points, 16 times the points bring the error down 12.8 times | piecewise linear interpolation on a triangulation whose angles stay away from zero is off by $C h^2$ (Ciarlet, *The Finite Element Method for Elliptic Problems*, 1978, theorem 3.1.6) |
 
   * The widths of the tests (the tolerance from the expected order) were decided from the values measured and fixed in the tests. They are narrower than the distance to the next order (1).
   * **The points where the error is measured are at least 3 in the narrowest cell.** On a 3-dimensional grid, measuring with a lattice of 1 point or fewer per cell let the largest error (in a cell at the not-a-knot end) fall between the points measured, and the order read as 5.9 or 7.0 (correctly 4).
@@ -1562,7 +1585,7 @@ The expected behavior follows ADR 0005 and 0006.
   - [ ] `NearestNDInterpolator` (`kiddo`)
   - [ ] `RBFInterpolator` (`faer` LU, 8 kernels, polynomial terms, local neighbors)
 - [ ] **M4: Scattered with `convx`** (started after `convx` is published)
-  - [ ] `LinearNDInterpolator` (Delaunay + Jump-and-Walk, §6.2)
+  - [ ] `LinearNDInterpolator` (Delaunay + walk from cells, §6.2)
   - [ ] `CloughTocher2DInterpolator` (gradient estimate + Bernstein-Bézier)
 - [ ] **M5: Integration and quality**
   - [ ] `rayon` parallel batch evaluation, `serde` (interoperability with `ndarray` after v0.1.0. §7)
