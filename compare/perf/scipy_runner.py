@@ -40,6 +40,9 @@ BUDGET = 0.05
 SAMPLE = 0.0002
 FEWEST = 5
 MOST = 2000
+# How long constructions are made, untimed, before the construction is timed
+# (`WARM` in the Rust harness, #172).
+WARM = 0.25
 # A call that takes this many seconds is timed once, by the call of its phase,
 # and is not made again (`LONG` in the Rust harness, #168).
 LONG = 2.0
@@ -163,6 +166,9 @@ def phases(directory: Path, library: str, build, evaluate) -> None:
         build_s = [first_build]
     else:
         del built
+        begun = time.perf_counter()
+        while time.perf_counter() - begun < WARM:
+            build()
         build_s = timed(build)
         built = build()
     eval_s = [first_eval] if first_eval >= LONG else timed(lambda: evaluate(built))

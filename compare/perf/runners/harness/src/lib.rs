@@ -153,6 +153,14 @@ fn pause() {
         std::thread::sleep(Duration::from_millis(ms));
     }
 }
+/// How long constructions are made, untimed, before the construction is timed.
+/// After a runner has read its case and evaluated once, a construction is
+/// slower for the next 50 to 75 ms (a 3-D linear grid of 8000 values: 25,
+/// then 17, then 4 µs a call in windows of 25 ms, then 3 µs; about 9 page
+/// faults a call against 0.07 after), and the timing loop of 50 ms fell
+/// within that time by a length that differed from process to process
+/// (#172). This is more than three times the longest of those times.
+const WARM: Duration = Duration::from_millis(250);
 const FEWEST: usize = 5;
 const MOST: usize = 2000;
 
@@ -287,6 +295,10 @@ pub fn run_given<I, B>(
         (vec![first_build.as_secs_f64()], built)
     } else {
         drop(built);
+        let begun = Instant::now();
+        while begun.elapsed() < WARM {
+            black_box(build(make()));
+        }
         let seconds = time_given(&make, |input| {
             black_box(build(input));
         });
