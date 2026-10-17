@@ -1,16 +1,30 @@
-//! Pure Rust interpolation covering the main classes of `scipy.interpolate`.
+//! Pure Rust interpolation covering the main classes of SciPy 1.18's
+//! `scipy.interpolate`: one variable, curves, regular grids, and scattered
+//! data. Where SciPy computes the same interpolant, the values are SciPy's to
+//! rounding.
 //!
-//! This crate is being built. So far it has the core types ([`Scalar`],
-//! [`Value`], the [`Interpolator`] trait, [`InterpolateError`], [`Extrapolate`],
-//! [`BoundaryCondition`]) and the two spline representations the 1D
-//! interpolators evaluate through: [`PPoly`], a piecewise polynomial, and
-//! [`BSpline`]. Both can be differentiated and integrated. The first
-//! interpolators built from data are [`Linear1D`], [`Nearest1D`],
-//! [`CubicSpline`], [`PchipInterpolator`], [`Akima1D`],
-//! [`CubicHermiteSpline`], and [`BSpline1D`] for data in one variable, and
-//! [`BSplineCurve`] for a curve through points, and
-//! [`RegularGridInterpolator`] (nearest, linear, cubic, and quintic) for values
-//! on a grid in several dimensions; the others follow.
+//! - One variable: [`Linear1D`] (`numpy.interp`), [`Nearest1D`] (the
+//!   nearest, previous, and next kinds of `interp1d`), [`CubicSpline`],
+//!   [`PchipInterpolator`], [`Akima1D`], [`CubicHermiteSpline`], and
+//!   [`BSpline1D`] (`make_interp_spline`).
+//! - The representations they evaluate through, which can be built directly,
+//!   differentiated, and integrated: [`PPoly`] and [`BSpline`].
+//! - A curve through points of several dimensions: [`BSplineCurve`].
+//! - Values on a rectilinear grid: [`RegularGridInterpolator`], with the
+//!   methods of [`GridMethod`].
+//! - Scattered data (the `scattered` feature, on by default):
+//!   `NearestNDInterpolator` and `RBFInterpolator`.
+//!
+//! Every interpolator implements [`Interpolator`]: `eval` returns `None`
+//! outside the domain unless an [`Extrapolate`] mode says otherwise, and
+//! `eval_batch_into` writes into a buffer of the caller's without allocating.
+//! Constructors check their input and return [`InterpolateError`]. The
+//! coordinates are `f32` or `f64` ([`Scalar`]) in one variable, curves, and
+//! grids, and `f64` for scattered data; a value is a scalar or a fixed-size
+//! array ([`Value`]). Interpolators own their data and are `Send + Sync`.
+//!
+//! What differs from SciPy, what a caller must know, and an example for every
+//! public item are in the README.
 //!
 //! # Features
 //!
