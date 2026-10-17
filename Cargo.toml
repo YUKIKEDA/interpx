@@ -3,7 +3,7 @@ name = "interpx"
 version = "0.0.0"
 edition = "2021"
 rust-version = "1.89"
-description = "Pure Rust interpolation library covering the main classes of scipy.interpolate"
+description = "Pure Rust interpolation covering the main classes of SciPy 1.18's scipy.interpolate: one variable, curves, regular grids, and scattered data."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/YUKIKEDA/interpx"
 # Set to publishable at the v0.1.0 release (docs/roadmap.md).
@@ -74,6 +74,18 @@ name = "alloc"
 harness = false
 
 # The parallel batch: needs the feature it measures, and both kinds of interpolator.
+[[example]]
+name = "scattered"
+required-features = ["scattered"]
+
+[[example]]
+name = "parallel"
+required-features = ["rayon"]
+
+[[example]]
+name = "save_and_load"
+required-features = ["serde"]
+
 [[bench]]
 name = "par"
 harness = false
