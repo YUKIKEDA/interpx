@@ -9,7 +9,9 @@ use crate::InterpolateError;
 /// gives the same results.
 ///
 /// `eval`, `eval_or`, and `eval_batch_into` of the interpolators in this crate do
-/// not allocate.
+/// not allocate, with one exception: an `RBFInterpolator` over neighbors
+/// allocates a working space at its first evaluation on a thread, and widens it
+/// when an interpolator with more neighbors is evaluated on that thread.
 ///
 /// # Examples
 ///
@@ -45,7 +47,23 @@ pub trait Interpolator {
     /// Evaluates the interpolator at `point`.
     ///
     /// Returns `None` when `point` is outside the domain and the interpolator does
-    /// not extrapolate, and when a coordinate of `point` is NaN.
+    /// not extrapolate, and when a coordinate of `point` is NaN. The scattered
+    /// types also return `None` for a coordinate that is infinite, and
+    /// `RBFInterpolator` for a result that is not finite.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{Extrapolate, InterpolateError, Interpolator, Linear1D};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// let line = Linear1D::new(&[0.0, 1.0], &[0.0, 10.0])?.with_extrapolate(Extrapolate::Forbid);
+    /// assert_eq!(line.eval(&0.5), Some(5.0));
+    /// assert_eq!(line.eval(&2.0), None);
+    /// assert_eq!(line.eval(&f64::NAN), None);
+    /// # Ok(())
+    /// # }
+    /// ```
     fn eval(&self, point: &Self::Point) -> Option<Self::Output>;
 
     /// Evaluates the interpolator at `point`, or returns `fill` where
@@ -53,6 +71,19 @@ pub trait Interpolator {
     ///
     /// This is SciPy's `fill_value`, given at the call. Pass NaN to mark the
     /// points that have no value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{Extrapolate, InterpolateError, Interpolator, Linear1D};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// let line = Linear1D::new(&[0.0, 1.0], &[0.0, 10.0])?.with_extrapolate(Extrapolate::Forbid);
+    /// assert_eq!(line.eval_or(&0.5, -1.0), 5.0);
+    /// assert_eq!(line.eval_or(&2.0, -1.0), -1.0);
+    /// # Ok(())
+    /// # }
+    /// ```
     fn eval_or(&self, point: &Self::Point, fill: Self::Output) -> Self::Output {
         self.eval(point).unwrap_or(fill)
     }
@@ -63,6 +94,18 @@ pub trait Interpolator {
     /// This allocates the vector. Use
     /// [`eval_batch_into`](Interpolator::eval_batch_into) to write into a buffer
     /// that already exists.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{Extrapolate, InterpolateError, Interpolator, Linear1D};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// let line = Linear1D::new(&[0.0, 1.0], &[0.0, 10.0])?.with_extrapolate(Extrapolate::Forbid);
+    /// assert_eq!(line.eval_batch(&[0.5, 2.0]), [Some(5.0), None]);
+    /// # Ok(())
+    /// # }
+    /// ```
     fn eval_batch(&self, points: &[Self::Point]) -> Vec<Option<Self::Output>> {
         points.iter().map(|p| self.eval(p)).collect()
     }

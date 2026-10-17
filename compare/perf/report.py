@@ -130,7 +130,9 @@ def seconds(value: float) -> str:
     for unit, scale in (("s", 1.0), ("ms", 1e-3), ("µs", 1e-6), ("ns", 1e-9)):
         if value >= scale:
             return f"{value / scale:.3g} {unit}"
-    return "0"
+    # Under a nanosecond: a call that does nearly nothing (a construction that
+    # only borrows the data). Printed as "0" it stood beside a finite ratio.
+    return f"{value / 1e-9:.2g} ns" if value > 0 else "0"
 
 
 def megabytes(value: float | None) -> str:
@@ -349,7 +351,7 @@ def main() -> None:
         "- A call of two seconds or more is timed once: the construction that made the interpolator, or the evaluation that wrote the values, is its measurement, and it is not made again. A library whose construction or evaluation of a case was timed so is run on that case in the first round only, and its time is then one measurement; a call near two seconds that was timed several times goes on to the later rounds. (The rule goes by the time, whatever the library.)",
         f"- interpx is called slower where its median is more than {LOSS:.2f} times another library's and its fastest repeat is slower than that library's fastest.",
         "- Memory is the resident set size of the process, sampled every millisecond from outside it.",
-        f"- Command: `{env['command']}`.",
+        f"- Command: `{env['command']}`, run in `compare/`.",
         "",
         "## Where interpx is slower",
         "",

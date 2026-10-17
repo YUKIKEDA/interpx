@@ -17,14 +17,17 @@
 //!
 //! Every interpolator implements [`Interpolator`]: `eval` returns `None`
 //! outside the domain unless an [`Extrapolate`] mode says otherwise, and
-//! `eval_batch_into` writes into a buffer of the caller's without allocating.
+//! `eval_batch_into` writes into a buffer of the caller's without allocating
+//! (the one exception is the working space of `RBFInterpolator` over neighbors,
+//! allocated once per thread).
 //! Constructors check their input and return [`InterpolateError`]. The
 //! coordinates are `f32` or `f64` ([`Scalar`]) in one variable, curves, and
 //! grids, and `f64` for scattered data; a value is a scalar or a fixed-size
 //! array ([`Value`]). Interpolators own their data and are `Send + Sync`.
 //!
 //! What differs from SciPy, what a caller must know, and an example for every
-//! public item are in the README.
+//! public item are in the
+//! [README](https://github.com/YUKIKEDA/interpx/blob/main/README.md).
 //!
 //! # Features
 //!
@@ -36,7 +39,10 @@
 //!   first points and is shared out only when the rest is worth it; for
 //!   batches you know to be small, call the serial forms: a batch of less
 //!   than a tenth of a millisecond of work is not shared out, and deciding
-//!   that has made it up to a third slower than the serial form.
+//!   that costs up to 0.14 µs (up to two thirds more time on batches under a
+//!   microsecond, and up to a third more on batches up to a tenth of a
+//!   millisecond, over the 277 cases of this crate's comparison with SciPy, 8
+//!   threads).
 //! - `serde`: `Serialize` and `Deserialize` for every interpolator and for
 //!   the parameters they are built with. See below.
 //!

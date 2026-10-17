@@ -26,8 +26,8 @@ interpx = "0.1"
   - `Forbid`（値なし）: `Akima1D`、`Nearest1D`、`RegularGridInterpolator`。
   - `Clamp`（端の値）: `Linear1D`。`numpy.interp` と同じです。
 - **入力は検査され、SciPy が別のものを計算する入力は拒否されます。** 1 変数では座標が狭義単調増加である必要があります（SciPy の `interp1d` は並べ替えます）。データはどこでも有限である必要があり、NaN や無限大を含むデータはエラー（`InterpolateError::NonFinite`）になります。データの NaN が補間の値に紛れ込むことはありません。
-- **規則格子の `cubic` と `quintic` は厳密に解きます。** SciPy の既定は反復解法で解くため、値はスプラインから最大値の 1e-5〜1e-3 ずれます。interpx はスプラインそのものを返し、SciPy の `method="cubic_legacy"` と丸め誤差の範囲で一致します。
-- **`RBFInterpolator` に既定のカーネルはありません。** 系は LU 分解で解きます（SciPy は対称な分解。値の差は 1e-12 未満）。重複した点は拒否します。
+- **規則格子の `cubic` と `quintic` は厳密に解きます。** SciPy の既定は反復解法で解くため、値はスプラインから、滑らかなデータで最大値の 1e-5〜1e-2（2 次元・3 次元の格子、等間隔でも不等間隔でも）、乱数の値では値そのものの大きさまでずれます。interpx はスプラインそのものを返し、SciPy の `method="cubic_legacy"` と丸め誤差の範囲で一致します。
+- **`RBFInterpolator` に既定のカーネルはありません。** 系は LU 分解で解きます（SciPy は対称な分解。値の差は 1e-12 未満）。重複した点と、カーネルの最小次数より低い多項式の次数は拒否します（SciPy は警告だけを出します）。
 - **値は実数です。** 複素数は扱いません。値を固定長の配列 `[T; M]` にすると、`M` 列をまとめて補間できます。
 - **補間の方式は構築時に決めます。** 評価のたびには変えられません。
 
@@ -64,9 +64,9 @@ fn main() -> Result<(), InterpolateError> {
 - **規則格子の値は C 順です。** 最後の軸が最も速く変わります。NumPy が `values[i, j, k]` を並べる順と同じです。
 - **NaN と無限大**: データに含まれるとき、構築時のエラーになります。NaN を問い合わせると値はありません（`None`、または埋める値）。無限大の問い合わせは定義域の外として扱います。`Forbid` と `Periodic` では値なし、`Clamp` では端の値です。`Extend` では端の区間の式をその点で評価するので、値が無限大や NaN になることがあります。
 - **全点の `RBFInterpolator` は、構築の間 `N` × `N` の行列を持ちます。** 10 838 点で 940 MB です。近傍の点だけを使う設定（`RbfOptions::with_neighbors`）では、代わりに問い合わせごとに小さな系を解きます。`reciprocal_condition` は、全点の系がどれだけ正確に解けたかを示します。
-- **評価はメモリを確保しません。** 例外は、`Vec` を返す `eval_batch` と、近傍を使う `RBFInterpolator` のスレッドごとの最初の評価（そのスレッドが持ち続ける作業領域を確保します）です。
+- **評価はメモリを確保しません。** 例外は、`Vec` を返す `eval_batch` と `eval_batch_par` と、近傍を使う `RBFInterpolator` のスレッドごとの最初の評価（そのスレッドが持ち続ける作業領域を確保します）です。
 - **0.x のリリース**: マイナーバージョン（0.1 から 0.2）で公開 API が変わることがあります。ここでいう公開 API は、既定のフィーチャーで公開されるものを指します。
-- **この crate にないもの**: `interp2d`（SciPy から削除済み）と、型としての `interp1d`（その種類は `Linear1D`、`Nearest1D`、`BSpline1D` で扱えます）。まだないもの: 規則格子と散布点の補間の導関数、`roots`、`NdPPoly`、`BarycentricInterpolator` と `KroghInterpolator`、FITPACK 系（`UnivariateSpline`、`splrep`、`RectBivariateSpline`）、実行時に決める次元と出力の幅。
+- **この crate にないもの**: `interp2d`（SciPy から削除済み）と、型としての `interp1d`（その種類は `Linear1D`、`Nearest1D`、`BSpline1D` で扱えます）。まだないもの: `LinearNDInterpolator` と `CloughTocher2DInterpolator`、規則格子と散布点の補間の導関数、`roots`、`NdPPoly`、`BarycentricInterpolator` と `KroghInterpolator`、FITPACK 系（`UnivariateSpline`、`splrep`、`RectBivariateSpline`）、実行時に決める次元と出力の幅。
 
 ## 使い方
 

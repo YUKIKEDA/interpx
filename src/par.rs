@@ -109,10 +109,11 @@ fn timed<E>(work: impl FnOnce() -> Result<(), E>) -> Result<Duration, E> {
 /// that is not shared out costs more than the serial form: nothing more up to
 /// 16 points, and above that the two readings of the clock and, more than
 /// those, the batch being evaluated as two serial batches (the points timed,
-/// then the rest). In this crate's comparison (`docs/performance.md`) that
-/// was 0.1 µs on batches under a microsecond, and up to a third more time on
-/// batches from a microsecond to a tenth of a millisecond (7 µs at the
-/// most). For batches you know to be small, call the serial form.
+/// then the rest). Over the 277 cases of this crate's comparison with SciPy
+/// (8 threads), that was up to 0.14 µs on batches under a microsecond (up to
+/// two thirds more time), and up to a third more time on batches from a
+/// microsecond to a tenth of a millisecond (7 µs at the most). For batches
+/// you know to be small, call the serial form.
 ///
 /// The threads are those of `rayon`'s global pool. To use another pool, call
 /// from inside its `install`.
@@ -146,6 +147,19 @@ where
     ///
     /// Besides the result, one `Vec` is allocated for each chunk (what the
     /// serial batch of the chunk returns).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{InterpolateError, Interpolator, Linear1D, ParInterpolator};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// let line = Linear1D::new(&[0.0, 1.0], &[0.0, 10.0])?;
+    /// let points: Vec<f64> = (0..1000).map(|i| f64::from(i) / 1000.0).collect();
+    /// assert_eq!(line.eval_batch_par(&points), line.eval_batch(&points));
+    /// # Ok(())
+    /// # }
+    /// ```
     fn eval_batch_par(&self, points: &[Self::Point]) -> Vec<Option<Self::Output>> {
         if points.len() <= FIRST {
             // Nothing to decide: these would all be evaluated to be timed.
@@ -175,6 +189,20 @@ where
     ///
     /// Nothing is allocated here beyond what the serial batch of a chunk
     /// allocates (and what `rayon` does to share the chunks out).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{InterpolateError, Linear1D, ParInterpolator};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// let line = Linear1D::new(&[0.0, 1.0], &[0.0, 10.0])?;
+    /// let mut out = [0.0; 3];
+    /// line.eval_batch_into_par(&[0.25, 0.5, 2.0], &mut out, -1.0)?;
+    /// assert_eq!(out, [2.5, 5.0, 10.0]);
+    /// # Ok(())
+    /// # }
+    /// ```
     ///
     /// # Errors
     ///
