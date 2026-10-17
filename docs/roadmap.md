@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-M5-8 next (`publish-review` over the README, the comparison page, and the public rustdoc): the documents are written on figures that are right (`docs/performance.md` was made again in P-17, after the cost of the estimate of P-14). M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4, and its part of the documents. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them. P-18 is beside them too: it finds why some constructions take one of two times, which decides whether the comparison counts them as slower, and may change interpx if the cause is there.
+The rows of M5 that do not wait for `convx` are done. M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4, and its part of the documents. Then M5-9 and the release PR M5-10, which runs `publish-review` again on the commit that is published and points the README's links to the comparison page and the crate rustdoc's link to the README at the tag `v0.1.0`. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them. P-18 is beside them too: it finds why some constructions take one of two times, which decides whether the comparison counts them as slower, and may change interpx if the cause is there.
 
 ## Dependencies
 
@@ -99,7 +99,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | M5-5  | Task | `compare/perf`: SciPy and other pure-Rust crates, time and memory                                                                                               | #120  | Done   |
 | M5-6  | Task | `README.md`, `README.ja.md`, and `examples/`                                                                                                                    | #174  | Done   |
 | M5-7  | Task | English `docs/design.md`                                                                                                                                        | #176  | Done   |
-| M5-8  | Task | Run `publish-review`, fix rustdoc and README failures                                                                                                           |       | Todo   |
+| M5-8  | Task | Run `publish-review`, fix rustdoc and README failures                                                                                                           | #178  | Done   |
 | M5-9  | Task | Switch `convx` to the published version; set license and publish fields                                                                                         |       | Todo   |
 | M5-10 | Task | Release PR for v0.1.0                                                                                                                                           |       | Todo   |
 | M5-11 | Task | `compare/perf`: the real-world data sets of design section 8.4.7 (left out of M5-5) | #160  | Done   |
