@@ -15,3 +15,4 @@ When asked about such an operation, answer with the current `HEAD` SHA, the targ
 - A push that follows a test is chained to it with `&&`, never with `;`. On #161 `cargo test` failed, the line went on, and the branch was pushed with the failure unread. (The failure was a false one, from a build directory shared with another worktree; the push was wrong either way.)
 - Never skip hooks (`--no-verify`) or signing unless the owner orders it.
 - A withdrawn prototype's branch stays until the owner names it (`.cursor/rules/workflow.mdc`).
+- A commit the design cites by its hash (the commit a measurement ran at) is on the branch of a PR, so that it can be reached after a squash merge. P-13 was measured on a branch stacked on #171; after #171 was merged its commits went to a new branch, and the cited commit was left only on a branch with no PR (#173).

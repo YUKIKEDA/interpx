@@ -9,6 +9,14 @@ lint:
 
 test:
     cargo test
+    # The examples of both READMEs: they use every feature (`README.md` and
+    # `README.ja.md` are doctests only with all of them, see `src/lib.rs`).
+    cargo test --doc --all-features
+    cargo run --example one_variable
+    cargo run --example grid
+    cargo run --example scattered
+    cargo run --release --example parallel --features rayon
+    cargo run --example save_and_load --features serde
 
 coverage:
     cargo llvm-cov --fail-under-lines 90
