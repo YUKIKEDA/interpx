@@ -1,3 +1,5 @@
+[English](design.md) | 日本語
+
 # `interpx` Architecture & Design Specification
 
 > **Pure Rust による `scipy.interpolate` 主要補間クラス網羅の補間ライブラリ。**

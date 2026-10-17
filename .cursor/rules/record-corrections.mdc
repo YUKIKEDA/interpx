@@ -8,7 +8,7 @@ alwaysApply: true
 A correction that the owner gives in conversation lands in the same change as the work, in the file where it belongs:
 
 - A working rule: one `.cursor/rules/*.mdc`, one concern per file, with a BAD and a GOOD example.
-- The meaning of the library: `docs/design.ja.md` (through a `design` Issue when it changes the spec).
+- The meaning of the library: `docs/design.ja.md` and `docs/design.md` in the same PR (through a `design` Issue when it changes the spec).
 - A decision and its reason: an ADR in `docs/adr/`.
 - A step-by-step procedure: the matching skill under `.agents/skills/`.
 

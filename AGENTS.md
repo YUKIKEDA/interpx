@@ -6,7 +6,7 @@ Pure Rust interpolation covering the main classes of `scipy.interpolate` (SciPy 
 
 | What                           | Where                                                         |
 | ------------------------------ | ------------------------------------------------------------- |
-| Design (canonical, Japanese)   | `docs/design.ja.md`                                           |
+| Design (canonical, Japanese)   | `docs/design.ja.md`; its English translation `docs/design.md` |
 | Order and status of work       | `docs/roadmap.md`                                             |
 | Modules and directory tree     | `docs/conventions.md`                                         |
 | Why a decision was made        | `docs/adr/` (`0001-...`, one decision per file)               |

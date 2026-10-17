@@ -19,7 +19,7 @@ Grill (when the design branches) → Issue → branch → work → PR → human 
    | task     | `type:chore`    | `chore`, `build`, `ci` |
    | spike    | `type:spike`    | `chore`, `test`        |
 
-3. A change to what the spec means is a **design** Issue. It updates `docs/design.ja.md` and lands before the implementation Issue. The Japanese file is canonical.
+3. A change to what the spec means is a **design** Issue. It updates `docs/design.ja.md` and its English translation `docs/design.md` in the same PR, and lands before the implementation Issue. The Japanese file is canonical.
 4. **Acceptance text** goes on the Issue. `docs/roadmap.md` holds ID, title, Issue, and status only. A row that reads `Set after Grill on #n` is not started.
 5. **Branch** from `main`: `type/<issue-number>-<slug>`, for example `feat/12-pchip`.
 6. **PR** from `.github/pull_request_template.md`. Write `Closes #N` alone on a line under `## Related`. The title is a Conventional Commits line.
@@ -56,7 +56,7 @@ CI also runs the tests on Linux, Windows, and macOS with `--no-default-features`
 
 ## Language
 
-Identifiers, rustdoc, README, and the Cargo description are English. Issue and PR bodies and commit subjects may be Japanese. The canonical spec is `docs/design.ja.md`; the English `docs/design.md` is a roadmap row before v0.1.0.
+Identifiers, rustdoc, README, and the Cargo description are English. Issue and PR bodies and commit subjects may be Japanese. The canonical spec is `docs/design.ja.md`; `docs/design.md` is its English translation, changed in the same PR.
 
 ## Local files
 

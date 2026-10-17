@@ -7,7 +7,7 @@ alwaysApply: true
 
 A question is not a decision. Do not close a design choice, an Issue, or a PR in the same turn as a question.
 
-These are questions, not orders. Do not create, edit, close, or retitle Issues or PRs, and do not rewrite `docs/roadmap.md` or `docs/design.ja.md` to settle them:
+These are questions, not orders. Do not create, edit, close, or retitle Issues or PRs, and do not rewrite `docs/roadmap.md`, `docs/design.ja.md`, or `docs/design.md` to settle them:
 
 - "Is it required?" "Should it be X?"
 - Any yes/no about scope, a milestone, or whether a roadmap row exists.
