@@ -6,8 +6,8 @@
 /// its counterpart: `numpy.interp` clamps, `CubicSpline` extends, and
 /// `Akima1DInterpolator` forbids, for example.
 ///
-/// Scattered-data interpolators have no extrapolation mode: outside the convex
-/// hull they return `None`.
+/// Scattered-data interpolators have no extrapolation mode: `NearestNDInterpolator`
+/// and `RBFInterpolator` give a value at every finite query point.
 ///
 /// # Examples
 ///
@@ -21,14 +21,14 @@
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum Extrapolate {
-    /// Return `None` outside the domain.
+    /// Gives no value (`None`) outside the domain.
     Forbid,
-    /// Return the value at the nearest end of the domain.
+    /// Gives the value at the nearest end of the domain.
     Clamp,
-    /// Continue the first or the last polynomial piece past the end.
+    /// Continues the first or the last polynomial piece past the end.
     Extend,
-    /// Wrap the query into the domain, as for a periodic function. The right end
-    /// of the domain wraps to the left end.
+    /// Wraps the query into the domain, as for a periodic function. The right
+    /// end of the domain wraps to the left end.
     Periodic,
 }
 

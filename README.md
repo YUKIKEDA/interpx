@@ -26,8 +26,8 @@ What differs from SciPy, before the first example:
   - `Forbid` (no value): `Akima1D`, `Nearest1D`, and `RegularGridInterpolator`.
   - `Clamp` (the end value): `Linear1D`, as `numpy.interp`.
 - **Input is checked, and rejected where SciPy would compute something else.** In one variable the coordinates must be increasing and distinct (SciPy's `interp1d` sorts them), and data must be finite everywhere: NaN or infinity in the data is an error (`InterpolateError::NonFinite`). A NaN of the data never ends up in the values.
-- **The grid's `cubic` and `quintic` are solved exactly.** SciPy's default solves them with an iterative solver, whose values are 1e-5 to 1e-3 of the largest value away from the spline. interpx gives the spline itself: SciPy's `method="cubic_legacy"` to rounding.
-- **`RBFInterpolator` has no default kernel**, solves its system by an LU decomposition (SciPy: a symmetric one; the values differ by less than 1e-12), and refuses duplicate points.
+- **The grid's `cubic` and `quintic` are solved exactly.** SciPy's default solves them with an iterative solver, whose values are 1e-5 to 1e-2 of the largest value away from the spline on smooth data (2-D and 3-D grids, evenly spaced or not), and as far as the values themselves on random values. interpx gives the spline itself: SciPy's `method="cubic_legacy"` to rounding.
+- **`RBFInterpolator` has no default kernel**, solves its system by an LU decomposition (SciPy: a symmetric one; the values differ by less than 1e-12), and refuses duplicate points and a polynomial degree below the minimum its kernel needs (for the degree, SciPy only warns).
 - **Values are real.** No complex dtypes. A value can be a fixed-size array, `[T; M]`, for `M` columns interpolated at once.
 - **Methods are chosen at construction**, not at each evaluation.
 
@@ -64,9 +64,9 @@ The same with prints: `cargo run --example one_variable`. The other examples: `g
 - **Grid values are in C order**: the last axis fastest, as NumPy lays out `values[i, j, k]`.
 - **NaN and infinity**: in the data they are an error at construction. A NaN query gives no value (`None`, or the fill value). An infinite query is outside the domain: no value under `Forbid` and `Periodic`, the end value under `Clamp`, and under `Extend` the value of the end piece there, which can be infinite or NaN.
 - **`RBFInterpolator` over all points holds an `N` by `N` matrix while it is built**: 940 MB for 10 838 points. Over the nearest points (`RbfOptions::with_neighbors`) it solves a small system at each query instead. `reciprocal_condition` says how well the system over all points was solved.
-- **Evaluation does not allocate**, except `eval_batch`, which returns a `Vec`, and the first evaluation on a thread of an `RBFInterpolator` over neighbors, which allocates the working space the thread keeps.
+- **Evaluation does not allocate**, except `eval_batch` and `eval_batch_par`, which return a `Vec`, and the first evaluation on a thread of an `RBFInterpolator` over neighbors, which allocates the working space the thread keeps.
 - **0.x releases**: a minor version (0.1 to 0.2) may break the public API. The API is what the default features export.
-- **Not in this crate**: `interp2d` (removed from SciPy) and `interp1d` as a type (`Linear1D`, `Nearest1D`, and `BSpline1D` cover its kinds). Not yet: derivatives of grid and scattered interpolants, `roots`, `NdPPoly`, `BarycentricInterpolator` and `KroghInterpolator`, the FITPACK family (`UnivariateSpline`, `splrep`, `RectBivariateSpline`), and dimensions or output widths chosen at run time.
+- **Not in this crate**: `interp2d` (removed from SciPy), and `interp1d` as a type (`Linear1D`, `Nearest1D`, and `BSpline1D` cover its kinds). There is no `griddata` function either: build the interpolator of its `method` and evaluate it (`NearestNDInterpolator` for `nearest`, `LinearNDInterpolator` for `linear`, `CloughTocher2DInterpolator` for `cubic`; the last two are not yet here). Not yet: `LinearNDInterpolator` and `CloughTocher2DInterpolator`, derivatives of grid and scattered interpolants, `roots`, `NdPPoly`, `BarycentricInterpolator` and `KroghInterpolator`, the FITPACK family (`UnivariateSpline`, `splrep`, `RectBivariateSpline`), and dimensions or output widths chosen at run time.
 
 ## Usage
 

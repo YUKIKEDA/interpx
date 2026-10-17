@@ -88,13 +88,38 @@ pub(crate) mod sealed {
 /// ```
 pub trait Value<T: Scalar>: Copy + Debug + Send + Sync + sealed::Sealed<T> {
     /// Returns the additive identity: zero in every column.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::Value;
+    ///
+    /// assert_eq!(<[f64; 2] as Value<f64>>::zero(), [0.0, 0.0]);
+    /// ```
     fn zero() -> Self;
 
     /// Returns `self + k * x`, column by column.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::Value;
+    ///
+    /// assert_eq!([1.0, 2.0].axpy(2.0, [10.0, 20.0]), [21.0, 42.0]);
+    /// ```
     #[must_use]
     fn axpy(self, k: T, x: Self) -> Self;
 
     /// Returns `true` when every column is neither NaN nor infinite.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::Value;
+    ///
+    /// assert!(Value::<f64>::all_finite(&[1.0, 2.0]));
+    /// assert!(!Value::<f64>::all_finite(&[1.0, f64::INFINITY]));
+    /// ```
     fn all_finite(&self) -> bool;
 }
 

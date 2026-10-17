@@ -1,16 +1,33 @@
-//! Pure Rust interpolation covering the main classes of `scipy.interpolate`.
+//! Pure Rust interpolation covering the main classes of SciPy 1.18's
+//! `scipy.interpolate`: one variable, curves, regular grids, and scattered
+//! data. Where SciPy computes the same interpolant, the values are SciPy's to
+//! rounding.
 //!
-//! This crate is being built. So far it has the core types ([`Scalar`],
-//! [`Value`], the [`Interpolator`] trait, [`InterpolateError`], [`Extrapolate`],
-//! [`BoundaryCondition`]) and the two spline representations the 1D
-//! interpolators evaluate through: [`PPoly`], a piecewise polynomial, and
-//! [`BSpline`]. Both can be differentiated and integrated. The first
-//! interpolators built from data are [`Linear1D`], [`Nearest1D`],
-//! [`CubicSpline`], [`PchipInterpolator`], [`Akima1D`],
-//! [`CubicHermiteSpline`], and [`BSpline1D`] for data in one variable, and
-//! [`BSplineCurve`] for a curve through points, and
-//! [`RegularGridInterpolator`] (nearest, linear, cubic, and quintic) for values
-//! on a grid in several dimensions; the others follow.
+//! - One variable: [`Linear1D`] (`numpy.interp`), [`Nearest1D`] (the
+//!   nearest, previous, and next kinds of `interp1d`), [`CubicSpline`],
+//!   [`PchipInterpolator`], [`Akima1D`], [`CubicHermiteSpline`], and
+//!   [`BSpline1D`] (`make_interp_spline`).
+//! - The representations they evaluate through, which can be built directly,
+//!   differentiated, and integrated: [`PPoly`] and [`BSpline`].
+//! - A curve through points of several dimensions: [`BSplineCurve`].
+//! - Values on a rectilinear grid: [`RegularGridInterpolator`], with the
+//!   methods of [`GridMethod`].
+//! - Scattered data (the `scattered` feature, on by default):
+//!   `NearestNDInterpolator` and `RBFInterpolator`.
+//!
+//! Every interpolator implements [`Interpolator`]: `eval` returns `None`
+//! outside the domain unless an [`Extrapolate`] mode says otherwise, and
+//! `eval_batch_into` writes into a buffer of the caller's without allocating
+//! (the one exception is the working space of `RBFInterpolator` over neighbors,
+//! allocated once per thread).
+//! Constructors check their input and return [`InterpolateError`]. The
+//! coordinates are `f32` or `f64` ([`Scalar`]) in one variable, curves, and
+//! grids, and `f64` for scattered data; a value is a scalar or a fixed-size
+//! array ([`Value`]). Interpolators own their data and are `Send + Sync`.
+//!
+//! What differs from SciPy, what a caller must know, and an example for every
+//! public item are in the
+//! [README](https://github.com/YUKIKEDA/interpx/blob/main/README.md).
 //!
 //! # Features
 //!
@@ -22,7 +39,10 @@
 //!   first points and is shared out only when the rest is worth it; for
 //!   batches you know to be small, call the serial forms: a batch of less
 //!   than a tenth of a millisecond of work is not shared out, and deciding
-//!   that has made it up to a third slower than the serial form.
+//!   that costs up to 0.14 µs (up to two thirds more time on batches under a
+//!   microsecond, and up to a third more on batches up to a tenth of a
+//!   millisecond, over the 277 cases of this crate's comparison with SciPy, 8
+//!   threads).
 //! - `serde`: `Serialize` and `Deserialize` for every interpolator and for
 //!   the parameters they are built with. See below.
 //!
@@ -103,6 +123,8 @@
 //!
 //! assert_eq!(Ramp.eval_batch(&[0.5, 2.0]), [Some(5.0), None]);
 //! ```
+// docs.rs builds with every feature and marks each item behind one with it.
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod banded;
 mod boundary;

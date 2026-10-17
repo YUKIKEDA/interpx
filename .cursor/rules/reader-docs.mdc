@@ -27,8 +27,11 @@ Before the first example, state what surprises a SciPy user: boundary default is
 - A claim that is false for the code or for `Cargo.toml` fails, even when it repeats in the README, the crate rustdoc, and the description. A comparison number names its source (hardware, versions, data, command).
 - The `Cargo.toml` description is one sentence and makes the same claim as the first line of the README.
 - `cargo run --example` targets that the README names exist and run.
+- Every claim of the README is checked before the PR: by an example that runs as a doctest, or, for a claim no example shows, by running code against it. Four claims of the first README were false when written (that an infinite query has no value, that evaluation never allocates, what `rescaled` changes, what `from_owned` keeps) and were found that way (#175).
 
 ## Japanese pages
+
+The scoring of a Japanese page also compares its meaning with the English page, sentence by sentence: the scorer of `README.ja.md` found three places where it said something other than `README.md` (#175).
 
 `README.ja.md` and `docs/design.ja.md` are checked with the `natural-japanese` skill in `score` mode (`quick`) by someone other than the author. The author does not score, check, or rewrite their own pages. The scope is prose: code blocks, formulas, and identifiers in tables are excluded. For `docs/design.ja.md` the lint output is a reference and a person decides.
 Use the established Japanese numerical-analysis terms and do not paraphrase them: 補間, 外挿, スプライン, ノット, 境界条件, カーネル, 三重対角, 分解. Keep one Japanese word per concept across the pages.
