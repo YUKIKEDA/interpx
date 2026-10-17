@@ -11,7 +11,7 @@ A check or a test that stands for a statement in `docs/design.ja.md` implements 
 - When the design fixes an order (input checks, error priority), test it with one input that fails two adjacent steps and assert the first error.
 - Every documented rule has a code path and a test. A sentence with no code behind it is a defect.
 - A golden record lists every observable the design section states (values, derivatives, domain, error cases), or names the ones left out and why.
-- When a design statement changes, search `docs/design.ja.md`, the READMEs, `docs/adr/`, `.cursor/rules/`, and rustdoc for every restatement and update them in the same PR.
+- When a design statement changes, search `docs/design.ja.md`, `docs/design.md`, the READMEs, `docs/adr/`, `.cursor/rules/`, and rustdoc for every restatement and update them in the same PR.
 - When an implementation is replaced, rewrite every sentence that explains how the old one behaved.
 - Before a PR says "every X does Y" (every interpolator rejects NaN, every batch API checks lengths), search the whole crate for X. The PR's Verification names the search and the exceptions.
 - When the published order of results can change, compare the order itself, not a hash of the sorted output.

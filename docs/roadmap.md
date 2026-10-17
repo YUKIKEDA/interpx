@@ -98,7 +98,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | M5-4  | Test | Property tests (`proptest`) and the SciPy 1.18 golden suite for every type                                                                                      | #157  | Done   |
 | M5-5  | Task | `compare/perf`: SciPy and other pure-Rust crates, time and memory                                                                                               | #120  | Done   |
 | M5-6  | Task | `README.md`, `README.ja.md`, and `examples/`                                                                                                                    |       | Todo   |
-| M5-7  | Task | English `docs/design.md`                                                                                                                                        |       | Todo   |
+| M5-7  | Task | English `docs/design.md`                                                                                                                                        | #176  | Done   |
 | M5-8  | Task | Run `publish-review`, fix rustdoc and README failures                                                                                                           |       | Todo   |
 | M5-9  | Task | Switch `convx` to the published version; set license and publish fields                                                                                         |       | Todo   |
 | M5-10 | Task | Release PR for v0.1.0                                                                                                                                           |       | Todo   |
