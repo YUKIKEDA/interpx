@@ -128,3 +128,4 @@ Named so that no deferral is anonymous. Each becomes a roadmap row with an Issue
 
 - `interp2d`: removed from SciPy.
 - `interp1d` as a type: replaced by `Nearest1D` (nearest, nearest-up, previous, next) and `BSpline1D` (`slinear`, `quadratic`).
+- `griddata` as a function: it builds `NearestNDInterpolator`, `LinearNDInterpolator`, or `CloughTocher2DInterpolator` by its `method`, evaluates, and drops it. The types do the same, and can be evaluated again (the owner's decision, #179).

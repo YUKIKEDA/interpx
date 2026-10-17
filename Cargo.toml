@@ -20,6 +20,12 @@ include = [
     "/LICENSE-APACHE",
 ]
 
+# docs.rs shows every item, each marked with the feature it needs (the API
+# contract is still what the default features export: .cursor/rules/publish.mdc).
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "deny"

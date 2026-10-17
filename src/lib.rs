@@ -123,6 +123,8 @@
 //!
 //! assert_eq!(Ramp.eval_batch(&[0.5, 2.0]), [Some(5.0), None]);
 //! ```
+// docs.rs builds with every feature and marks each item behind one with it.
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod banded;
 mod boundary;
