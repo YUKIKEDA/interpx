@@ -176,6 +176,47 @@ fn scattered() -> Result<(), InterpolateError> {
         "NearestNDInterpolator: the first queries of a thread allocate"
     );
 
+    // LinearNDInterpolator: the same points (many on one plane, some given
+    // twice), plain and rescaled, scalar and array values; the queries are
+    // inside, outside the hull, far, and not finite. A thin triangle sends a
+    // query to the search over every simplex.
+    use interpx::LinearNDInterpolator;
+    type Linear<V> = fn(&[[f64; 3]], &[V]) -> Result<LinearNDInterpolator<3, V>, InterpolateError>;
+    let scalars: [(&str, Linear<f64>); 2] = [
+        ("new", LinearNDInterpolator::new),
+        ("rescaled", LinearNDInterpolator::rescaled),
+    ];
+    let inside = [[10.2, 20.1, 3.3], [50.0, 25.0, 3.0], [99.0, 0.0, 6.0]];
+    let linear_queries = [
+        inside[0], inside[1], inside[2], queries[2], queries[3], queries[4], queries[5],
+    ];
+    for (label, build) in scalars {
+        let linear = build(&points, &values)?;
+        check(
+            &format!("LinearNDInterpolator<3> {label}"),
+            &linear,
+            &linear_queries,
+            f64::NAN,
+        );
+    }
+    let arrays = LinearNDInterpolator::new(&points, &pairs)?;
+    check(
+        "LinearNDInterpolator<3, [f64; 2]>",
+        &arrays,
+        &linear_queries,
+        [f64::NAN; 2],
+    );
+    let thin = LinearNDInterpolator::new(
+        &[[0.0, 0.0], [1.0, 0.0], [0.5, 1e-13], [0.5, 1.0]],
+        &[0.0, 1.0, 0.5, 2.0],
+    )?;
+    check(
+        "LinearNDInterpolator<2>, a degenerate triangle",
+        &thin,
+        &[[0.25, 2.5e-14], [0.5, 0.5], [2.0, 0.0]],
+        f64::NAN,
+    );
+
     // RBFInterpolator: each kind of kernel (with and without `epsilon`), with
     // and without polynomial terms, scalar and array values. The queries are
     // near, far, too far for a finite value, and not finite.
@@ -285,7 +326,9 @@ fn scattered() -> Result<(), InterpolateError> {
 /// allocates once less for each array the interpolator keeps as it was given.
 #[cfg(feature = "scattered")]
 fn handed_over() -> Result<(), InterpolateError> {
-    use interpx::{NearestNDInterpolator, RBFInterpolator, RbfKernel, RbfOptions};
+    use interpx::{
+        LinearNDInterpolator, NearestNDInterpolator, RBFInterpolator, RbfKernel, RbfOptions,
+    };
 
     let points: Vec<[f64; 2]> = (0..300_u32)
         .map(|n| [f64::from(n * 37 % 101), f64::from(n * 61 % 211)])
@@ -322,6 +365,44 @@ fn handed_over() -> Result<(), InterpolateError> {
             moved + 1,
             copied,
             "NearestNDInterpolator, rescale: {rescale}"
+        );
+    }
+
+    // LinearNDInterpolator keeps the points and the values.
+    for rescale in [false, true] {
+        let copied = allocations(|| {
+            let built = if rescale {
+                LinearNDInterpolator::rescaled(&points, &values)
+            } else {
+                LinearNDInterpolator::new(&points, &values)
+            };
+            std::hint::black_box(built.is_ok());
+        });
+        let (given, numbers) = (points.clone(), values.clone());
+        let (from, numbers_from) = (given.as_ptr(), numbers.as_ptr());
+        let mut kept = None;
+        let moved = allocations(|| {
+            kept = if rescale {
+                LinearNDInterpolator::rescaled_from_owned(given, numbers).ok()
+            } else {
+                LinearNDInterpolator::from_owned(given, numbers).ok()
+            };
+        });
+        let kept = kept.ok_or(InterpolateError::NonFinite { index: 0 })?;
+        assert_eq!(
+            kept.points().as_ptr(),
+            from,
+            "the points are the ones handed over"
+        );
+        assert_eq!(
+            kept.values().as_ptr(),
+            numbers_from,
+            "the values are the ones handed over"
+        );
+        assert_eq!(
+            moved + 2,
+            copied,
+            "LinearNDInterpolator, rescale: {rescale}"
         );
     }
 

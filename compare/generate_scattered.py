@@ -5,15 +5,19 @@ Reference: SciPy 1.18 `NearestNDInterpolator`, `LinearNDInterpolator`
 (`tol = 1e-6`, `maxiter = 400`). Node sets and samplers: docs/design.ja.md
 sections 8.4.1 and 8.4.5.
 
-The cases chosen for `NearestNDInterpolator` (`nearest_chosen`) come last:
-rescaled coordinates, a bound on the distance, points at the same distance,
-points given more than once.
+The cases chosen for `NearestNDInterpolator` (`nearest_chosen`) come after the
+others: rescaled coordinates, a bound on the distance, points at the same
+distance, points given more than once. Those chosen for `LinearNDInterpolator`
+(`linear_chosen`, M4-1) come last: rescaled coordinates, points given more than
+once, queries on the edges of the hull and at the points, two values at every
+point, and larger sets in two and three dimensions.
 
 Run: `just gen-goldens`
 """
 
 import numpy as np
 from scipy import interpolate as si
+from scipy import spatial
 from scipy.spatial import Delaunay
 
 from common import classic_data, datasets, golden
@@ -182,6 +186,73 @@ def nearest_chosen(rng) -> list[dict]:
     return out
 
 
+def linear_chosen(rng) -> list[dict]:
+    """Cases chosen for `LinearNDInterpolator` (M4-1). Drawn after everything
+    else, so that the cases above stay as they are.
+
+    The points are in general position (random), so that the Delaunay
+    triangulation is one and the same for Qhull and `convx`: four points on one
+    circle would let the two split a cell differently (docs/design.ja.md
+    section 6.2).
+    """
+    reference = "scipy.interpolate.LinearNDInterpolator"
+    out = []
+
+    def add(name, options, points, values, queries, build, **more):
+        expected = build()(queries)
+        out.append(golden.case(name, reference, options, points=points, values=values, queries=queries, expected=expected, **more))
+
+    # Coordinates of different sizes: a position in [0, 1] and a height in
+    # [0, 1000]. As they stand, and rescaled (the triangulation differs).
+    pts = np.column_stack([rng.random(60), 1000.0 * rng.random(60)])
+    vals = rng.uniform(-1.0, 1.0, 60)
+    q = np.column_stack([-0.1 + 1.2 * rng.random(50), 1000.0 * (-0.1 + 1.2 * rng.random(50))])
+    add("linear/units/plain", {"rescale": False}, pts, vals, q, lambda: si.LinearNDInterpolator(pts, vals, fill_value=np.nan))
+    add("linear/units/rescaled", {"rescale": True}, pts, vals, q, lambda: si.LinearNDInterpolator(pts, vals, fill_value=np.nan, rescale=True))
+
+    # Points given more than once, with other values: the one given first
+    # counts in interpx. Qhull keeps one of them by its own choice, not always
+    # the first, so the reference is SciPy on the points without the repeats.
+    base = rng.random((25, 3))
+    order = rng.permutation(np.concatenate([np.arange(25), np.arange(25), np.arange(10)]))
+    dpts = base[order]
+    dvals = rng.uniform(-1.0, 1.0, len(dpts))
+    _, firsts = np.unique(dpts, axis=0, return_index=True)
+    firsts = np.sort(firsts)
+    qd = np.vstack([-0.1 + 1.2 * rng.random((40, 3)), base[:5]])
+    add(
+        "linear/duplicates",
+        {"rescale": False, "reference_points": "the first of each set of equal points"},
+        dpts, dvals, qd,
+        lambda: si.LinearNDInterpolator(dpts[firsts], dvals[firsts], fill_value=np.nan),
+    )
+
+    # Queries on the edges of the hull (midpoints of the edges of the hull, in
+    # numbers that are not exact), at the points, and just outside.
+    hp = rng.random((40, 2))
+    hv = rng.uniform(-1.0, 1.0, 40)
+    hull = spatial.ConvexHull(hp)
+    mids = np.array([(hp[a] + hp[b]) / 2.0 for a, b in hull.simplices])
+    centre = hp.mean(axis=0)
+    beyond = centre + 1.001 * (mids - centre)
+    qh = np.vstack([mids, hp, beyond])
+    add("linear/hull_edges", {"rescale": False}, hp, hv, qh, lambda: si.LinearNDInterpolator(hp, hv, fill_value=np.nan))
+
+    # Two values at every point.
+    both = np.column_stack([vals, rng.uniform(-1.0, 1.0, 60)])
+    add("linear/units/columns", {"rescale": False}, pts, vals, q, lambda: si.LinearNDInterpolator(pts, vals, fill_value=np.nan))
+    out[-1]["values_columns"] = golden.encode(both)
+    out[-1]["expected_columns"] = golden.encode(si.LinearNDInterpolator(pts, both, fill_value=np.nan)(q))
+
+    # Larger sets: 2000 points in two dimensions, 500 in three.
+    for n, d in ((2000, 2), (500, 3)):
+        lp = rng.random((n, d))
+        lv = np.sin(3.0 * lp).sum(axis=1)
+        lq = -0.05 + 1.1 * rng.random((200, d))
+        add(f"linear/random_{n}_d{d}", {"rescale": False}, lp, lv, lq, lambda: si.LinearNDInterpolator(lp, lv, fill_value=np.nan))
+    return out
+
+
 def main() -> None:
     cases = []
     for i, (name, pts) in enumerate(node_sets_2d().items()):
@@ -205,6 +276,7 @@ def main() -> None:
         cases += three(f"{name}/{kind}", pts, datasets.genz(kind, pts), q, f"genz_{kind}", False)
 
     cases += nearest_chosen(rng)
+    cases += linear_chosen(rng)
 
     path = golden.write("scattered", GENERATOR, SEED, cases)
     print(f"wrote {path.name} ({len(cases)} cases)")

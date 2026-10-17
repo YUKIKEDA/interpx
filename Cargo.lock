@@ -192,6 +192,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "convx"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3046bfa2e085f7bea4d48b8b6ae201fc857b635e4dcd4c6aeea0370baa295c54"
+dependencies = [
+ "faer",
+ "pulp",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "core_detect"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -611,6 +622,7 @@ dependencies = [
 name = "interpx"
 version = "0.0.0"
 dependencies = [
+ "convx",
  "criterion",
  "faer",
  "kiddo",
