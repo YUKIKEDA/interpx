@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-P-17 (#168) next, with a run of the whole comparison: P-14 made the construction of an RBF interpolant over all its points 7 to 78% longer (the estimate of its condition), so `docs/performance.md` is out of date for those rows, and P-17 is the change to the harness that the same run can carry. Then P-13 (#162), a question of the design that changes no result. Then M5-6 (`README.md`, `README.ja.md`, `examples/`), M5-7, and M5-8: the documents are written on figures that are right. M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4, and its part of the documents. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them.
+P-13 (#162) next, a question of the design that changes no result: a direct against an iterative solve for the grid splines, inside SciPy and against interpx, and whether the solver is the user's to choose. Then M5-6 (`README.md`, `README.ja.md`, `examples/`), M5-7, and M5-8: the documents are written on figures that are right (`docs/performance.md` was made again in P-17, after the cost of the estimate of P-14). M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4, and its part of the documents. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them. P-18 is beside them too: it finds why some constructions take one of two times, which decides whether the comparison counts them as slower, and may change interpx if the cause is there.
 
 ## Dependencies
 
@@ -86,7 +86,8 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | P-14 | Bug    | RBF on real station data: the cubic and quintic kernels give interpolants off by tens to thousands of degrees, far from SciPy's (stations that nearly coincide; the interpolant now says how badly its system is conditioned) | #164  | Done   |
 | P-15 | Bug    | compare: eight runs reported as failures of other libraries with no reason; all eight were our runners' own panic | #165  | Done   |
 | P-16 | Bug    | compare: SciPy's memory in `docs/performance.md` is that of a 4 MB launcher, not of the interpreter | #166  | Done   |
-| P-17 | Task   | compare: a construction of minutes is built twice, and one run sits at the time limit | #168  | Todo   |
+| P-17 | Task   | compare: a construction of minutes is built twice, and one run sits at the time limit | #168  | Done   |
+| P-18 | Task   | Some constructions of interpx take one of two times depending on the process (`CubicSpline` of 1000 points: 15 or 38 µs), so whether the comparison counts them as slower depends on the run | #172  | Todo   |
 
 ## M5: Integration and quality
 

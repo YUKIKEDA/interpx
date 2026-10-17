@@ -40,7 +40,8 @@ BUDGET = 0.05
 SAMPLE = 0.0002
 FEWEST = 5
 MOST = 2000
-# A call that takes this many seconds is timed once (`LONG` in the Rust harness).
+# A call that takes this many seconds is timed once, by the call of its phase,
+# and is not made again (`LONG` in the Rust harness, #168).
 LONG = 2.0
 
 
@@ -140,18 +141,26 @@ def main() -> None:
 
     mark("loaded")
     time.sleep(PAUSE)
+    start = time.perf_counter()
     built = build()
+    first_build = time.perf_counter() - start
     mark("built")
     time.sleep(PAUSE)
+    start = time.perf_counter()
     values = evaluate(built)
+    first_eval = time.perf_counter() - start
     mark("evaluated")
     time.sleep(PAUSE)
     np.ascontiguousarray(values, dtype=np.float64).tofile(directory / f"values.{LIBRARY}.f64")
-    del built, values
+    del values
 
-    build_s = timed(build)
-    built = build()
-    eval_s = timed(lambda: evaluate(built))
+    if first_build >= LONG:
+        build_s = [first_build]
+    else:
+        del built
+        build_s = timed(build)
+        built = build()
+    eval_s = [first_eval] if first_eval >= LONG else timed(lambda: evaluate(built))
     mark("timed")
     print(json.dumps({"mark": "result", "build_s": build_s, "eval_s": eval_s}), flush=True)
 

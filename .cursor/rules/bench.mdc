@@ -36,3 +36,4 @@ Correctness comes first. A performance claim comes with a measurement in the sam
 - Named baselines: one per milestone (`m1`, `m2`, ...), saved with `--save-baseline`. A hot-path PR compares against the latest and pastes the comparison under `## Verification`. The log is local (`.dev/bench-log.md`, not tracked).
 - Do not add SIMD, `rayon`, caches, or mixed precision for speed unless a measurement shows the path is the bottleneck.
 - A measurement quoted in an ADR, a comment, or a PR is recorded once, and quoted from there.
+- A figure in a document names the library it was measured with. In a table about this crate, a figure of SciPy's is in its own column or says so: the rustdoc of `reciprocal_condition` (#170) gave SciPy's misses and errors as this crate's, and this crate's were three to ten times larger.

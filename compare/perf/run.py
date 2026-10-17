@@ -43,13 +43,12 @@ SAMPLE_EVERY = 0.001
 TIME_LIMIT = 900.0
 # How a run that the time limit stopped is recorded (`failed`).
 STOPPED = "stopped at the time limit"
-# A library whose construction or evaluation of a case takes this many seconds
-# is run on that case in the first round only. The rounds are there for the
-# spread between processes, which for a call this long is a few percent
-# (three constructions of 107 s read 106 to 124 s); run three times, the
-# cases on real data took four hours, most of it one library solving one
-# system again. The rule goes by the time and not by the library.
-LONG = 2.0
+# A run whose process takes this long is named in the report as near the
+# limit. The same run took 760 s alone and was stopped at 900 s inside a run
+# of the whole comparison (#168): the state of the machine moves a run by a
+# fifth or more, and by how much more is not known. Half the limit leaves it
+# twice its time.
+NEAR = TIME_LIMIT / 2
 
 RUST_RUNNERS = ("interpx", "scirs2", "ndarray_interp", "interpn")
 # interpx again, built with `from_owned` (the data handed over, not copied).
@@ -101,7 +100,14 @@ def command(library: str, directory: Path) -> list[str]:
 
 
 def run_one(library: str, directory: Path, pause: bool) -> dict:
-    """One process: its marks, its times, and its memory over time."""
+    """One process: its marks, its times, its memory over time, and how long
+    the whole process took (`seconds`, whatever its outcome)."""
+    begun = time.perf_counter()
+    run = measure_one(library, directory, pause)
+    return run | {"seconds": time.perf_counter() - begun}
+
+
+def measure_one(library: str, directory: Path, pause: bool) -> dict:
     several = library == "interpx_par"
     env = os.environ | ({"PERF_PAUSE_MS": str(case_table.PAUSE_MS)} if pause else {}) | {name: "1" for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "RAYON_NUM_THREADS")}
     if several:
@@ -260,10 +266,21 @@ def held_out(directory: Path, library: str) -> dict | None:
 def once(row: dict) -> bool:
     """Whether a library that gave this row on a case is not run on it again
     in a later round: it was stopped at the time limit, or one of its calls
-    is long."""
+    was timed by one call (the runner does that for a call of two seconds or
+    more, `LONG` in the runners).
+
+    The rounds are there for the spread between processes, which for a call
+    that long is a few percent (three constructions of 107 s read 106 to
+    124 s); run three times, the cases on real data took four hours, most of
+    it one library solving one system again. The rule goes by the time and
+    not by the library. It goes by how the runner timed the call and not by
+    the median it reported: a call near two seconds that was timed several
+    times read 1.75 to 1.99 s in one round and 2.2 to 3.7 s in the next, and
+    a rule on the median left the round after out, so that SciPy's time on
+    that case was the median of one usual round and one slow one (#171)."""
     if str(row.get("failed", "")).startswith(STOPPED):
         return True
-    return any(row[what]["median"] >= LONG for what in ("build", "eval") if what in row)
+    return any(row[what]["repeats"] == 1 for what in ("build", "eval") if what in row)
 
 
 def environment() -> dict:
@@ -317,48 +334,70 @@ def main() -> None:
 
     # A run that was stopped goes on where it stopped: what `results.jsonl`
     # has is not run again. Delete `out/` to start over.
-    have = set()
+    have, stopped, again = set(), set(), set()
     if (OUT / "results.jsonl").exists():
         for line in (OUT / "results.jsonl").read_text(encoding="utf-8").splitlines():
             row = json.loads(line)
             have.add((row["case"], row["library"], row["round"]))
+            if row.get("again"):
+                again.add((row["case"], row["library"]))
+            elif str(row.get("failed", "")).startswith(STOPPED):
+                stopped.add((row["case"], row["library"]))
             if once(row):
                 have |= {(row["case"], row["library"], later) for later in range(args.rounds)}
+
+    def record(case: dict, library: str, round_: int, results, where: str, again: bool = False) -> dict:
+        """Runs one library on one case, and writes its row (`where` says
+        how far the run has gone, for the progress line)."""
+        directory = directories[case["name"]]
+        run = run_one(library, directory, case["name"] in case_table.MEMORY)
+        row = {"case": case["name"], "library": library, "round": round_} | ({"again": True} if again else {})
+        row |= {key: value for key, value in case.items() if key not in ("arrays", "name")}
+        row["seconds"] = run["seconds"]
+        if "marks_ns" in run:
+            row |= {
+                "build": summary(run["build_s"]),
+                "eval": summary(run["eval_s"]),
+                "rss": memory(run),
+                "marks_ns": run["marks_ns"],
+                "apart": agreement(directory, library),
+            }
+            if "real" in case:
+                row["error"] = held_out(directory, library)
+                # What the case table could not say before the data was read.
+                row |= {key: json.loads((directory / "case.json").read_text(encoding="utf-8"))[key] for key in ("n", "n_eval")}
+            series = OUT / "series" / f"{case['name'].replace('/', '__')}.{library}.{round_}.csv"
+            series.write_text("".join(f"{at},{rss}\n" for at, rss in run["samples"]), encoding="utf-8")
+            shown = f"build {row['build']['median']:.3e} s  eval {row['eval']['median']:.3e} s"
+        else:
+            row |= {key: value for key, value in run.items() if key != "seconds"}
+            shown = str(run)
+        results.write(json.dumps(row) + "\n")
+        results.flush()
+        near = "  (near the time limit)" if row["seconds"] >= NEAR else ""
+        print(f"[{where}] {case['name']:58} {library:10} {shown}  {row['seconds']:.0f} s{near}", flush=True)
+        return row
 
     with (OUT / "results.jsonl").open("a", encoding="utf-8") as results:
         for round_ in range(args.rounds):
             for number, case in enumerate(chosen, 1):
-                directory = directories[case["name"]]
                 # SciPy first: the others are compared with its values.
                 for library in sorted(libraries, key=lambda name: name != "scipy"):
                     if (case["name"], library, round_) in have or not supports(library, case):
                         continue
-                    run = run_one(library, directory, case["name"] in case_table.MEMORY)
-                    row = {"case": case["name"], "library": library, "round": round_}
-                    row |= {key: value for key, value in case.items() if key not in ("arrays", "name")}
-                    if "marks_ns" in run:
-                        row |= {
-                            "build": summary(run["build_s"]),
-                            "eval": summary(run["eval_s"]),
-                            "rss": memory(run),
-                            "marks_ns": run["marks_ns"],
-                            "apart": agreement(directory, library),
-                        }
-                        if "real" in case:
-                            row["error"] = held_out(directory, library)
-                            # What the case table could not say before the data was read.
-                            row |= {key: json.loads((directory / "case.json").read_text(encoding="utf-8"))[key] for key in ("n", "n_eval")}
-                        series = OUT / "series" / f"{case['name'].replace('/', '__')}.{library}.{round_}.csv"
-                        series.write_text("".join(f"{at},{rss}\n" for at, rss in run["samples"]), encoding="utf-8")
-                        shown = f"build {row['build']['median']:.3e} s  eval {row['eval']['median']:.3e} s"
-                    else:
-                        row |= run
-                        shown = str(run)
-                    results.write(json.dumps(row) + "\n")
-                    results.flush()
+                    row = record(case, library, round_, results, f"{round_ + 1}/{args.rounds} {number}/{len(chosen)}")
                     if once(row):
                         have |= {(case["name"], library, later) for later in range(args.rounds)}
-                    print(f"[{round_ + 1}/{args.rounds} {number}/{len(chosen)}] {case['name']:58} {library:10} {shown}", flush=True)
+                    if str(row.get("failed", "")).startswith(STOPPED):
+                        stopped.add((case["name"], library))
+        # A run that the time limit stopped is run once more, alone, after
+        # all the others: the report calls it stopped only if it is stopped
+        # again. Whether one run of #166 finished was decided by the state of
+        # the machine (#168).
+        for case in chosen:
+            for library in libraries:
+                if (case["name"], library) in stopped and (case["name"], library) not in again:
+                    record(case, library, args.rounds, results, "again", again=True)
 
 
 if __name__ == "__main__":

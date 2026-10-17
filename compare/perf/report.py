@@ -13,6 +13,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import cases as case_table
+from run import NEAR, STOPPED, TIME_LIMIT
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
@@ -60,6 +61,54 @@ def load() -> dict:
         row = json.loads(line)
         runs[row["case"]][row["library"]].append(row)
     return runs
+
+
+def stopped(row: dict) -> bool:
+    return str(row.get("failed", "")).startswith(STOPPED)
+
+
+def failures(runs: dict) -> list[tuple[str, str, str]]:
+    """The runs that failed: a case, a library, and how. A run that the time
+    limit stopped and that finished when it was run again alone (`again`) is
+    not one of them: it is named with the runs near the limit."""
+    failed = set()
+    for case, by_library in runs.items():
+        for lib, rows in by_library.items():
+            finished = any("build" in row for row in rows if row.get("again"))
+            for row in rows:
+                if "failed" not in row or (stopped(row) and finished):
+                    continue
+                twice = stopped(row) and any(other.get("again") and stopped(other) for other in rows)
+                failed.add((case, lib, row["failed"] + (", and again when run alone" if twice else "")))
+    return sorted(failed)
+
+
+def near_section(runs: dict) -> list[str]:
+    """How near the time limit the longest runs came."""
+    rows = [(row["seconds"], case, lib, row) for case, by in runs.items() for lib, rows in by.items() for row in rows if "seconds" in row]
+    if not rows:
+        return []
+    done = [entry for entry in rows if "build" in entry[3]]
+    doc = ["## Runs near the time limit", ""]
+    if done:
+        longest, case, lib, _ = max(done, key=lambda entry: entry[0])
+        doc.append(f"A run (one library on one case, a process of its own) is stopped at {TIME_LIMIT / 60:.0f} minutes. The longest run that finished took {longest:.0f} s, {longest / TIME_LIMIT:.0%} of that: {TITLES[lib]} on `{case}`.")
+    near = sorted((entry for entry in rows if entry[0] >= NEAR or stopped(entry[3])), key=lambda entry: -entry[0])
+    doc.append("")
+    if not near:
+        doc.append(f"No run took more than half the limit ({NEAR:.0f} s).")
+        return doc + [""]
+    doc += [
+        f"The runs that took more than half the limit ({NEAR:.0f} s), or were stopped. The state of the machine has moved one run from 760 s alone to more than 900 s inside a run of the whole comparison (#168): a run named here may be stopped in another run. A run that was stopped is run once more, alone, after all the others (\"again\").",
+        "",
+        "| case | library | run | seconds | outcome |",
+        "| :--- | :--- | :--- | ---: | :--- |",
+    ]
+    for seconds_, case, lib, row in near:
+        run = "again" if row.get("again") else f"round {row['round'] + 1}"
+        outcome = "stopped" if stopped(row) else ("failed" if "failed" in row else "finished")
+        doc.append(f"| `{case}` | {TITLES[lib]} | {run} | {seconds_:.0f} | {outcome} |")
+    return doc + [""]
 
 
 def measured(rows: list[dict]) -> list[dict]:
@@ -277,9 +326,9 @@ def real_section(runs: dict) -> list[str]:
 def main() -> None:
     runs = load()
     env = json.loads((OUT / "environment.json").read_text(encoding="utf-8"))
-    rounds = max(len(rows) for by_library in runs.values() for rows in by_library.values())
+    rounds = max(len([row for row in rows if not row.get("again")]) for by_library in runs.values() for rows in by_library.values())
     lost = losses(runs)
-    failed = sorted({(case, lib, row["failed"]) for case, by in runs.items() for lib, rows in by.items() for row in rows if "failed" in row})
+    failed = failures(runs)
 
     doc = [
         "# Performance: interpx against SciPy and other Rust crates",
@@ -297,7 +346,7 @@ def main() -> None:
         "- `interpx, from_owned` is interpx built from data that is handed over (`from_owned`) and so not copied. Its column is there for the types that keep their data as it is given (the grid, `NearestNDInterpolator`, `RBFInterpolator`), next to the construction from borrowed data (`new`), which is the one the comparison counts. Each of its samples is given data made just before it, which is not in the nearest cache as the data of the other constructions is: on small grids it reads slower than `new` for that reason.",
         f"- `interpx, parallel` is interpx evaluated with `eval_batch_into_par` (the `rayon` feature) on {env.get('par_threads', 'several')} threads, not pinned to a core. Every other column is one thread on one core, and the comparison counts those. A parallel batch times its first points and is shared out only when the rest is worth it, so on small cases the column reads as the serial one does.",
         "- A time is that of one call: construction, or the evaluation of all the queries of the case (`eval_batch_into` for interpx, the call with an array for the others). It is the median of the repeats of a process, and then the median of the rounds.",
-        "- A call of two seconds or more is timed once, not repeated; and a library whose construction or evaluation of a case takes that long is run on that case in the first round only. Its time is then one measurement. (The rule goes by the time, whatever the library.)",
+        "- A call of two seconds or more is timed once: the construction that made the interpolator, or the evaluation that wrote the values, is its measurement, and it is not made again. A library whose construction or evaluation of a case was timed so is run on that case in the first round only, and its time is then one measurement; a call near two seconds that was timed several times goes on to the later rounds. (The rule goes by the time, whatever the library.)",
         f"- interpx is called slower where its median is more than {LOSS:.2f} times another library's and its fastest repeat is slower than that library's fastest.",
         "- Memory is the resident set size of the process, sampled every millisecond from outside it.",
         f"- Command: `{env['command']}`.",
@@ -333,6 +382,7 @@ def main() -> None:
         doc += [f"| `{case}` | {TITLES[lib]} | {how} |" for case, lib, how in failed]
         doc.append("")
 
+    doc += near_section(runs)
     doc += real_section(runs)
 
     for family, title, note in FAMILIES:
