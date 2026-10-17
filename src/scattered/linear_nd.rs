@@ -933,64 +933,59 @@ mod stored {
 mod tests {
     use super::{LinearNDInterpolator, Walked, EPS};
 
-    /// Points of the cube, many on its faces, the corners of a tetrahedron
-    /// last: from some simplices a walk to a data point leaves the hull by
-    /// rounding (found by a search over 20 000 such sets, 539 of which do
-    /// this; the first set the property test found stopped doing it when the
-    /// coordinates came from an LU decomposition instead of the inverse).
-    fn faces() -> Vec<[f64; 3]> {
-        let mut points = vec![
-            [0.5840273880650761, 0.0, 0.29776683281999905],
-            [0.7887697228607375, 0.0, 0.0],
-            [0.7876449995383649, 0.8482870597656559, 0.0],
-            [0.11013092240014277, 0.5642652099978088, 0.766618708512923],
-            [0.0, 0.12887281267446582, 0.0],
-            [0.06562029169092043, 0.7760534993474162, 0.7190231567724078],
-            [0.0, 0.39189613554591596, 0.43322302906748944],
-            [0.0, 0.84377177832942, 0.0],
-            [0.015872575120935206, 0.0, 0.13668197412623584],
-            [0.8962620857160368, 0.0, 0.2963248552207749],
-            [0.0, 0.18161392058810888, 0.3633748190675532],
-            [0.3993336928819621, 0.0, 0.0],
-            [0.46366610551977316, 0.0, 0.7452603066909818],
-            [0.4403637067996585, 0.0, 0.0],
-            [0.759357153932266, 0.0, 0.20163702652700322],
-            [0.0, 0.1242513710432015, 0.5428371255840139],
-            [0.9972511880636947, 0.5069192550161593, 0.0],
-            [0.925627308946488, 0.1844727134377805, 0.977486742272565],
-            [0.0, 0.0571139320833719, 0.7637884613349173],
-            [0.0, 0.0, 0.0],
-            [0.0, 0.4044753825230042, 0.0],
-            [0.0, 0.2881970878997515, 0.9808982126587361],
-            [0.7724729514036233, 0.0, 0.8768541173058809],
-            [0.00420881472699941, 0.0, 0.35924430590745415],
-            [0.5430749905749186, 0.8800838478470157, 0.1601621397566283],
-            [0.3592201432304133, 0.0, 0.0],
-            [0.7624082887132098, 0.45579881603055306, 0.0],
-        ];
-        points.extend([
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0],
-        ]);
-        points
+    /// A small generator, so that the sets are the same on every run.
+    fn generator(seed: u64) -> impl FnMut() -> f64 {
+        let mut state = seed;
+        move || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 11) as f64 / (1_u64 << 53) as f64
+        }
     }
 
     #[test]
     fn every_data_point_is_found_from_every_simplex() {
-        let points = faces();
-        let linear = LinearNDInterpolator::new(&points, &vec![0.0; points.len()]).expect("valid");
+        // Sets of points of the cube, three in ten coordinates on a face, and
+        // the corners of a tetrahedron: from some simplices a walk to a data
+        // point leaves the hull by rounding (539 of 20 000 such sets did; the
+        // first set the property test found stopped doing it when the
+        // coordinates came from an LU decomposition instead of the inverse,
+        // which is why the test goes through a series of sets).
+        let mut next = generator(11);
         let mut outside = 0;
-        for start in 0..linear.simplex_count() as u32 {
-            for (i, point) in points.iter().enumerate() {
-                if matches!(linear.walk(point, start), Walked::Outside(..)) {
-                    outside += 1;
+        for _ in 0..200 {
+            let n = 4 + (next() * 30.0) as usize;
+            let mut points: Vec<[f64; 3]> = (0..n)
+                .map(|_| {
+                    core::array::from_fn(|_| {
+                        let c = next();
+                        if next() < 0.3 {
+                            0.0
+                        } else {
+                            c
+                        }
+                    })
+                })
+                .collect();
+            points.extend([
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]);
+            let linear =
+                LinearNDInterpolator::new(&points, &vec![0.0; points.len()]).expect("valid");
+            for start in 0..linear.simplex_count() as u32 {
+                for (i, point) in points.iter().enumerate() {
+                    if matches!(linear.walk(point, start), Walked::Outside(..)) {
+                        outside += 1;
+                    }
+                    assert!(
+                        linear.locate(point, start).is_some(),
+                        "point {i} from {start}"
+                    );
                 }
-                assert!(
-                    linear.locate(point, start).is_some(),
-                    "point {i} from {start}"
-                );
             }
         }
         // Some of these walks leave the hull by rounding, and are taken back.
@@ -999,13 +994,7 @@ mod tests {
 
     #[test]
     fn the_middle_of_each_cell_is_in_the_simplex_its_walk_starts_from() {
-        let mut state = 7_u64;
-        let mut next = || {
-            state = state
-                .wrapping_mul(6_364_136_223_846_793_005)
-                .wrapping_add(1_442_695_040_888_963_407);
-            (state >> 11) as f64 / (1_u64 << 53) as f64
-        };
+        let mut next = generator(7);
         let points: Vec<[f64; 2]> = (0..500).map(|_| [next(), 3.0 * next()]).collect();
         let linear = LinearNDInterpolator::new(&points, &vec![0.0; 500]).expect("valid");
         let per_axis = linear.per_axis;
