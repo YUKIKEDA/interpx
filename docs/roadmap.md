@@ -6,11 +6,11 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-The rows of M5 that do not wait for `convx` are done. M4 waits for `convx` (see Dependencies), and brings its own `serde`, its own tests of M5-4, and its part of the documents. Then M5-9 and the release PR M5-10, which runs `publish-review` again on the commit that is published and points the README's links to the comparison page and the crate rustdoc's link to the README at the tag `v0.1.0`. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them. P-18 is beside them too: it finds why some constructions take one of two times, which decides whether the comparison counts them as slower, and may change interpx if the cause is there.
+The rows of M5 that do not wait for `convx` are done. `convx` 0.1.0 is published, so M4 starts: M4-1 (#180) next, then M4-2; each brings its own `serde`, its own tests of M5-4, and its part of the documents. Then M5-9 and the release PR M5-10, which runs `publish-review` again on the commit that is published and points the README's links to the comparison page and the crate rustdoc's link to the README at the tag `v0.1.0`. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them. P-19 is beside them too: after the warm-up of P-18, some constructions at 10 000 points still take 1.3 to 1.6 times as long in some rounds.
 
 ## Dependencies
 
-- M4 starts after `convx` is published with a license (M5-9 tracks the `Cargo.toml` dependency switch).
+- M4 depends on `convx` 0.1.0 from crates.io (published with `MIT OR Apache-2.0`); M4-1 adds the dependency.
 - M1 to M3 do not depend on `convx`.
 
 ## M0: Bootstrap
@@ -61,7 +61,7 @@ The rows of M5 that do not wait for `convx` are done. M4 waits for `convx` (see 
 
 | ID   | Kind | Title                                                                                         | Issue | Status |
 | ---- | ---- | --------------------------------------------------------------------------------------------- | ----- | ------ |
-| M4-1 | Feat | `LinearNDInterpolator<D>`: Delaunay, Jump-and-Walk, tolerances, brute-force fallback, `serde` |       | Todo   |
+| M4-1 | Feat | `LinearNDInterpolator<D>`: Delaunay, Jump-and-Walk, tolerances, brute-force fallback, `serde` | #180  | Todo   |
 | M4-2 | Feat | `CloughTocher2DInterpolator`: global gradient estimate, Bernstein-Bézier patch, `serde`       |       | Todo   |
 
 ## P: What the comparison found (before M5-1)
@@ -87,7 +87,8 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | P-15 | Bug    | compare: eight runs reported as failures of other libraries with no reason; all eight were our runners' own panic | #165  | Done   |
 | P-16 | Bug    | compare: SciPy's memory in `docs/performance.md` is that of a 4 MB launcher, not of the interpreter | #166  | Done   |
 | P-17 | Task   | compare: a construction of minutes is built twice, and one run sits at the time limit | #168  | Done   |
-| P-18 | Task   | Some constructions of interpx take one of two times depending on the process (`CubicSpline` of 1000 points: 15 or 38 µs), so whether the comparison counts them as slower depends on the run | #172  | Todo   |
+| P-18 | Task   | Some constructions of interpx take one of two times depending on the process (`CubicSpline` of 1000 points: 15 or 38 µs), so whether the comparison counts them as slower depends on the run | #172  | Done   |
+| P-19 | Task   | After the warm-up of P-18, some constructions at 10 000 points take 1.3 to 1.6 times as long in some rounds (`Akima1D`, `Pchip`: medians 83 to 138 µs, fastest 81 to 91 µs) | #181  | Todo   |
 
 ## M5: Integration and quality
 
@@ -100,7 +101,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | M5-6  | Task | `README.md`, `README.ja.md`, and `examples/`                                                                                                                    | #174  | Done   |
 | M5-7  | Task | English `docs/design.md`                                                                                                                                        | #176  | Done   |
 | M5-8  | Task | Run `publish-review`, fix rustdoc and README failures                                                                                                           | #178  | Done   |
-| M5-9  | Task | Switch `convx` to the published version; set license and publish fields                                                                                         |       | Todo   |
+| M5-9  | Task | Check the publish fields of `Cargo.toml` (the `convx` dependency is added from crates.io by M4-1; the license is set)                                          |       | Todo   |
 | M5-10 | Task | Release PR for v0.1.0                                                                                                                                           |       | Todo   |
 | M5-11 | Task | `compare/perf`: the real-world data sets of design section 8.4.7 (left out of M5-5) | #160  | Done   |
 
