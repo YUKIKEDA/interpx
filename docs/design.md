@@ -384,6 +384,7 @@ interpx/
 | **N-D Scattered** | `RBFInterpolator`                               | `RBFInterpolator<D>`                          | `faer` LU + `kiddo`                    |
 
 * `interp1d` is a legacy API in SciPy. `kind='quadratic'` / `'slinear'` are replaced by `BSpline1D`. `interp2d` has been removed from SciPy and is out of scope.
+* `griddata` is not provided as a function (the owner's decision, #179). `griddata` builds `NearestNDInterpolator`, `LinearNDInterpolator`, or `CloughTocher2DInterpolator` according to its `method`, evaluates, and drops it. The same is written with the three types, and a type can be evaluated again as often as needed. A function would add no capability and make two entries to the same thing.
 
 ### 5.3 Out of scope (not implemented in v0.1.0. §9 roadmap)
 * The FITPACK family: `UnivariateSpline`, `splrep`, `splprep`, `RectBivariateSpline` and the other FITPACK 2D classes

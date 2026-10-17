@@ -9,6 +9,7 @@ alwaysApply: false
 When writing or editing `docs/design.ja.md` or `docs/design.md`, use Mermaid for figures and LaTeX for math.
 
 - `docs/design.md` is the English translation of the whole of `docs/design.ja.md`, which is canonical. A PR that changes one changes the other in the same PR: the same sections in the same order, every table, figure, and formula, and the same numbers. A design PR whose English part is missing is not done.
+- A PR that changes both files compares their structure by script before it is opened: the headings with their levels and numbers, the code fences, the display formulas, the table rows, and the count of `$`. The translation of M5-7 dropped one inline formula, found that way (#177).
 
 - Figures: a fenced `mermaid` block. No ASCII art diagrams. (A directory tree or a signature in a code block is not a diagram.)
 - Math: inline `$...$`, display `$$...$$`. Do not use `\(` or `\[`. Do not put `$` inside a code block.

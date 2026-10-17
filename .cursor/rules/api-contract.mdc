@@ -7,7 +7,7 @@ alwaysApply: true
 
 The shape of the trait and the types is in `docs/design.ja.md` §3 and §4. This rule is the set of promises that tests and reviews hold.
 
-- **Owned, no lifetimes.** Every interpolator owns its data and has no lifetime parameter. `T: 'static` is not required. Every type has `::new(&[..])` (copies from a borrow). A type that keeps its data as it was given has `::from_owned(..)` (moves) as well: the list is in `docs/design.ja.md` §3. No type borrows its data and none shares it through `Arc`; the comparison of #120 put the cost of the copy on record, and the owner kept the rule (#122).
+- **Owned, no lifetimes.** Every interpolator owns its data and has no lifetime parameter. `T: 'static` is not required. Every type has `::new(&[..])` (copies from a borrow). A type that keeps its data as it was given has `::from_owned(..)` (moves) as well: the list is in `docs/design.ja.md` §3. No type borrows the caller's data and none takes it in an `Arc`; the comparison of #120 put the cost of the copy on record, and the owner kept the rule (#122). Sharing what a type built itself and never changes, between its clones, is not that: `NearestNDInterpolator` shares its k-d tree through an `Arc` so that a clone does not copy the tree (the owner's decision, #179).
 - **`Send + Sync`.** Every public interpolator is `Send + Sync`. No `Cell`, `RefCell`, or `Mutex` inside. A compile-time assertion test covers each type.
 - **Pure evaluation.** `&self` evaluation has no hidden state. A search hint is a caller-owned value or batch-local.
 - **No panic on input.** Invalid input is `Err` at construction, `None` or `fill` at evaluation (`.cursor/rules/numerics.mdc`). `eval_batch_into` returns `Result` for a length mismatch and leaves `out` untouched.

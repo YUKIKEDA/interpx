@@ -16,7 +16,7 @@ Measured on 2026-10-17, at commit `79b6cedfd5`.
 - A call of two seconds or more is timed once: the construction that made the interpolator, or the evaluation that wrote the values, is its measurement, and it is not made again. A library whose construction or evaluation of a case was timed so is run on that case in the first round only, and its time is then one measurement; a call near two seconds that was timed several times goes on to the later rounds. (The rule goes by the time, whatever the library.)
 - interpx is called slower where its median is more than 1.10 times another library's and its fastest repeat is slower than that library's fastest.
 - Memory is the resident set size of the process, sampled every millisecond from outside it.
-- Command: `perf/run.py`.
+- Command: `perf/run.py`, run in `compare/`.
 
 ## Where interpx is slower
 
@@ -41,9 +41,9 @@ Measured on 2026-10-17, at commit `79b6cedfd5`.
 
 | method | operation | against | same values | cases | slower by | the largest |
 | :--- | :--- | :--- | :--- | ---: | ---: | :--- |
-| `grid/cubic` | construction | interpn | no | 8 | 1.66e+03x to 8.84e+07x | `grid/cubic/2d/auckland-ba32-0401/heldout/ascending`: 77.7 ms against 0 |
+| `grid/cubic` | construction | interpn | no | 8 | 1.66e+03x to 8.84e+07x | `grid/cubic/2d/auckland-ba32-0401/heldout/ascending`: 77.7 ms against 0.88 ns |
 | `grid/linear` | construction | interpn | yes | 35 | 161x to 4.03e+07x | `grid/linear/4d/max200/eval1000/ascending`: 51.2 ms against 1.27 ns |
-| `grid/nearest` | construction | interpn | yes | 3 | 757x to 2.41e+07x | `grid/nearest/2d/auckland-ba32-0401/heldout/ascending`: 16.5 ms against 0 |
+| `grid/nearest` | construction | interpn | yes | 3 | 757x to 2.41e+07x | `grid/nearest/2d/auckland-ba32-0401/heldout/ascending`: 16.5 ms against 0.68 ns |
 | `grid/linear` | construction | SciPy | yes | 34 | 1.19x to 5.51e+03x | `grid/linear/4d/max200/eval1000/flipped`: 109 ms against 19.8 µs |
 | `grid/nearest` | construction | SciPy | yes | 2 | 2.82x to 2.32e+03x | `grid/nearest/2d/auckland-ba32-0401/heldout/ascending`: 16.5 ms against 7.11 µs |
 | `grid/linear` | construction | ndarray-interp | yes | 15 | 1.48x to 2.08e+03x | `grid/linear/2d/auckland-ba32-0401/heldout/ascending`: 17.1 ms against 8.24 µs |
@@ -64,32 +64,32 @@ Measured on 2026-10-17, at commit `79b6cedfd5`.
 
 | case | operation | against | interpx | the other | slower by | values apart |
 | :--- | :--- | :--- | ---: | ---: | ---: | ---: |
-| `grid/cubic/2d/auckland-ba32-0401/heldout/ascending` | construction | interpn | 77.7 ms | 0 | 88428544.00x | 5e-03 |
+| `grid/cubic/2d/auckland-ba32-0401/heldout/ascending` | construction | interpn | 77.7 ms | 0.88 ns | 88428544.00x | 5e-03 |
 | `grid/linear/4d/max200/eval1000/ascending` | construction | interpn | 51.2 ms | 1.27 ns | 40336462.77x | 3e-16 |
 | `grid/linear/4d/max200/eval100/ascending` | construction | interpn | 49.3 ms | 1.27 ns | 38802983.38x | 3e-16 |
 | `grid/linear/4d/max200/eval10000/ascending` | construction | interpn | 48.2 ms | 1.27 ns | 37960625.23x | 4e-16 |
 | `grid/linear/4d/max200/eval10/ascending` | construction | interpn | 48.1 ms | 1.27 ns | 37894301.54x | 2e-16 |
-| `grid/linear/2d/auckland-ba32-0401/heldout/ascending` | construction | interpn | 17.1 ms | 0 | 25079222.86x | 0e+00 |
-| `grid/nearest/2d/auckland-ba32-0401/heldout/ascending` | construction | interpn | 16.5 ms | 0 | 24125001.14x | 0e+00 |
-| `grid/linear/3d/max200/eval10/ascending` | construction | interpn | 1.86 ms | 0 | 1907302.40x | 3e-16 |
-| `grid/linear/3d/max200/eval1000/ascending` | construction | interpn | 1.72 ms | 0 | 1765785.60x | 3e-16 |
-| `grid/linear/3d/max200/eval100/ascending` | construction | interpn | 1.63 ms | 0 | 1670860.80x | 3e-16 |
-| `grid/linear/3d/max200/eval10000/ascending` | construction | interpn | 1.63 ms | 0 | 1668915.20x | 5e-16 |
-| `grid/cubic/2d/each400/eval1000/ascending` | construction | interpn | 1.47 ms | 0 | 1668323.56x | 5e-01 |
-| `grid/linear/2d/each800/eval10000/ascending` | construction | interpn | 1.01 ms | 0 | 1478070.86x | 3e-16 |
-| `grid/linear/2d/each400/eval10000/ascending` | construction | interpn | 303 µs | 0 | 443465.14x | 3e-16 |
-| `grid/cubic/3d/each40/eval10000/ascending` | construction | interpn | 432 µs | 0 | 442470.40x | 5e-01 |
-| `grid/cubic/2d/each200/eval1000/ascending` | construction | interpn | 179 µs | 0 | 182860.80x | 2e-01 |
-| `grid/cubic/2d/each100/eval1000/ascending` | construction | interpn | 40.9 µs | 0 | 52320.00x | 2e-01 |
-| `grid/nearest/3d/each40/eval10000/ascending` | construction | interpn | 20.9 µs | 0 | 23758.22x | 0e+00 |
+| `grid/linear/2d/auckland-ba32-0401/heldout/ascending` | construction | interpn | 17.1 ms | 0.68 ns | 25079222.86x | 0e+00 |
+| `grid/nearest/2d/auckland-ba32-0401/heldout/ascending` | construction | interpn | 16.5 ms | 0.68 ns | 24125001.14x | 0e+00 |
+| `grid/linear/3d/max200/eval10/ascending` | construction | interpn | 1.86 ms | 0.98 ns | 1907302.40x | 3e-16 |
+| `grid/linear/3d/max200/eval1000/ascending` | construction | interpn | 1.72 ms | 0.98 ns | 1765785.60x | 3e-16 |
+| `grid/linear/3d/max200/eval100/ascending` | construction | interpn | 1.63 ms | 0.98 ns | 1670860.80x | 3e-16 |
+| `grid/linear/3d/max200/eval10000/ascending` | construction | interpn | 1.63 ms | 0.98 ns | 1668915.20x | 5e-16 |
+| `grid/cubic/2d/each400/eval1000/ascending` | construction | interpn | 1.47 ms | 0.88 ns | 1668323.56x | 5e-01 |
+| `grid/linear/2d/each800/eval10000/ascending` | construction | interpn | 1.01 ms | 0.68 ns | 1478070.86x | 3e-16 |
+| `grid/linear/2d/each400/eval10000/ascending` | construction | interpn | 303 µs | 0.68 ns | 443465.14x | 3e-16 |
+| `grid/cubic/3d/each40/eval10000/ascending` | construction | interpn | 432 µs | 0.98 ns | 442470.40x | 5e-01 |
+| `grid/cubic/2d/each200/eval1000/ascending` | construction | interpn | 179 µs | 0.98 ns | 182860.80x | 2e-01 |
+| `grid/cubic/2d/each100/eval1000/ascending` | construction | interpn | 40.9 µs | 0.78 ns | 52320.00x | 2e-01 |
+| `grid/nearest/3d/each40/eval10000/ascending` | construction | interpn | 20.9 µs | 0.88 ns | 23758.22x | 0e+00 |
 | `grid/linear/4d/max40/eval10000/ascending` | construction | interpn | 14.3 µs | 1.27 ns | 11234.46x | 5e-16 |
-| `grid/linear/2d/max200/eval10000/ascending` | construction | interpn | 7.48 µs | 0 | 10939.43x | 3e-16 |
-| `grid/linear/2d/max200/eval1000/ascending` | construction | interpn | 7.41 µs | 0 | 10843.43x | 2e-16 |
+| `grid/linear/2d/max200/eval10000/ascending` | construction | interpn | 7.48 µs | 0.68 ns | 10939.43x | 3e-16 |
+| `grid/linear/2d/max200/eval1000/ascending` | construction | interpn | 7.41 µs | 0.68 ns | 10843.43x | 2e-16 |
 | `grid/linear/4d/max40/eval10/ascending` | construction | interpn | 13.1 µs | 1.27 ns | 10323.69x | 2e-16 |
-| `grid/linear/2d/max200/eval10/ascending` | construction | interpn | 6.88 µs | 0 | 10057.14x | 2e-16 |
-| `grid/linear/2d/max200/eval100/ascending` | construction | interpn | 6.85 µs | 0 | 10016.00x | 1e-16 |
-| `grid/cubic/2d/each40/eval10000/ascending` | construction | interpn | 8.44 µs | 0 | 9603.56x | 7e-01 |
-| `grid/cubic/2d/each40/eval1000/ascending` | construction | interpn | 8.42 µs | 0 | 9578.67x | 7e-01 |
+| `grid/linear/2d/max200/eval10/ascending` | construction | interpn | 6.88 µs | 0.68 ns | 10057.14x | 2e-16 |
+| `grid/linear/2d/max200/eval100/ascending` | construction | interpn | 6.85 µs | 0.68 ns | 10016.00x | 1e-16 |
+| `grid/cubic/2d/each40/eval10000/ascending` | construction | interpn | 8.44 µs | 0.88 ns | 9603.56x | 7e-01 |
+| `grid/cubic/2d/each40/eval1000/ascending` | construction | interpn | 8.42 µs | 0.88 ns | 9578.67x | 7e-01 |
 | `grid/linear/4d/max40/eval1000/ascending` | construction | interpn | 13 µs | 1.37 ns | 9536.00x | 6e-16 |
 | `grid/linear/4d/max40/eval100/ascending` | construction | interpn | 13 µs | 1.37 ns | 9513.14x | 2e-16 |
 | `grid/linear/4d/max200/eval1000/flipped` | construction | SciPy | 109 ms | 19.8 µs | 5511.99x |  |
@@ -100,37 +100,37 @@ Measured on 2026-10-17, at commit `79b6cedfd5`.
 | `grid/linear/4d/max200/eval10000/ascending` | construction | SciPy | 48.2 ms | 9.31 µs | 5174.13x |  |
 | `grid/linear/4d/max200/eval100/flipped` | construction | SciPy | 104 ms | 20.2 µs | 5153.44x |  |
 | `grid/linear/4d/max200/eval1000/ascending` | construction | SciPy | 51.2 ms | 10.1 µs | 5084.30x |  |
-| `grid/linear/3d/max40/eval100/ascending` | construction | interpn | 3.14 µs | 0 | 3567.11x | 2e-16 |
-| `grid/linear/3d/max40/eval1000/ascending` | construction | interpn | 2.93 µs | 0 | 3339.11x | 2e-16 |
-| `grid/linear/3d/max40/eval10000/ascending` | construction | interpn | 2.86 µs | 0 | 3249.78x | 3e-16 |
-| `grid/linear/3d/max40/eval10/ascending` | construction | interpn | 2.7 µs | 0 | 3071.11x | 2e-16 |
+| `grid/linear/3d/max40/eval100/ascending` | construction | interpn | 3.14 µs | 0.88 ns | 3567.11x | 2e-16 |
+| `grid/linear/3d/max40/eval1000/ascending` | construction | interpn | 2.93 µs | 0.88 ns | 3339.11x | 2e-16 |
+| `grid/linear/3d/max40/eval10000/ascending` | construction | interpn | 2.86 µs | 0.88 ns | 3249.78x | 3e-16 |
+| `grid/linear/3d/max40/eval10/ascending` | construction | interpn | 2.7 µs | 0.88 ns | 3071.11x | 2e-16 |
 | `grid/nearest/2d/auckland-ba32-0401/heldout/ascending` | construction | SciPy | 16.5 ms | 7.11 µs | 2319.71x |  |
 | `grid/linear/2d/auckland-ba32-0401/heldout/ascending` | construction | SciPy | 17.1 ms | 7.56 µs | 2268.85x |  |
 | `grid/linear/2d/auckland-ba32-0401/heldout/ascending` | construction | ndarray-interp | 17.1 ms | 8.24 µs | 2080.42x | 0e+00 |
-| `grid/cubic/2d/each10/eval1000/ascending` | construction | interpn | 1.46 µs | 0 | 1662.67x | 3e-01 |
-| `grid/nearest/2d/each40/eval10000/ascending` | construction | interpn | 591 ns | 0 | 757.00x | 0e+00 |
-| `grid/linear/2d/max40/eval10000/ascending` | construction | interpn | 386 ns | 0 | 564.00x | 4e-16 |
-| `grid/linear/2d/max40/eval1000/ascending` | construction | interpn | 367 ns | 0 | 536.93x | 3e-16 |
-| `grid/linear/2d/max40/eval10/ascending` | construction | interpn | 366 ns | 0 | 535.64x | 2e-16 |
-| `grid/linear/2d/max40/eval100/ascending` | construction | interpn | 364 ns | 0 | 466.00x | 2e-16 |
+| `grid/cubic/2d/each10/eval1000/ascending` | construction | interpn | 1.46 µs | 0.88 ns | 1662.67x | 3e-01 |
+| `grid/nearest/2d/each40/eval10000/ascending` | construction | interpn | 591 ns | 0.78 ns | 757.00x | 0e+00 |
+| `grid/linear/2d/max40/eval10000/ascending` | construction | interpn | 386 ns | 0.68 ns | 564.00x | 4e-16 |
+| `grid/linear/2d/max40/eval1000/ascending` | construction | interpn | 367 ns | 0.68 ns | 536.93x | 3e-16 |
+| `grid/linear/2d/max40/eval10/ascending` | construction | interpn | 366 ns | 0.68 ns | 535.64x | 2e-16 |
+| `grid/linear/2d/max40/eval100/ascending` | construction | interpn | 364 ns | 0.78 ns | 466.00x | 2e-16 |
 | `grid/linear/2d/each800/eval10000/ascending` | construction | ndarray-interp | 1.01 ms | 2.44 µs | 413.73x | 6e-16 |
 | `grid/linear/2d/each400/eval10000/ascending` | construction | ndarray-interp | 303 µs | 1.14 µs | 266.05x | 5e-16 |
 | `grid/linear/3d/max200/eval10/ascending` | construction | SciPy | 1.86 ms | 7.51 µs | 247.93x |  |
 | `grid/linear/3d/max200/eval1000/ascending` | construction | SciPy | 1.72 ms | 7.49 µs | 230.11x |  |
 | `grid/linear/3d/max200/eval100/ascending` | construction | SciPy | 1.63 ms | 7.5 µs | 217.70x |  |
 | `grid/linear/3d/max200/eval10000/ascending` | construction | SciPy | 1.63 ms | 7.5 µs | 217.22x |  |
-| `grid/linear/3d/max10/eval10000/ascending` | construction | interpn | 184 ns | 0 | 209.11x | 4e-16 |
-| `grid/linear/3d/max10/eval100/ascending` | construction | interpn | 180 ns | 0 | 204.44x | 3e-16 |
-| `grid/linear/3d/max10/eval1000/ascending` | construction | interpn | 178 ns | 0 | 202.22x | 5e-16 |
-| `grid/linear/3d/max10/eval10/ascending` | construction | interpn | 178 ns | 0 | 202.11x | 2e-16 |
+| `grid/linear/3d/max10/eval10000/ascending` | construction | interpn | 184 ns | 0.88 ns | 209.11x | 4e-16 |
+| `grid/linear/3d/max10/eval100/ascending` | construction | interpn | 180 ns | 0.88 ns | 204.44x | 3e-16 |
+| `grid/linear/3d/max10/eval1000/ascending` | construction | interpn | 178 ns | 0.88 ns | 202.22x | 5e-16 |
+| `grid/linear/3d/max10/eval10/ascending` | construction | interpn | 178 ns | 0.88 ns | 202.11x | 2e-16 |
 | `grid/linear/3d/max200/eval100/flipped` | construction | SciPy | 3.13 ms | 15.8 µs | 197.92x |  |
-| `grid/linear/2d/max10/eval100/ascending` | construction | interpn | 134 ns | 0 | 196.71x | 2e-16 |
+| `grid/linear/2d/max10/eval100/ascending` | construction | interpn | 134 ns | 0.68 ns | 196.71x | 2e-16 |
 | `grid/linear/3d/max200/eval10000/flipped` | construction | SciPy | 3.01 ms | 15.6 µs | 192.95x |  |
 | `grid/linear/3d/max200/eval1000/flipped` | construction | SciPy | 3.06 ms | 15.9 µs | 192.65x |  |
-| `grid/linear/2d/max10/eval10000/ascending` | construction | interpn | 127 ns | 0 | 185.71x | 3e-16 |
-| `grid/linear/2d/max10/eval10/ascending` | construction | interpn | 125 ns | 0 | 182.57x | 1e-16 |
+| `grid/linear/2d/max10/eval10000/ascending` | construction | interpn | 127 ns | 0.68 ns | 185.71x | 3e-16 |
+| `grid/linear/2d/max10/eval10/ascending` | construction | interpn | 125 ns | 0.68 ns | 182.57x | 1e-16 |
 | `grid/linear/3d/max200/eval10/flipped` | construction | SciPy | 2.9 ms | 17.3 µs | 167.62x |  |
-| `grid/linear/2d/max10/eval1000/ascending` | construction | interpn | 126 ns | 0 | 161.12x | 3e-16 |
+| `grid/linear/2d/max10/eval1000/ascending` | construction | interpn | 126 ns | 0.78 ns | 161.12x | 3e-16 |
 | `grid/linear/2d/each800/eval10000/ascending` | construction | SciPy | 1.01 ms | 6.9 µs | 146.50x |  |
 | `grid/linear/2d/each400/eval10000/ascending` | construction | SciPy | 303 µs | 5.92 µs | 51.23x |  |
 | `grid/pchip/3d/each40/eval10000/ascending` | construction | SciPy | 467 µs | 9.48 µs | 49.22x |  |
@@ -302,7 +302,7 @@ These cases are also in the tables of their families below and in the counts abo
 | interpx, `from_owned` | 5.03 ms | 362 ms | 15.5 | 0.178 | 0 |
 | SciPy | 7.11 µs | 1.32 s | 15.5 | 0.178 | 0 |
 | scirs2-interpolate | 13.7 ms | 159 s | 15.5 | 0.178 | 0 |
-| interpn | 0 | 744 ms | 15.5 | 0.178 | 0 |
+| interpn | 0.68 ns | 744 ms | 15.5 | 0.178 | 0 |
 
 `grid/linear/2d/auckland-ba32-0401/heldout/ascending` (8646001 points, 25913999 queries)
 
@@ -314,7 +314,7 @@ These cases are also in the tables of their families below and in the counts abo
 | SciPy | 7.56 µs | 1.1 s | 6.74 | 0.0601 | 0 |
 | scirs2-interpolate | 13.8 ms | 70.7 s | 6.74 | 0.0601 | 0 |
 | ndarray-interp | 8.24 µs | 348 ms | 6.74 | 0.0601 | 0 |
-| interpn | 0 | 790 ms | 6.74 | 0.0601 | 0 |
+| interpn | 0.68 ns | 790 ms | 6.74 | 0.0601 | 0 |
 
 `grid/cubic/2d/auckland-ba32-0401/heldout/ascending` (8646001 points, 25913999 queries)
 
@@ -324,7 +324,7 @@ These cases are also in the tables of their families below and in the counts abo
 | interpx, parallel | 73.3 ms | 127 ms | 6.77 | 0.0507 | 0 |
 | interpx, `from_owned` | 67.9 ms | 771 ms | 6.77 | 0.0507 | 0 |
 | SciPy | 13.9 s | 31.8 s | 6.77 | 0.0507 | 0 |
-| interpn | 0 | 1.75 s | 6.76 | 0.0517 | 0 |
+| interpn | 0.88 ns | 1.75 s | 6.76 | 0.0517 | 0 |
 
 `grid/quintic/2d/auckland-ba32-0401/heldout/ascending` (8646001 points, 25913999 queries)
 
@@ -833,53 +833,53 @@ Points in no order inside the grid. `maxN`: the first axis has `N` points and ea
 
 | case | interpx | interpx, parallel | interpx, `from_owned` | SciPy | scirs2-interpolate | ndarray-interp | interpn | interpx against the fastest other |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `linear/2d/max10/eval10/ascending` | 125 ns | 134 ns | 138 ns | 6.24 µs | 144 ns | 77.9 ns | 0 | **1.8e+02x slower** |
+| `linear/2d/max10/eval10/ascending` | 125 ns | 134 ns | 138 ns | 6.24 µs | 144 ns | 77.9 ns | 0.68 ns | **1.8e+02x slower** |
 | `linear/2d/max10/eval10/flipped` | 160 ns | 155 ns | 164 ns | 12.1 µs |  |  |  | 76x faster |
-| `linear/2d/max10/eval100/ascending` | 134 ns | 125 ns | 130 ns | 5.75 µs | 144 ns | 85.3 ns | 0 | **2e+02x slower** |
+| `linear/2d/max10/eval100/ascending` | 134 ns | 125 ns | 130 ns | 5.75 µs | 144 ns | 85.3 ns | 0.68 ns | **2e+02x slower** |
 | `linear/2d/max10/eval100/flipped` | 160 ns | 172 ns | 168 ns | 11.7 µs |  |  |  | 73x faster |
-| `linear/2d/max10/eval1000/ascending` | 126 ns | 137 ns | 143 ns | 6.08 µs | 144 ns | 85.2 ns | 0 | **1.6e+02x slower** |
+| `linear/2d/max10/eval1000/ascending` | 126 ns | 137 ns | 143 ns | 6.08 µs | 144 ns | 85.2 ns | 0.78 ns | **1.6e+02x slower** |
 | `linear/2d/max10/eval1000/flipped` | 175 ns | 163 ns | 172 ns | 11.8 µs |  |  |  | 67x faster |
-| `linear/2d/max10/eval10000/ascending` | 127 ns | 137 ns | 127 ns | 5.8 µs | 132 ns | 84.4 ns | 0 | **1.9e+02x slower** |
+| `linear/2d/max10/eval10000/ascending` | 127 ns | 137 ns | 127 ns | 5.8 µs | 132 ns | 84.4 ns | 0.68 ns | **1.9e+02x slower** |
 | `linear/2d/max10/eval10000/flipped` | 158 ns | 158 ns | 177 ns | 11.7 µs |  |  |  | 74x faster |
-| `linear/2d/max40/eval10/ascending` | 366 ns | 362 ns | 759 ns | 5.81 µs | 200 ns | 152 ns | 0 | **5.4e+02x slower** |
+| `linear/2d/max40/eval10/ascending` | 366 ns | 362 ns | 759 ns | 5.81 µs | 200 ns | 152 ns | 0.68 ns | **5.4e+02x slower** |
 | `linear/2d/max40/eval10/flipped` | 654 ns | 695 ns | 1.17 µs | 11.6 µs |  |  |  | 18x faster |
-| `linear/2d/max40/eval100/ascending` | 364 ns | 367 ns | 769 ns | 5.73 µs | 221 ns | 152 ns | 0 | **4.7e+02x slower** |
+| `linear/2d/max40/eval100/ascending` | 364 ns | 367 ns | 769 ns | 5.73 µs | 221 ns | 152 ns | 0.78 ns | **4.7e+02x slower** |
 | `linear/2d/max40/eval100/flipped` | 710 ns | 662 ns | 1.17 µs | 11.6 µs |  |  |  | 16x faster |
-| `linear/2d/max40/eval1000/ascending` | 367 ns | 361 ns | 721 ns | 5.78 µs | 199 ns | 152 ns | 0 | **5.4e+02x slower** |
+| `linear/2d/max40/eval1000/ascending` | 367 ns | 361 ns | 721 ns | 5.78 µs | 199 ns | 152 ns | 0.68 ns | **5.4e+02x slower** |
 | `linear/2d/max40/eval1000/flipped` | 653 ns | 646 ns | 1.2 µs | 11.5 µs |  |  |  | 18x faster |
-| `linear/2d/max40/eval10000/ascending` | 386 ns | 363 ns | 749 ns | 5.79 µs | 204 ns | 152 ns | 0 | **5.6e+02x slower** |
+| `linear/2d/max40/eval10000/ascending` | 386 ns | 363 ns | 749 ns | 5.79 µs | 204 ns | 152 ns | 0.68 ns | **5.6e+02x slower** |
 | `linear/2d/max40/eval10000/flipped` | 649 ns | 648 ns | 1.19 µs | 11.6 µs |  |  |  | 18x faster |
-| `linear/2d/max200/eval10/ascending` | 6.88 µs | 6.99 µs | 22.8 µs | 5.79 µs | 3.09 µs | 470 ns | 0 | **1e+04x slower** |
+| `linear/2d/max200/eval10/ascending` | 6.88 µs | 6.99 µs | 22.8 µs | 5.79 µs | 3.09 µs | 470 ns | 0.68 ns | **1e+04x slower** |
 | `linear/2d/max200/eval10/flipped` | 14.4 µs | 14.5 µs | 29.6 µs | 11.8 µs |  |  |  | **1.2x slower** |
-| `linear/2d/max200/eval100/ascending` | 6.85 µs | 6.93 µs | 19.1 µs | 6.3 µs | 2.96 µs | 470 ns | 0 | **1e+04x slower** |
+| `linear/2d/max200/eval100/ascending` | 6.85 µs | 6.93 µs | 19.1 µs | 6.3 µs | 2.96 µs | 470 ns | 0.68 ns | **1e+04x slower** |
 | `linear/2d/max200/eval100/flipped` | 14.4 µs | 14.6 µs | 25.1 µs | 11.7 µs |  |  |  | **1.2x slower** |
-| `linear/2d/max200/eval1000/ascending` | 7.41 µs | 7.38 µs | 18.9 µs | 5.84 µs | 2.95 µs | 460 ns | 0 | **1.1e+04x slower** |
+| `linear/2d/max200/eval1000/ascending` | 7.41 µs | 7.38 µs | 18.9 µs | 5.84 µs | 2.95 µs | 460 ns | 0.68 ns | **1.1e+04x slower** |
 | `linear/2d/max200/eval1000/flipped` | 14.2 µs | 14.4 µs | 26.3 µs | 11.7 µs |  |  |  | **1.2x slower** |
-| `linear/2d/max200/eval10000/ascending` | 7.48 µs | 7.47 µs | 4.29 µs | 5.8 µs | 3.3 µs | 470 ns | 0 | **1.1e+04x slower** |
+| `linear/2d/max200/eval10000/ascending` | 7.48 µs | 7.47 µs | 4.29 µs | 5.8 µs | 3.3 µs | 470 ns | 0.68 ns | **1.1e+04x slower** |
 | `linear/2d/max200/eval10000/flipped` | 14.4 µs | 14.6 µs | 21.1 µs | 11.8 µs |  |  |  | **1.2x slower** |
-| `linear/3d/max10/eval10/ascending` | 178 ns | 178 ns | 205 ns | 7.41 µs | 166 ns |  | 0 | **2e+02x slower** |
+| `linear/3d/max10/eval10/ascending` | 178 ns | 178 ns | 205 ns | 7.41 µs | 166 ns |  | 0.88 ns | **2e+02x slower** |
 | `linear/3d/max10/eval10/flipped` | 296 ns | 295 ns | 329 ns | 15.3 µs |  |  |  | 52x faster |
-| `linear/3d/max10/eval100/ascending` | 180 ns | 177 ns | 213 ns | 7.59 µs | 180 ns |  | 0 | **2e+02x slower** |
+| `linear/3d/max10/eval100/ascending` | 180 ns | 177 ns | 213 ns | 7.59 µs | 180 ns |  | 0.88 ns | **2e+02x slower** |
 | `linear/3d/max10/eval100/flipped` | 296 ns | 327 ns | 384 ns | 15.7 µs |  |  |  | 53x faster |
-| `linear/3d/max10/eval1000/ascending` | 178 ns | 197 ns | 216 ns | 7.47 µs | 164 ns |  | 0 | **2e+02x slower** |
+| `linear/3d/max10/eval1000/ascending` | 178 ns | 197 ns | 216 ns | 7.47 µs | 164 ns |  | 0.88 ns | **2e+02x slower** |
 | `linear/3d/max10/eval1000/flipped` | 308 ns | 296 ns | 344 ns | 17.1 µs |  |  |  | 56x faster |
-| `linear/3d/max10/eval10000/ascending` | 184 ns | 188 ns | 207 ns | 8.22 µs | 180 ns |  | 0 | **2.1e+02x slower** |
+| `linear/3d/max10/eval10000/ascending` | 184 ns | 188 ns | 207 ns | 8.22 µs | 180 ns |  | 0.88 ns | **2.1e+02x slower** |
 | `linear/3d/max10/eval10000/flipped` | 294 ns | 314 ns | 330 ns | 15.5 µs |  |  |  | 53x faster |
-| `linear/3d/max40/eval10/ascending` | 2.7 µs | 3.15 µs | 7.48 µs | 8.2 µs | 1.39 µs |  | 0 | **3.1e+03x slower** |
+| `linear/3d/max40/eval10/ascending` | 2.7 µs | 3.15 µs | 7.48 µs | 8.2 µs | 1.39 µs |  | 0.88 ns | **3.1e+03x slower** |
 | `linear/3d/max40/eval10/flipped` | 8.12 µs | 8.08 µs | 12.4 µs | 15.5 µs |  |  |  | 1.9x faster |
-| `linear/3d/max40/eval100/ascending` | 3.14 µs | 7.01 µs | 3.37 µs | 7.53 µs | 1.42 µs |  | 0 | **3.6e+03x slower** |
+| `linear/3d/max40/eval100/ascending` | 3.14 µs | 7.01 µs | 3.37 µs | 7.53 µs | 1.42 µs |  | 0.88 ns | **3.6e+03x slower** |
 | `linear/3d/max40/eval100/flipped` | 8.85 µs | 14 µs | 9.53 µs | 15.6 µs |  |  |  | 1.8x faster |
-| `linear/3d/max40/eval1000/ascending` | 2.93 µs | 2.91 µs | 5.13 µs | 8.23 µs | 1.46 µs |  | 0 | **3.3e+03x slower** |
+| `linear/3d/max40/eval1000/ascending` | 2.93 µs | 2.91 µs | 5.13 µs | 8.23 µs | 1.46 µs |  | 0.88 ns | **3.3e+03x slower** |
 | `linear/3d/max40/eval1000/flipped` | 8.1 µs | 9.01 µs | 9.58 µs | 17 µs |  |  |  | 2.1x faster |
-| `linear/3d/max40/eval10000/ascending` | 2.86 µs | 3.06 µs | 5.91 µs | 7.63 µs | 1.5 µs |  | 0 | **3.2e+03x slower** |
+| `linear/3d/max40/eval10000/ascending` | 2.86 µs | 3.06 µs | 5.91 µs | 7.63 µs | 1.5 µs |  | 0.88 ns | **3.2e+03x slower** |
 | `linear/3d/max40/eval10000/flipped` | 8.02 µs | 8.81 µs | 9.33 µs | 15.9 µs |  |  |  | 2x faster |
-| `linear/3d/max200/eval10/ascending` | 1.86 ms | 1.65 ms | 616 µs | 7.51 µs | 1.29 ms |  | 0 | **1.9e+06x slower** |
+| `linear/3d/max200/eval10/ascending` | 1.86 ms | 1.65 ms | 616 µs | 7.51 µs | 1.29 ms |  | 0.98 ns | **1.9e+06x slower** |
 | `linear/3d/max200/eval10/flipped` | 2.9 ms | 3.12 ms | 1.88 ms | 17.3 µs |  |  |  | **1.7e+02x slower** |
-| `linear/3d/max200/eval100/ascending` | 1.63 ms | 1.69 ms | 587 µs | 7.5 µs | 1.27 ms |  | 0 | **1.7e+06x slower** |
+| `linear/3d/max200/eval100/ascending` | 1.63 ms | 1.69 ms | 587 µs | 7.5 µs | 1.27 ms |  | 0.98 ns | **1.7e+06x slower** |
 | `linear/3d/max200/eval100/flipped` | 3.13 ms | 3.16 ms | 1.77 ms | 15.8 µs |  |  |  | **2e+02x slower** |
-| `linear/3d/max200/eval1000/ascending` | 1.72 ms | 1.83 ms | 598 µs | 7.49 µs | 1.28 ms |  | 0 | **1.8e+06x slower** |
+| `linear/3d/max200/eval1000/ascending` | 1.72 ms | 1.83 ms | 598 µs | 7.49 µs | 1.28 ms |  | 0.98 ns | **1.8e+06x slower** |
 | `linear/3d/max200/eval1000/flipped` | 3.06 ms | 3.4 ms | 1.86 ms | 15.9 µs |  |  |  | **1.9e+02x slower** |
-| `linear/3d/max200/eval10000/ascending` | 1.63 ms | 1.74 ms | 615 µs | 7.5 µs | 1.54 ms |  | 0 | **1.7e+06x slower** |
+| `linear/3d/max200/eval10000/ascending` | 1.63 ms | 1.74 ms | 615 µs | 7.5 µs | 1.54 ms |  | 0.98 ns | **1.7e+06x slower** |
 | `linear/3d/max200/eval10000/flipped` | 3.01 ms | 3.07 ms | 1.88 ms | 15.6 µs |  |  |  | **1.9e+02x slower** |
 | `linear/4d/max10/eval10/ascending` | 214 ns | 222 ns | 227 ns | 9.37 µs |  |  |  | 44x faster |
 | `linear/4d/max10/eval10/flipped` | 334 ns | 333 ns | 379 ns | 17.9 µs |  |  |  | 54x faster |
@@ -905,24 +905,24 @@ Points in no order inside the grid. `maxN`: the first axis has `N` points and ea
 | `linear/4d/max200/eval1000/flipped` | 109 ms | 104 ms | 68.7 ms | 19.8 µs |  |  |  | **5.5e+03x slower** |
 | `linear/4d/max200/eval10000/ascending` | 48.2 ms | 47.2 ms | 15.4 ms | 9.31 µs | 41.2 ms |  | 1.27 ns | **3.8e+07x slower** |
 | `linear/4d/max200/eval10000/flipped` | 109 ms | 99.6 ms | 72.6 ms | 19.9 µs |  |  |  | **5.5e+03x slower** |
-| `nearest/2d/each40/eval10000/ascending` | 591 ns | 642 ns | 1.12 µs | 5.75 µs | 275 ns |  | 0 | **7.6e+02x slower** |
-| `nearest/3d/each40/eval10000/ascending` | 20.9 µs | 21.7 µs | 59.5 µs | 7.4 µs | 10.2 µs |  | 0 | **2.4e+04x slower** |
+| `nearest/2d/each40/eval10000/ascending` | 591 ns | 642 ns | 1.12 µs | 5.75 µs | 275 ns |  | 0.78 ns | **7.6e+02x slower** |
+| `nearest/3d/each40/eval10000/ascending` | 20.9 µs | 21.7 µs | 59.5 µs | 7.4 µs | 10.2 µs |  | 0.88 ns | **2.4e+04x slower** |
 | `pchip/2d/each40/eval10000/ascending` | 7.08 µs | 7.06 µs | 6.86 µs | 6.67 µs |  |  |  | **1.1x slower** |
 | `pchip/3d/each40/eval10000/ascending` | 467 µs | 529 µs | 451 µs | 9.48 µs |  |  |  | **49x slower** |
-| `cubic/2d/each40/eval10000/ascending` | 8.44 µs | 9.08 µs | 8.92 µs | 1.88 ms |  |  | 0 | **9.6e+03x slower** |
-| `cubic/3d/each40/eval10000/ascending` | 432 µs | 296 µs | 322 µs | 155 ms |  |  | 0 | **4.4e+05x slower** |
-| `cubic/2d/each10/eval1000/ascending` | 1.46 µs | 1.48 µs | 1.54 µs | 1.03 ms |  |  | 0 | **1.7e+03x slower** |
-| `cubic/2d/each40/eval1000/ascending` | 8.42 µs | 8.39 µs | 8.15 µs | 1.9 ms |  |  | 0 | **9.6e+03x slower** |
-| `cubic/2d/each100/eval1000/ascending` | 40.9 µs | 46.6 µs | 39.6 µs | 7.3 ms |  |  | 0 | **5.2e+04x slower** |
-| `cubic/2d/each200/eval1000/ascending` | 179 µs | 197 µs | 212 µs | 28.5 ms |  |  | 0 | **1.8e+05x slower** |
-| `cubic/2d/each400/eval1000/ascending` | 1.47 ms | 1.38 ms | 1.21 ms | 142 ms |  |  | 0 | **1.7e+06x slower** |
+| `cubic/2d/each40/eval10000/ascending` | 8.44 µs | 9.08 µs | 8.92 µs | 1.88 ms |  |  | 0.88 ns | **9.6e+03x slower** |
+| `cubic/3d/each40/eval10000/ascending` | 432 µs | 296 µs | 322 µs | 155 ms |  |  | 0.98 ns | **4.4e+05x slower** |
+| `cubic/2d/each10/eval1000/ascending` | 1.46 µs | 1.48 µs | 1.54 µs | 1.03 ms |  |  | 0.88 ns | **1.7e+03x slower** |
+| `cubic/2d/each40/eval1000/ascending` | 8.42 µs | 8.39 µs | 8.15 µs | 1.9 ms |  |  | 0.88 ns | **9.6e+03x slower** |
+| `cubic/2d/each100/eval1000/ascending` | 40.9 µs | 46.6 µs | 39.6 µs | 7.3 ms |  |  | 0.78 ns | **5.2e+04x slower** |
+| `cubic/2d/each200/eval1000/ascending` | 179 µs | 197 µs | 212 µs | 28.5 ms |  |  | 0.98 ns | **1.8e+05x slower** |
+| `cubic/2d/each400/eval1000/ascending` | 1.47 ms | 1.38 ms | 1.21 ms | 142 ms |  |  | 0.88 ns | **1.7e+06x slower** |
 | `quintic/2d/each10/eval1000/ascending` | 1.93 µs | 2.1 µs | 2.19 µs | 3.5 ms |  |  |  | 1.8e+03x faster |
 | `quintic/2d/each40/eval1000/ascending` | 12.3 µs | 12.5 µs | 12.2 µs | 7.93 ms |  |  |  | 6.5e+02x faster |
-| `linear/2d/each400/eval10000/ascending` | 303 µs | 315 µs | 108 µs | 5.92 µs | 268 µs | 1.14 µs | 0 | **4.4e+05x slower** |
-| `linear/2d/each800/eval10000/ascending` | 1.01 ms | 1.06 ms | 386 µs | 6.9 µs | 788 µs | 2.44 µs | 0 | **1.5e+06x slower** |
-| `nearest/2d/auckland-ba32-0401/heldout/ascending` | 16.5 ms | 16.5 ms | 5.03 ms | 7.11 µs | 13.7 ms |  | 0 | **2.4e+07x slower** |
-| `linear/2d/auckland-ba32-0401/heldout/ascending` | 17.1 ms | 16.7 ms | 5.15 ms | 7.56 µs | 13.8 ms | 8.24 µs | 0 | **2.5e+07x slower** |
-| `cubic/2d/auckland-ba32-0401/heldout/ascending` | 77.7 ms | 73.3 ms | 67.9 ms | 13.9 s |  |  | 0 | **8.8e+07x slower** |
+| `linear/2d/each400/eval10000/ascending` | 303 µs | 315 µs | 108 µs | 5.92 µs | 268 µs | 1.14 µs | 0.68 ns | **4.4e+05x slower** |
+| `linear/2d/each800/eval10000/ascending` | 1.01 ms | 1.06 ms | 386 µs | 6.9 µs | 788 µs | 2.44 µs | 0.68 ns | **1.5e+06x slower** |
+| `nearest/2d/auckland-ba32-0401/heldout/ascending` | 16.5 ms | 16.5 ms | 5.03 ms | 7.11 µs | 13.7 ms |  | 0.68 ns | **2.4e+07x slower** |
+| `linear/2d/auckland-ba32-0401/heldout/ascending` | 17.1 ms | 16.7 ms | 5.15 ms | 7.56 µs | 13.8 ms | 8.24 µs | 0.68 ns | **2.5e+07x slower** |
+| `cubic/2d/auckland-ba32-0401/heldout/ascending` | 77.7 ms | 73.3 ms | 67.9 ms | 13.9 s |  |  | 0.88 ns | **8.8e+07x slower** |
 | `quintic/2d/auckland-ba32-0401/heldout/ascending` | 94.4 ms | 90.2 ms | 88.6 ms | 19.9 s |  |  |  | 2.1e+02x faster |
 | `pchip/2d/auckland-ba32-0401/heldout/ascending` | 71.9 ms | 73.3 ms | 65.6 ms |  |  |  |  |  |
 

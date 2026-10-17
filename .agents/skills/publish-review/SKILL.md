@@ -42,7 +42,7 @@ Fail a page when any of these is true:
 - A reader must know an Issue or PR number, a milestone or roadmap ID, `roadmap.md`, `AGENTS.md`, `.cursor/rules`, Grill, or a developer `just` recipe.
 - Public rustdoc fails `.cursor/rules/rust-docs.mdc`, including Examples and Errors. `missing_docs` passing does not clear this.
 - The first example is not pasteable after the documented dependency, or it uses `unwrap`.
-- Before the first example the README omits any of: owned types and `Send + Sync`; `f64` only for scattered types; C-order `values` for grids; NaN handling; the O(N²) RBF memory cost; the 0.x break policy; the SciPy 1.18 baseline and the out-of-scope list.
+- The README omits, in the place `reader-docs` gives it, any of: the SciPy 1.18 baseline (with what the crate does); what surprises a SciPy user (before the first example); owned types and `Send + Sync`, `f64` only for scattered types, C-order `values` for grids, NaN handling, the O(N²) RBF memory cost, the 0.x break policy, and the out-of-scope list (after the first example, under what a caller must know).
 - A SciPy-named type has no statement of its SciPy counterpart and its differences.
 - The README links relatively at a file that is not in the package, or embeds an image.
 - A Japanese page was scored or rewritten by the agent that edited it, or a reported gloss of the English remains.

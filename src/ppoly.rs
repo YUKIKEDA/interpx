@@ -257,7 +257,8 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
     /// Use this for queries that come in order. Each hinted search starts from the
     /// interval of the query before it, so it waits for that one. For queries in
     /// no order the wait is a whole binary search, and plain searches, which do
-    /// not wait for each other, are about twice as fast: call `eval` instead.
+    /// not wait for each other, are about twice as fast (on 10 000 points):
+    /// call `eval` instead.
     ///
     /// [`eval_batch_into`](Interpolator::eval_batch_into) makes this choice
     /// itself. It takes the points 64 at a time and uses a hint only on a run that

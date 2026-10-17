@@ -15,3 +15,4 @@ alwaysApply: true
 - A PR stacked on another is merged into `main` only: when the PR under it merges, its base is `main` before anyone merges it. #167 was merged four minutes after the PR under it, into that PR's branch, which `main` no longer followed; it was reported as merged and was not on `main` (#166 carried it there). After a merge, `git log origin/main` has the commit, or the merge did not happen.
 - Read the body again when its base merges and when a commit lands after it was written. A "Stacked on #N" line is rewritten once #N merges.
 - Edit a body from a UTF-8 file with `--body-file`, check it is not empty, and read it back.
+- Of two PRs open side by side, only the one that merges later edits the Current work line of `docs/roadmap.md`, after taking `main` in (a merge, not a rebase). #175 and #177 both rewrote it and the line beside it, and #177 conflicted.

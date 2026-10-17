@@ -382,6 +382,7 @@ interpx/
 | **N-D Scattered** | `RBFInterpolator`                               | `RBFInterpolator<D>`                          | `faer` LU + `kiddo`                    |
 
 * `interp1d` は SciPy では旧API扱い。`kind='quadratic'` / `'slinear'` は `BSpline1D` で代替する。`interp2d` は SciPy で削除済みのため対象外。
+* `griddata` は関数として持たない（オーナーの決定、#179）。`griddata` は、`method` に応じて `NearestNDInterpolator`・`LinearNDInterpolator`・`CloughTocher2DInterpolator` を作り、評価して捨てる。同じことは 3 つの型で書け、型なら作った補間器を何度でも評価に使える。関数を足しても能力は増えず、同じ機能の入口が 2 つになる。
 
 ### 5.3 対象外（v0.1.0 では実装しない。§9 ロードマップ）
 * FITPACK 系: `UnivariateSpline`、`splrep`、`splprep`、`RectBivariateSpline` ほか FITPACK 2D 系

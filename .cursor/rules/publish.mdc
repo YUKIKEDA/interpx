@@ -34,6 +34,6 @@ Do not tag or create a Release before the merge and the checks.
 
 ## Contract
 
-0.x minor releases may break the public API, and the README says so. The contract is every item an outside crate can name with the default features. Anything behind `bench-internals` or similar is outside it and the rustdoc says so. `docs.rs` builds with the default features.
+0.x minor releases may break the public API, and the README says so. The contract is every item an outside crate can name with the default features. Anything behind `bench-internals` or similar is outside it and the rustdoc says so. `docs.rs` builds with every feature (`[package.metadata.docs.rs]`), and an item behind a feature is marked with it there (`doc_cfg`, under `cfg(docsrs)`), so that what the README and the crate rustdoc describe can be found (the owner's decision, #179). The contract does not change with it.
 
 A `CHANGELOG` is added by the change that publishes the next version after 0.1.0.
