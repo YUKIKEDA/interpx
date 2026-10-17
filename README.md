@@ -27,7 +27,7 @@ What differs from SciPy, before the first example:
   - `Clamp` (the end value): `Linear1D`, as `numpy.interp`.
 - **Input is checked, and rejected where SciPy would compute something else.** In one variable the coordinates must be increasing and distinct (SciPy's `interp1d` sorts them), and data must be finite everywhere: NaN or infinity in the data is an error (`InterpolateError::NonFinite`). A NaN of the data never ends up in the values.
 - **The grid's `cubic` and `quintic` are solved exactly.** SciPy's default solves them with an iterative solver, whose values are 1e-5 to 1e-2 of the largest value away from the spline on smooth data (2-D and 3-D grids, evenly spaced or not), and as far as the values themselves on random values. interpx gives the spline itself: SciPy's `method="cubic_legacy"` to rounding.
-- **`RBFInterpolator` has no default kernel**, solves its system by an LU decomposition (SciPy: a symmetric one; the values differ by less than 1e-12), and refuses duplicate points and a polynomial degree below the kernel's minimum (SciPy warns).
+- **`RBFInterpolator` has no default kernel**, solves its system by an LU decomposition (SciPy: a symmetric one; the values differ by less than 1e-12), and refuses duplicate points and a polynomial degree below the minimum its kernel needs (for the degree, SciPy only warns).
 - **Values are real.** No complex dtypes. A value can be a fixed-size array, `[T; M]`, for `M` columns interpolated at once.
 - **Methods are chosen at construction**, not at each evaluation.
 
