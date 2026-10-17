@@ -155,12 +155,14 @@ fn pause() {
 }
 /// How long constructions are made, untimed, before the construction is timed.
 /// After a runner has read its case and evaluated once, a construction is
-/// slower for the next 50 to 75 ms (a 3-D linear grid of 8000 values: 25,
-/// then 17, then 4 µs a call in windows of 25 ms, then 3 µs; about 9 page
-/// faults a call against 0.07 after), and the timing loop of 50 ms fell
-/// within that time by a length that differed from process to process
-/// (#172). This is more than three times the longest of those times.
-const WARM: Duration = Duration::from_millis(250);
+/// slower for a while (a 3-D linear grid of 8000 values: 25, then 17, then
+/// 4 µs a call in windows of 25 ms, then 3 µs; about 9 page faults a call
+/// against 0.07 after), and the timing loop of 50 ms fell within that time
+/// by a length that differed from process to process (#172). How long it
+/// lasts depends on the case: about 150 ms for `CubicSpline` of 1000 points,
+/// 250 ms for `Nearest1D` of 10 000, 450 ms for `Linear1D` of 10 000, which
+/// 250 ms of warm-up did not cover. This is more than twice the longest.
+const WARM: Duration = Duration::from_secs(1);
 const FEWEST: usize = 5;
 const MOST: usize = 2000;
 

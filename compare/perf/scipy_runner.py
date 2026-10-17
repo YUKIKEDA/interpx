@@ -42,7 +42,7 @@ FEWEST = 5
 MOST = 2000
 # How long constructions are made, untimed, before the construction is timed
 # (`WARM` in the Rust harness, #172).
-WARM = 0.25
+WARM = 1.0
 # A call that takes this many seconds is timed once, by the call of its phase,
 # and is not made again (`LONG` in the Rust harness, #168).
 LONG = 2.0
