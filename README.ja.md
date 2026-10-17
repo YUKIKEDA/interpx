@@ -66,7 +66,7 @@ fn main() -> Result<(), InterpolateError> {
 - **全点の `RBFInterpolator` は、構築の間 `N` × `N` の行列を持ちます。** 10 838 点で 940 MB です。近傍の点だけを使う設定（`RbfOptions::with_neighbors`）では、代わりに問い合わせごとに小さな系を解きます。`reciprocal_condition` は、全点の系がどれだけ正確に解けたかを示します。
 - **評価はメモリを確保しません。** 例外は、`Vec` を返す `eval_batch` と `eval_batch_par`、および近傍を使う `RBFInterpolator` のスレッドごとの最初の評価（そのスレッドが持ち続ける作業領域を確保します）です。
 - **0.x のリリース**: マイナーバージョン（0.1 から 0.2）で公開 API が変わることがあります。ここでいう公開 API は、既定のフィーチャーで公開されるものを指します。
-- **この crate にないもの**: `interp2d`（SciPy から削除済み）、型としての `interp1d`（その種類は `Linear1D`、`Nearest1D`、`BSpline1D` で扱えます）、関数としての `griddata`（`method` に当たる補間器を作って評価します: `nearest` は `NearestNDInterpolator`、`linear` と `cubic` は、まだない `LinearNDInterpolator` と `CloughTocher2DInterpolator`）。まだないもの: `LinearNDInterpolator` と `CloughTocher2DInterpolator`、規則格子と散布点の補間の導関数、`roots`、`NdPPoly`、`BarycentricInterpolator` と `KroghInterpolator`、FITPACK 系（`UnivariateSpline`、`splrep`、`RectBivariateSpline`）、実行時に決める次元と出力の幅。
+- **この crate にないもの**: `interp2d`（SciPy から削除済み）と、型としての `interp1d`（その種類は `Linear1D`、`Nearest1D`、`BSpline1D` で扱えます）。関数の `griddata` もありません。代わりに、`method` に当たる補間器を作って評価してください（`nearest` は `NearestNDInterpolator`、`linear` は `LinearNDInterpolator`、`cubic` は `CloughTocher2DInterpolator`。後の 2 つはまだありません）。まだないもの: `LinearNDInterpolator` と `CloughTocher2DInterpolator`、規則格子と散布点の補間の導関数、`roots`、`NdPPoly`、`BarycentricInterpolator` と `KroghInterpolator`、FITPACK 系（`UnivariateSpline`、`splrep`、`RectBivariateSpline`）、実行時に決める次元と出力の幅。
 
 ## 使い方
 
