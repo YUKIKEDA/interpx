@@ -721,3 +721,46 @@ mod stored {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::CloughTocher2DInterpolator;
+    use crate::Interpolator;
+
+    #[test]
+    fn the_patch_reproduces_a_quadratic_from_its_exact_gradients() {
+        // The patch has a cross-boundary derivative that is linear along each
+        // edge (the reduced Hsieh-Clough-Tocher element), so with the exact
+        // values and gradients it is any quadratic itself, and of order 3
+        // (Ciarlet, "Interpolation error estimates for the reduced
+        // Hsieh-Clough-Tocher triangle", Math. Comp. 32, 1978). The global
+        // estimate does not give a quadratic's gradients: from it the error is
+        // 3e-3 on the points below (SciPy's too), and the order is that of
+        // the estimate (tests/clough_tocher.rs).
+        let f = |p: [f64; 2]| {
+            1.0 + 2.0 * p[0] - 3.0 * p[1] + p[0] * p[0] - p[0] * p[1] + 2.0 * p[1] * p[1]
+        };
+        let grad = |p: [f64; 2]| [2.0 + 2.0 * p[0] - p[1], -3.0 - p[0] + 4.0 * p[1]];
+        let mut state = 3_u64;
+        let mut next = move || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 11) as f64 / (1_u64 << 53) as f64
+        };
+        let points: Vec<[f64; 2]> = (0..200).map(|_| [next(), next()]).collect();
+        let values: Vec<f64> = points.iter().map(|&p| f(p)).collect();
+        let Ok(mut cubic) = CloughTocher2DInterpolator::new(&points, &values) else {
+            panic!("valid points");
+        };
+        cubic.gradients = points.iter().map(|&p| grad(p)).collect();
+        let mut worst = 0.0_f64;
+        for _ in 0..2000 {
+            let q = [0.2 + 0.6 * next(), 0.2 + 0.6 * next()];
+            if let Some(v) = cubic.eval(&q) {
+                worst = worst.max((v - f(q)).abs());
+            }
+        }
+        assert!(worst < 1e-12, "{worst}");
+    }
+}
