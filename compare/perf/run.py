@@ -76,9 +76,11 @@ def supports(library: str, case: dict) -> bool:
     family, method = case["family"], case.get("method")
     ascending = not case["name"].endswith("/flipped")
     if library == "interpx_owned":
-        return family in ("grid", "nearest_nd", "linear_nd", "rbf")
+        return family in ("grid", "nearest_nd", "linear_nd", "clough_tocher", "rbf")
     if library == "spade":
         return family == "linear_nd" and case.get("dim", 2) == 2
+    if family == "clough_tocher":
+        return library in ("scipy", "interpx", "interpx_par", "scirs2")
     if family == "linear_nd":
         return library in ("scipy", "interpx", "interpx_par") or (library == "scirs2" and case.get("dim", 2) == 2)
     if library == "interpn":

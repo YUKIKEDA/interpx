@@ -61,6 +61,7 @@ RUST_ONLY = {
     # (about 800 MB at N = 10^4), so larger N uses `neighbors` only.
     "nearest_nd": {"n_samples": [10_000, 100_000]},
     "linear_nd": {"n_samples": [10_000, 100_000]},
+    "clough_tocher": {"n_samples": [1000, 10_000, 100_000]},
     "regular_grid": {"n_per_axis": [400, 800]},
     "rbf_global": {"n_samples": [3_000, 10_000]},
     "rbf_neighbors": {"n_samples": [10_000, 100_000], "neighbors": 50},

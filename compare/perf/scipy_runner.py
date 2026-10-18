@@ -21,6 +21,7 @@ import numpy as np  # noqa: E402
 from scipy.interpolate import (  # noqa: E402
     Akima1DInterpolator,
     BSpline,
+    CloughTocher2DInterpolator,
     CubicSpline,
     LinearNDInterpolator,
     NearestNDInterpolator,
@@ -113,6 +114,8 @@ def scattered(case, a):
         return (lambda: NearestNDInterpolator(points, values)), lambda built: built(q)
     if case["family"] == "linear_nd":
         return (lambda: LinearNDInterpolator(points, values)), lambda built: built(q)
+    if case["family"] == "clough_tocher":
+        return (lambda: CloughTocher2DInterpolator(points, values)), lambda built: built(q)
     options = {"kernel": case["kernel"], "neighbors": case["neighbors"]}
     if case["kernel"] in ("multiquadric", "inverse_multiquadric", "inverse_quadratic", "gaussian"):
         options["epsilon"] = case["epsilon"]

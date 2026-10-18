@@ -154,6 +154,11 @@ harness = false
 required-features = ["scattered"]
 
 [[bench]]
+name = "clough_tocher"
+harness = false
+required-features = ["scattered"]
+
+[[bench]]
 name = "rbf"
 harness = false
 required-features = ["scattered"]

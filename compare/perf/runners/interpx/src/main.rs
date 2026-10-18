@@ -4,10 +4,10 @@
 //! its second argument, the parallel batch, `eval_batch_into_par`.
 
 use interpx::{
-    Akima1D, AkimaMethod, BSpline, BSpline1D, BSplineCurve, BoundaryCondition, CubicSpline,
-    GridMethod, Interpolator, Linear1D, LinearNDInterpolator, Nearest1D, NearestKind,
-    NearestNDInterpolator, PPoly, ParInterpolator, PchipInterpolator, RBFInterpolator, RbfKernel,
-    RbfOptions, RegularGridInterpolator,
+    Akima1D, AkimaMethod, BSpline, BSpline1D, BSplineCurve, BoundaryCondition,
+    CloughTocher2DInterpolator, CubicSpline, GridMethod, Interpolator, Linear1D,
+    LinearNDInterpolator, Nearest1D, NearestKind, NearestNDInterpolator, PPoly, ParInterpolator,
+    PchipInterpolator, RBFInterpolator, RbfKernel, RbfOptions, RegularGridInterpolator,
 };
 use perf_harness::{run, run_given, unsupported, Case};
 use std::cell::RefCell;
@@ -223,9 +223,34 @@ fn linear_nd<const D: usize>(case: &Case) {
     run(case, library(), q.len(), build, eval);
 }
 
+fn clough_tocher(case: &Case) {
+    let (points, values, q) = (
+        case.rows::<2>("points"),
+        case.array("values"),
+        case.rows::<2>("q"),
+    );
+    let eval = |built: &CloughTocher2DInterpolator, out: &mut [f64]| {
+        batch(built, &q, out, f64::NAN);
+    };
+    if owned() {
+        let make = || (points.clone(), values.clone());
+        let build = |(points, values)| {
+            CloughTocher2DInterpolator::from_owned(points, values).expect("valid")
+        };
+        return run_given(case, OWNED, q.len(), make, build, eval);
+    }
+    let build = || CloughTocher2DInterpolator::new(&points, &values).expect("valid");
+    run(case, library(), q.len(), build, eval);
+}
+
 fn main() {
     let case = Case::from_args();
-    if owned() && !matches!(case.family(), "grid" | "nearest_nd" | "linear_nd" | "rbf") {
+    if owned()
+        && !matches!(
+            case.family(),
+            "grid" | "nearest_nd" | "linear_nd" | "clough_tocher" | "rbf"
+        )
+    {
         unsupported("built with `from_owned` for the types that keep their data");
     }
     match case.family() {
@@ -258,6 +283,7 @@ fn main() {
             3 => linear_nd::<3>(&case),
             other => unsupported(&format!("no points of {other} dimensions")),
         },
+        "clough_tocher" => clough_tocher(&case),
         "rbf" => rbf(&case),
         other => unsupported(&format!("no family {other}")),
     }

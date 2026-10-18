@@ -49,6 +49,7 @@ FAMILIES = (
     ("grid", "Regular grid", "Points in no order inside the grid. `maxN`: the first axis has `N` points and each axis half the one before (SciPy's suite); `eachN`: every axis has `N` points; `flipped`: every axis given from its high end."),
     ("nearest_nd", "`NearestNDInterpolator`", "`n` points of the unit square, evaluated at the pixels of a square image."),
     ("linear_nd", "`LinearNDInterpolator`", "`n` points of the unit square, evaluated at the pixels of a square image (some outside the hull, with no value); `3d`: `n` points of the unit cube, evaluated at 10 000 points of the cube in no order."),
+    ("clough_tocher", "`CloughTocher2DInterpolator`", "`n` points of the unit square and a smooth function of them, evaluated at the pixels of a square image (some outside the hull, with no value). SciPy at its defaults (`tol=1e-6`, `maxiter=400`); interpx solves for the gradients until the residual is 1e-14 of the right-hand side."),
     ("rbf", "`RBFInterpolator`", "`n` points of a square, evaluated at 1000 points in no order (`scattered`) or at the 10 000 pixels of an image (`image`). `global`: all points; `k50`: the 50 nearest."),
 )
 # The cases whose memory over time is reported and drawn.
