@@ -222,6 +222,41 @@ fn a_linear_function_comes_back_with_its_gradient_and_data_values_at_the_points(
 }
 
 #[test]
+fn each_column_is_solved_as_it_would_be_alone() {
+    // Columns that the conjugate gradients solve in different numbers of
+    // steps (a plane at once, a smooth surface, noise), and one that is
+    // constant, whose system has nothing to solve: every column comes out bit
+    // for bit as it does alone, and the constant one has no gradient.
+    let mut next = generator(11);
+    let points: Vec<[f64; 2]> = (0..300).map(|_| [next(), next()]).collect();
+    let columns: [Vec<f64>; 4] = [
+        points.iter().map(|p| 1.0 + p[0] - 2.0 * p[1]).collect(),
+        points
+            .iter()
+            .map(|p| (6.0 * p[0]).sin() * (4.0 * p[1]).cos())
+            .collect(),
+        (0..points.len()).map(|_| next()).collect(),
+        vec![7.0; points.len()],
+    ];
+    let values: Vec<[f64; 4]> = (0..points.len())
+        .map(|i| core::array::from_fn(|c| columns[c][i]))
+        .collect();
+    let together = Cubic::new(&points, &values).expect("valid");
+    for (c, column) in columns.iter().enumerate() {
+        let alone = Cubic::new(&points, column).expect("valid");
+        for (both, one) in together.gradients().iter().zip(alone.gradients()) {
+            for k in 0..2 {
+                assert_eq!(both[k][c].to_bits(), one[k].to_bits(), "column {c}");
+            }
+        }
+    }
+    assert!(together
+        .gradients()
+        .iter()
+        .all(|g| g[0][3] == 0.0 && g[1][3] == 0.0));
+}
+
+#[test]
 fn the_interpolant_and_its_gradient_are_continuous_across_edges() {
     // C1: across an edge the difference of the one-sided slopes goes to zero
     // with the step (it is the second derivative times the step), where the
@@ -298,9 +333,10 @@ fn points_given_more_than_once_count_once_and_queries_outside_have_no_value() {
 }
 
 #[test]
-fn the_estimated_gradients_bring_the_order_of_convergence_to_two() {
-    // With exact gradients the Clough-Tocher interpolant is of order 4; the
-    // global estimate (Renka and Cline 1984) is what limits it. On Franke's
+fn the_order_of_convergence_is_that_of_the_estimated_gradients() {
+    // With the exact gradients of the function in place of the estimate,
+    // SciPy's patch converged at orders 3.25, 3.66, 3.69, 3.05 for h = 1/20
+    // to 1/160 on such points: the estimate is what sets the order. On Franke's
     // first function, a lattice of spacing h with its inner points moved by
     // up to 0.15 h, the largest error inside the square went 2.06e-2,
     // 3.17e-3, 5.21e-4, 1.55e-4, 2.79e-5 for h = 1/10 to 1/160: orders 2.70,

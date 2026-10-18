@@ -98,9 +98,9 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
     /// - [`InterpolateError::InsufficientPoints`] when fewer than `D + 1`
     ///   points are distinct; `actual` is the number of distinct points.
     /// - [`InterpolateError::DegenerateGeometry`] with
-    ///   [`DegeneracyKind::LowerDimensional`] when the points lie in an affine
+    ///   [`DegeneracyKind::LowerDimensional`](crate::DegeneracyKind::LowerDimensional) when the points lie in an affine
     ///   subspace of fewer than `D` dimensions (on one line in the plane), or
-    ///   with [`DegeneracyKind::NumericalLimit`] when the working space of the
+    ///   with [`DegeneracyKind::NumericalLimit`](crate::DegeneracyKind::NumericalLimit) when the working space of the
     ///   exact arithmetic that decides the triangulation cannot be allocated.
     ///
     /// # Examples
@@ -318,8 +318,8 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
     /// # Errors
     ///
     /// [`InterpolateError::InvalidParameter`] for `simplex_tolerance` when
-    /// `tolerance` is NaN or infinite ([`ParamReason::NonFinite`]), or zero
-    /// or below ([`ParamReason::NotPositive`]; SciPy raises `ValueError`).
+    /// `tolerance` is NaN or infinite ([`ParamReason::NonFinite`](crate::ParamReason::NonFinite)), or zero
+    /// or below ([`ParamReason::NotPositive`](crate::ParamReason::NotPositive); SciPy raises `ValueError`).
     ///
     /// # Examples
     ///

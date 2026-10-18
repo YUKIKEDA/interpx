@@ -45,7 +45,7 @@ const SOLVED: f64 = 1e-14;
 /// # Differences from SciPy
 ///
 /// - The gradients are the solution of the system of the estimate, solved
-///   until its residual is below `1e-12` of its right-hand side in every
+///   until its residual is below `1e-14` of its right-hand side in every
 ///   column. SciPy stops its Gauss-Seidel iteration at its `tol` (`1e-6`) or
 ///   `maxiter` (400), and only warns when it has not converged; its
 ///   gradients are that far from the solution, and its values with them.
