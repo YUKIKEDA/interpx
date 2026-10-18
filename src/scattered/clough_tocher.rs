@@ -376,29 +376,23 @@ fn estimate_gradients<V: Value<f64>>(
     values: &[V],
 ) -> Result<Vec<[V; 2]>, InterpolateError> {
     let n = mesh.points.len();
-    // The edges, each once.
+    // The edges, each once: from the triangle with the smaller index of the
+    // two beside it, or from its only triangle on the hull.
     let mut edges: Vec<(u32, u32)> = Vec::with_capacity(mesh.simplices.len());
-    for t in mesh.simplices.as_chunks::<3>().0 {
-        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
-            edges.push((a.min(b), a.max(b)));
+    for (s, t) in mesh.simplices.as_chunks::<3>().0.iter().enumerate() {
+        for k in 0..3 {
+            let beyond = mesh.neighbors[s * 3 + k];
+            if beyond == NO_NEIGHBOR || beyond as usize > s {
+                edges.push((t[(k + 1) % 3], t[(k + 2) % 3]));
+            }
         }
     }
-    edges.sort_unstable();
-    edges.dedup();
-    // The weight `E E^T / L^3` of each edge, and the rows of the system.
-    let mut degree = vec![0_usize; n + 1];
-    for &(a, b) in &edges {
-        degree[a as usize + 1] += 1;
-        degree[b as usize + 1] += 1;
-    }
-    for i in 0..n {
-        degree[i + 1] += degree[i];
-    }
-    let mut next = degree.clone();
-    // Per entry of a row: the other vertex, the weight (xx, xy, yy), and
-    // E / L^3.
-    let mut others = vec![(0_u32, [0.0; 3], [0.0; 2]); 2 * edges.len()];
+    // Per edge, twice its weight `E E^T / L^3` (xx, xy, yy): the block it
+    // adds between its two ends. Per vertex, the sum of four times the
+    // weights of its edges, and the right-hand side.
+    let mut couple = Vec::with_capacity(edges.len());
     let mut block = vec![[0.0_f64; 3]; n];
+    let mut active = vec![false; n];
     let mut rhs = vec![[V::zero(); 2]; n];
     for &(a, b) in &edges {
         let (pa, pb) = (mesh.points[a as usize], mesh.points[b as usize]);
@@ -407,10 +401,10 @@ fn estimate_gradients<V: Value<f64>>(
         let l3 = l * l * l;
         let w = [e[0] * e[0] / l3, e[0] * e[1] / l3, e[1] * e[1] / l3];
         let s = [e[0] / l3, e[1] / l3];
+        couple.push((a, b, w.map(|x| 2.0 * x)));
         for (i, j, sign) in [(a, b, 1.0), (b, a, -1.0)] {
             let (i, j) = (i as usize, j as usize);
-            others[next[i]] = (j as u32, w, [sign * s[0], sign * s[1]]);
-            next[i] += 1;
+            active[i] = true;
             for k in 0..3 {
                 block[i][k] += 4.0 * w[k];
             }
@@ -420,56 +414,61 @@ fn estimate_gradients<V: Value<f64>>(
             rhs[i][1] = rhs[i][1].axpy(-6.0 * sign * s[1], df);
         }
     }
-    let active: Vec<bool> = (0..n).map(|i| degree[i + 1] > degree[i]).collect();
     let product = |x: &[[V; 2]], out: &mut [[V; 2]]| {
         for i in 0..n {
-            if !active[i] {
-                continue;
-            }
             let q = block[i];
-            let mut row = [
+            out[i] = [
                 V::zero().axpy(q[0], x[i][0]).axpy(q[1], x[i][1]),
                 V::zero().axpy(q[1], x[i][0]).axpy(q[2], x[i][1]),
             ];
-            for &(j, w, _) in &others[degree[i]..degree[i + 1]] {
-                let xj = &x[j as usize];
-                row[0] = row[0].axpy(2.0 * w[0], xj[0]).axpy(2.0 * w[1], xj[1]);
-                row[1] = row[1].axpy(2.0 * w[1], xj[0]).axpy(2.0 * w[2], xj[1]);
-            }
-            out[i] = row;
+        }
+        for &(a, b, w) in &couple {
+            let (a, b) = (a as usize, b as usize);
+            let (xa, xb) = (x[a], x[b]);
+            out[a][0] = out[a][0].axpy(w[0], xb[0]).axpy(w[1], xb[1]);
+            out[a][1] = out[a][1].axpy(w[1], xb[0]).axpy(w[2], xb[1]);
+            out[b][0] = out[b][0].axpy(w[0], xa[0]).axpy(w[1], xa[1]);
+            out[b][1] = out[b][1].axpy(w[1], xa[0]).axpy(w[2], xa[1]);
         }
     };
-    let precondition = |r: &[[V; 2]], out: &mut [[V; 2]]| {
-        for i in 0..n {
-            if !active[i] {
-                continue;
-            }
-            let q = block[i];
+    // The inverse of each vertex's block: the preconditioner.
+    let inverse: Vec<[f64; 3]> = block
+        .iter()
+        .zip(&active)
+        .map(|(q, &on)| {
             let det = q[0] * q[2] - q[1] * q[1];
-            out[i] = [
-                V::zero()
-                    .axpy(q[2] / det, r[i][0])
-                    .axpy(-q[1] / det, r[i][1]),
-                V::zero()
-                    .axpy(-q[1] / det, r[i][0])
-                    .axpy(q[0] / det, r[i][1]),
-            ];
-        }
-    };
-    let dot = |a: &[[V; 2]], b: &[[V; 2]]| {
-        a.iter().zip(b).fold(V::zero(), |sum, (x, y)| {
-            sum.axpy(1.0, times(x[0], y[0]))
-                .axpy(1.0, times(x[1], y[1]))
+            if on {
+                [q[2] / det, -q[1] / det, q[0] / det]
+            } else {
+                [0.0; 3]
+            }
         })
+        .collect();
+    let precondition = |i: usize, r: &[V; 2]| {
+        let m = inverse[i];
+        [
+            V::zero().axpy(m[0], r[0]).axpy(m[1], r[1]),
+            V::zero().axpy(m[1], r[0]).axpy(m[2], r[1]),
+        ]
+    };
+    // A sum of products in the order of the vertices, as each dot product
+    // of the iteration is taken.
+    let add = |sum: V, a: &[V; 2], b: &[V; 2]| {
+        sum.axpy(1.0, times(a[0], b[0]))
+            .axpy(1.0, times(a[1], b[1]))
     };
     // Conjugate gradients from zero.
     let mut x = vec![[V::zero(); 2]; n];
     let mut r = rhs.clone();
-    let mut z = vec![[V::zero(); 2]; n];
-    precondition(&r, &mut z);
+    let z: Vec<[V; 2]> = (0..n).map(|i| precondition(i, &r[i])).collect();
     let mut p = z.clone();
-    let mut rz = dot(&r, &z);
-    let bb = dot(&rhs, &rhs);
+    let (mut rr, mut rz, mut bb) = (V::zero(), V::zero(), V::zero());
+    for i in 0..n {
+        rr = add(rr, &r[i], &r[i]);
+        rz = add(rz, &r[i], &z[i]);
+        bb = add(bb, &rhs[i], &rhs[i]);
+    }
+    let mut z = z;
     let mut ap = vec![[V::zero(); 2]; n];
     // One in a column that is still to be solved, zero in one that is: a
     // column stops changing once it is solved, so that each column comes
@@ -477,31 +476,36 @@ fn estimate_gradients<V: Value<f64>>(
     let open = |rr: V| rr.zip_with(bb, |r, b| f64::from(u8::from(r > SOLVED * SOLVED * b)));
     let limit = 10 * n + 100;
     for _ in 0..limit {
-        let still = open(dot(&r, &r));
+        let still = open(rr);
         if still.largest() == 0.0 {
             return Ok(x);
         }
         product(&p, &mut ap);
-        let pap = dot(&p, &ap);
+        let pap = (0..n).fold(V::zero(), |sum, i| add(sum, &p[i], &ap[i]));
         let alpha = rz.zip_with(pap, |a, b| if b == 0.0 { 0.0 } else { a / b });
         let alpha = times(alpha, still);
+        // The new solution, residual, and preconditioned residual, and the
+        // two dot products of the residual, in one pass.
+        let (mut rr_next, mut rz_next) = (V::zero(), V::zero());
         for i in 0..n {
             for k in 0..2 {
                 x[i][k] = x[i][k].axpy(1.0, times(alpha, p[i][k]));
                 r[i][k] = r[i][k].axpy(-1.0, times(alpha, ap[i][k]));
             }
+            z[i] = precondition(i, &r[i]);
+            rr_next = add(rr_next, &r[i], &r[i]);
+            rz_next = add(rz_next, &r[i], &z[i]);
         }
-        precondition(&r, &mut z);
-        let rz_next = dot(&r, &z);
         let beta = rz_next.zip_with(rz, |a, b| if b == 0.0 { 0.0 } else { a / b });
         for i in 0..n {
             for k in 0..2 {
                 p[i][k] = z[i][k].axpy(1.0, times(beta, p[i][k]));
             }
         }
+        rr = rr_next;
         rz = rz_next;
     }
-    if open(dot(&r, &r)).largest() == 0.0 {
+    if open(rr).largest() == 0.0 {
         return Ok(x);
     }
     Err(InterpolateError::SolverFailed(SolverError::NotConverged))
