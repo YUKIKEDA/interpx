@@ -268,7 +268,7 @@ impl<const D: usize> Mesh<D> {
     ) -> Result<Self, String> {
         let refuse = |why: &str| Err::<Self, String>(why.to_string());
         let count = simplices.len() / (D + 1);
-        let whole = simplices.len() % (D + 1) == 0
+        let whole = simplices.len().is_multiple_of(D + 1)
             && neighbors.len() == simplices.len()
             && (D == 0 || count > 0);
         if !whole {
