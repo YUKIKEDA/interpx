@@ -316,6 +316,10 @@ mod tests {
                 "the solver failed: the system is singular",
             ),
             (
+                E::SolverFailed(super::SolverError::NotConverged),
+                "the solver failed: the iteration did not converge",
+            ),
+            (
                 E::InvalidParameter {
                     name: "epsilon",
                     reason: super::ParamReason::NotPositive,

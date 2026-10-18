@@ -138,3 +138,214 @@ fn scipy_clough_tocher_interpolants_evaluate_to_the_golden_values() {
         "worst: against converged SciPy {converged:.1e}, against SciPy at tol 1e-6 {stopped:.1e}"
     );
 }
+
+// --- Input checks ---------------------------------------------------------------
+
+#[test]
+fn the_constructors_report_each_fault_in_the_order_of_the_design() {
+    use interpx::{DegeneracyKind, InterpolateError as E};
+    let points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
+    type Build = fn(&[[f64; 2]], &[f64]) -> Result<Cubic, E>;
+    let constructors: [Build; 2] = [Cubic::new, Cubic::rescaled];
+    for build in constructors {
+        let err = |points: &[[f64; 2]], values: &[f64]| build(points, values).err();
+        assert_eq!(err(&points, &[1.0, 2.0, 3.0]), None);
+        assert_eq!(
+            err(&points, &[1.0, 2.0]),
+            Some(E::LengthMismatch {
+                expected: 3,
+                actual: 2
+            })
+        );
+        assert_eq!(
+            err(&points[..2], &[1.0, 2.0]),
+            Some(E::InsufficientPoints {
+                required: 3,
+                actual: 2
+            })
+        );
+        let bad = [[0.0, 0.0], [f64::NAN, 0.0], [0.0, f64::INFINITY]];
+        assert_eq!(
+            err(&bad, &[f64::NAN, 2.0, 3.0]),
+            Some(E::NonFinite { index: 1 })
+        );
+        assert_eq!(
+            err(&points, &[1.0, f64::NEG_INFINITY, f64::NAN]),
+            Some(E::NonFinite { index: 1 })
+        );
+        let line = [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [0.5, 0.5]];
+        assert_eq!(
+            err(&line, &[1.0; 4]),
+            Some(E::DegenerateGeometry(DegeneracyKind::LowerDimensional {
+                affine_dim: 1
+            }))
+        );
+    }
+}
+
+// --- The rules ------------------------------------------------------------------
+
+/// A small generator, so that the points are the same on every run.
+fn generator(seed: u64) -> impl FnMut() -> f64 {
+    let mut state = seed;
+    move || {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 11) as f64 / (1_u64 << 53) as f64
+    }
+}
+
+#[test]
+fn a_linear_function_comes_back_with_its_gradient_and_data_values_at_the_points() {
+    let mut next = generator(5);
+    let points: Vec<[f64; 2]> = (0..200).map(|_| [next(), next()]).collect();
+    let f = |p: &[f64; 2]| 0.5 - 2.0 * p[0] + 3.0 * p[1];
+    let values: Vec<f64> = points.iter().map(f).collect();
+    let cubic = Cubic::new(&points, &values).expect("valid");
+    // The estimate gives the gradient of a plane: its energy is then zero.
+    for gradient in cubic.gradients() {
+        assert!((gradient[0] + 2.0).abs() < 1e-10 && (gradient[1] - 3.0).abs() < 1e-10);
+    }
+    for _ in 0..500 {
+        let q = [next(), next()];
+        if let Some(got) = cubic.eval(&q) {
+            assert!((got - f(&q)).abs() < 1e-12, "{q:?}");
+        }
+    }
+    // Any data at the points comes back there.
+    let wavy: Vec<f64> = points.iter().map(|p| (5.0 * p[0]).sin() * p[1]).collect();
+    let cubic = Cubic::new(&points, &wavy).expect("valid");
+    for (p, v) in points.iter().zip(&wavy) {
+        assert!((cubic.eval(p).expect("a data point") - v).abs() < 1e-13);
+    }
+}
+
+#[test]
+fn the_interpolant_and_its_gradient_are_continuous_across_edges() {
+    // C1: across an edge the difference of the one-sided slopes goes to zero
+    // with the step (it is the second derivative times the step), where the
+    // linear interpolant's stays (its slope jumps there). At the midpoint of
+    // each inner edge, along the normal, steps of 1e-5 and 1e-6. Near the
+    // hull the second derivative of a thin triangle's patch reached 1e4: the
+    // difference there went 1.02, 0.10, 0.010, 0.001 for steps of 1e-4 down
+    // to 1e-7.
+    let mut next = generator(9);
+    let points: Vec<[f64; 2]> = (0..150).map(|_| [next(), next()]).collect();
+    let values: Vec<f64> = points
+        .iter()
+        .map(|p| (4.0 * p[0]).sin() * (3.0 * p[1]).cos())
+        .collect();
+    let cubic = Cubic::new(&points, &values).expect("valid");
+    let linear = interpx::LinearNDInterpolator::new(&points, &values).expect("valid");
+    let mut edges = 0;
+    for i in 0..points.len() {
+        for j in i + 1..points.len() {
+            let (a, b) = (points[i], points[j]);
+            let m = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
+            let e = [b[0] - a[0], b[1] - a[1]];
+            let l = (e[0] * e[0] + e[1] * e[1]).sqrt();
+            let n = [-e[1] / l, e[0] / l];
+            let at = |s: f64| [m[0] + s * n[0], m[1] + s * n[1]];
+            // The slopes on the two sides differ by this, at a step.
+            let jump = |f: &dyn Fn([f64; 2]) -> Option<f64>, step: f64| {
+                let (c, p, q) = (f(at(0.0))?, f(at(step))?, f(at(-step))?);
+                Some(((p - c) - (c - q)).abs() / step)
+            };
+            let lin = |x: [f64; 2]| linear.eval(&x);
+            let (Some(kink), Some(kink_fine)) = (jump(&lin, 1e-5), jump(&lin, 1e-6)) else {
+                continue;
+            };
+            // Only on an edge: where the linear interpolant's slope jumps by
+            // the same at both steps (a midpoint that is not on the edge is
+            // straddled by one step and not the other).
+            if kink < 1e-2 || (kink_fine - kink).abs() > 0.1 * kink {
+                continue;
+            }
+            let cub = |x: [f64; 2]| cubic.eval(&x);
+            let coarse = jump(&cub, 1e-5).expect("inside");
+            let fine = jump(&cub, 1e-6).expect("inside");
+            assert!(fine <= 0.2 * coarse + 1e-6, "{m:?}: {coarse} then {fine}");
+            edges += 1;
+        }
+    }
+    assert!(edges > 50, "{edges}");
+}
+
+#[test]
+fn points_given_more_than_once_count_once_and_queries_outside_have_no_value() {
+    let points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]];
+    let cubic = Cubic::new(&points, &[1.0, 2.0, 3.0, 20.0, 4.0]).expect("valid");
+    assert_eq!(cubic.len(), 5);
+    assert!((cubic.eval(&[1.0, 0.0]).expect("a point") - 2.0).abs() < 1e-14);
+    // The point given again has no gradient of its own.
+    assert_eq!(cubic.gradients()[3], [0.0, 0.0]);
+    for query in [
+        [1.5, 0.5],
+        [-0.1, 0.5],
+        [f64::NAN, 0.5],
+        [0.5, f64::INFINITY],
+    ] {
+        assert_eq!(cubic.eval(&query), None, "{query:?}");
+    }
+    let queries = [[0.5, 0.5], [2.0, 2.0]];
+    let mut out = [0.0; 2];
+    assert_eq!(cubic.eval_batch_into(&queries, &mut out, -1.0), Ok(()));
+    assert_eq!(out[1], -1.0);
+    fn assert_send_sync<T: Send + Sync + 'static>() {}
+    assert_send_sync::<Cubic>();
+    assert_send_sync::<Cubic<[f64; 3]>>();
+}
+
+#[test]
+fn the_estimated_gradients_bring_the_order_of_convergence_to_two() {
+    // With exact gradients the Clough-Tocher interpolant is of order 4; the
+    // global estimate (Renka and Cline 1984) is what limits it. On Franke's
+    // first function, a lattice of spacing h with its inner points moved by
+    // up to 0.15 h, the largest error inside the square went 2.06e-2,
+    // 3.17e-3, 5.21e-4, 1.55e-4, 2.79e-5 for h = 1/10 to 1/160: orders 2.70,
+    // 2.61, 1.75, 2.47, 2.38 on average. SciPy iterated to convergence gives
+    // the same errors within 15% (2.06e-2 to 3.02e-5).
+    use common::functions::franke;
+    let f = |p: [f64; 2]| franke(1, p[0], p[1]).expect("F1");
+    let halton = |i: usize, base: usize| {
+        let (mut x, mut share, mut i) = (0.0, 1.0, i);
+        while i > 0 {
+            share /= base as f64;
+            x += share * (i % base) as f64;
+            i /= base;
+        }
+        x
+    };
+    let error = |m: u32| {
+        let h = 1.0 / f64::from(m);
+        let mut points = Vec::new();
+        for i in 0..=m {
+            for j in 0..=m {
+                let k = (i * (m + 1) + j + 1) as usize;
+                let s = [halton(k, 2), halton(k, 3)].map(|u| (u - 0.5) * 0.3 * h);
+                let moved = |c: u32, s: f64| if c == 0 || c == m { 0.0 } else { s };
+                points.push([
+                    f64::from(i) * h + moved(i, s[0]),
+                    f64::from(j) * h + moved(j, s[1]),
+                ]);
+            }
+        }
+        let values: Vec<f64> = points.iter().map(|p| f(*p)).collect();
+        let cubic = Cubic::from_owned(points, values).expect("valid");
+        let mut worst = 0.0_f64;
+        for i in 0..=40 {
+            for j in 0..=40 {
+                let p = [i, j].map(|q| 0.1 + 0.8 * f64::from(q) / 40.0);
+                worst = worst.max((cubic.eval(&p).expect("inside") - f(p)).abs());
+            }
+        }
+        worst
+    };
+    let (coarse, fine) = (error(10), error(160));
+    let order = (coarse / fine).log2() / 4.0;
+    assert!(
+        (2.2..=2.6).contains(&order),
+        "{coarse:.2e} {fine:.2e}: {order}"
+    );
+}

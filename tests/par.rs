@@ -266,7 +266,8 @@ fn grids_give_the_serial_results() {
 #[test]
 fn scattered_types_give_the_serial_results() {
     use interpx::{
-        LinearNDInterpolator, NearestNDInterpolator, RBFInterpolator, RbfKernel, RbfOptions,
+        CloughTocher2DInterpolator, LinearNDInterpolator, NearestNDInterpolator, RBFInterpolator,
+        RbfKernel, RbfOptions,
     };
 
     let mut rng = Lcg(14);
@@ -293,6 +294,8 @@ fn scattered_types_give_the_serial_results() {
     check("RBF, neighbors", &near.expect("valid"), &points, FILL);
     let linear = LinearNDInterpolator::new(&data, &values).expect("valid");
     check("LinearND", &linear, &points, FILL);
+    let cubic = CloughTocher2DInterpolator::new(&data, &values).expect("valid");
+    check("CloughTocher2D", &cubic, &points, FILL);
 }
 
 /// An interpolator of the caller's own, slow enough that the first points

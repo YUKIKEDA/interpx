@@ -633,3 +633,87 @@ impl<V: Value<f64>> Interpolator for CloughTocher2DInterpolator<V> {
         Some(self.patch(simplex, [c[0], c[1], last]))
     }
 }
+
+/// The stored form of the `serde` feature.
+#[cfg(feature = "serde")]
+mod stored {
+    use super::{leans, CloughTocher2DInterpolator, Mesh};
+    use crate::scattered::Scaling;
+    use crate::{validate, InterpolateError, Value};
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    use std::borrow::Cow;
+
+    /// The version of the stored form.
+    const VERSION: u32 = 1;
+
+    /// What is stored: what `LinearNDInterpolator` stores (the points, the
+    /// values, the simplices and their neighbors, the change of coordinates,
+    /// the simplex tolerance), and the gradients, so that the system of the
+    /// estimate is not solved again when the form is read. The leans of the
+    /// triangles are made again from the triangulation.
+    #[derive(Serialize, Deserialize)]
+    #[serde(bound = "")]
+    struct Form<'a, V: Value<f64>> {
+        version: u32,
+        #[serde(with = "crate::stored")]
+        points: Cow<'a, [[f64; 2]]>,
+        #[serde(with = "crate::stored")]
+        values: Cow<'a, [V]>,
+        simplices: Cow<'a, [u32]>,
+        neighbors: Cow<'a, [u32]>,
+        scaling: Option<Scaling<2>>,
+        simplex_tolerance: f64,
+        #[serde(with = "crate::stored")]
+        gradients: Cow<'a, [[V; 2]]>,
+    }
+
+    impl<V: Value<f64>> Serialize for CloughTocher2DInterpolator<V> {
+        fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+            Form {
+                version: VERSION,
+                points: Cow::Borrowed(&self.mesh.points),
+                values: Cow::Borrowed(&self.values),
+                simplices: Cow::Borrowed(&self.mesh.simplices),
+                neighbors: Cow::Borrowed(&self.mesh.neighbors),
+                scaling: self.mesh.scaling,
+                simplex_tolerance: self.mesh.tolerance,
+                gradients: Cow::Borrowed(&self.gradients),
+            }
+            .serialize(to)
+        }
+    }
+
+    /// The points, the values, and the triangulation pass the checks of the
+    /// reading of `LinearNDInterpolator`; the gradients are one a point, and
+    /// finite.
+    impl<'de, V: Value<f64>> Deserialize<'de> for CloughTocher2DInterpolator<V> {
+        fn deserialize<D2: Deserializer<'de>>(from: D2) -> Result<Self, D2::Error> {
+            let form = Form::<V>::deserialize(from)?;
+            crate::stored::version(form.version, VERSION)?;
+            let points = form.points.into_owned();
+            let values = form.values.into_owned();
+            Mesh::check(&points, &values).map_err(de::Error::custom)?;
+            let gradients = form.gradients.into_owned();
+            validate::length(&gradients, points.len()).map_err(de::Error::custom)?;
+            let finite = |g: &[V; 2]| g[0].all_finite() && g[1].all_finite();
+            if let Some(index) = validate::first_failing(&gradients, finite) {
+                return Err(de::Error::custom(InterpolateError::NonFinite { index }));
+            }
+            let mesh = Mesh::from_stored(
+                points,
+                form.simplices.into_owned(),
+                form.neighbors.into_owned(),
+                form.scaling,
+                form.simplex_tolerance,
+            )
+            .map_err(de::Error::custom)?;
+            let lean = leans(&mesh);
+            Ok(Self {
+                mesh,
+                values,
+                gradients,
+                lean,
+            })
+        }
+    }
+}
