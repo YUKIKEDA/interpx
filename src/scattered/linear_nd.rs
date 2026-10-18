@@ -46,9 +46,10 @@ const RCOND_LIMIT: f64 = 1000.0 * f64::EPSILON;
 ///
 /// The simplex of a query is found by a walk across the faces toward it, from
 /// a simplex that the construction chose for the part of the box of the
-/// points the query is in (the box is cut into at most as many cells as
-/// there are points: `p` along each axis, the largest `p` with `p^D` no more
-/// than the number of points). Where the walk starts depends on the query alone, so a
+/// points the query is in (the box is cut into at most twice as many cells
+/// as there are points: `p` along each axis, the largest `p` with `p^D` no
+/// more than twice the number of points). Where the walk starts depends on
+/// the query alone, so a
 /// batch, and a parallel one, gives what `eval` gives, bit for bit. A walk
 /// that does not arrive within as many steps as there are simplices, or that
 /// meets a degenerate simplex, gives way to a look at every simplex.
@@ -336,29 +337,32 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
         Ok(linear)
     }
 
-    /// Cuts the box into at most as many cells as there are points, and walks
-    /// to the middle of each from the start of the cell before it: the last
-    /// simplex of that walk (the one that holds the middle, or one on the
-    /// hull toward it) is the start of the cell.
+    /// Cuts the box into at most twice as many cells as there are points,
+    /// and walks to the middle of each from the start of the cell before it:
+    /// the last simplex of that walk (the one that holds the middle, or one
+    /// on the hull toward it) is the start of the cell.
     ///
     /// The number of cells along each axis is the largest `p` with `p^D` no
-    /// more than the number of points. A rounding up of `n^(1/D)` made `p`
-    /// two or more whatever the dimension, and `2^D` cells for a few points:
-    /// a million at 20 dimensions for 62 simplices (0.37 s to build; the
-    /// review of #183 measured 3.5 s at 22). In high dimensions `p` is 1, and
-    /// a walk starts from where the walk to the middle of the box ended.
+    /// more than twice the number of points. A rounding up of `n^(1/D)` made
+    /// `p` two or more whatever the dimension, and `2^D` cells for a few
+    /// points: a million at 20 dimensions for 62 simplices (0.37 s to build;
+    /// the review of #183 measured 3.5 s at 22). In high dimensions `p` is 1,
+    /// and a walk starts from where the walk to the middle of the box ended.
+    /// Twice rather than once the number of points (measured in three trees
+    /// in turn, three rounds): evaluation 5 to 15% faster, construction 0 to
+    /// 5% slower; at 100 points in 3-D the cells are 125 and not 64.
     fn place_cells(&mut self) {
         let count = self.simplex_count();
         if D == 0 || count == 0 {
             return;
         }
-        let per_axis = per_axis(self.points.len(), D);
+        let per_axis = per_axis(2 * self.points.len(), D);
         // Every axis has a range above zero: the points span D dimensions.
         let width: [f64; D] =
             core::array::from_fn(|d| (self.upper[d] - self.lower[d]) / per_axis as f64);
         self.cell_scale = core::array::from_fn(|d| 1.0 / width[d]);
         self.per_axis = per_axis;
-        // No more than the number of points (`per_axis`).
+        // No more than twice the number of points (`per_axis`).
         let total = per_axis.pow(D as u32);
         self.cells = Vec::with_capacity(total);
         let mut start = 0;
@@ -490,8 +494,11 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
     }
 
     /// The walk from `start` toward `x`: across the face opposite the first
-    /// vertex whose coordinate is below `-EPS`, as many steps at most as there
-    /// are simplices. SciPy's `_find_simplex_directed`.
+    /// vertex whose coordinate is below `-EPS` (SciPy's
+    /// `_find_simplex_directed`), as many steps at most as there are
+    /// simplices. SciPy stops at one plus a quarter of them and looks at
+    /// every simplex; here the start is near, and a walk that long is one
+    /// that has gone wrong either way.
     fn walk(&self, x: &[f64; D], start: u32) -> Walked<D> {
         let mut simplex = start;
         for _ in 0..self.simplex_count() {
@@ -1057,7 +1064,7 @@ mod tests {
     }
 
     #[test]
-    fn the_cells_are_no_more_than_the_points_in_any_dimension() {
+    fn the_cells_are_no_more_than_twice_the_points_in_any_dimension() {
         // The largest p with p^D no more than n.
         assert_eq!(super::per_axis(19, 16), 1);
         assert_eq!(super::per_axis(7, 3), 1);
@@ -1067,7 +1074,8 @@ mod tests {
         assert_eq!(super::per_axis(100_000, 2), 316);
         assert_eq!(super::per_axis(1000, 64), 1);
         assert_eq!(super::per_axis(usize::MAX, 2), 4_294_967_295);
-        // 23 points in 20 dimensions: one cell (it was 2^20, and 0.37 s).
+        // 23 points in 20 dimensions: one cell, 46 being under 2^20 (it
+        // was 2^20 cells, and 0.37 s).
         let mut next = generator(5);
         let points: Vec<[f64; 20]> = (0..23).map(|_| core::array::from_fn(|_| next())).collect();
         let linear = LinearNDInterpolator::new(&points, &[0.0; 23]).expect("valid");
