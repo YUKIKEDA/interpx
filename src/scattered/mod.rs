@@ -3,6 +3,7 @@
 
 mod kdtree;
 mod linear_nd;
+mod mesh;
 mod nearest_nd;
 mod rbf;
 
