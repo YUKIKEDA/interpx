@@ -31,6 +31,7 @@ The hot path is evaluation: `eval`, `eval_or`, `eval_batch_into`, and the `_par`
 - Interval search is a binary search or a caller-held `Hint`. A `Hint` is a value the caller owns or a batch-local; `&self` evaluation is pure (`.cursor/rules/api-contract.mdc`).
 - Do not branch per element on data that is constant per call; hoist it.
 - `#[inline]` and `#[inline(always)]` only where a measurement shows an effect.
+- Code moved into another module or behind a new function, with no line of it changed, is measured on its evaluation before the move is called a refactor. M4-2 moved `LinearND`'s search into `Mesh` unchanged, and its evaluation was 1.14 to 1.28 times main's on small and image cases; the one new call between `eval` and `Mesh::find` was not inlined, and `#[inline]` on it (and on `vertices`) made it main's or faster. The whole comparison caught it, after the PR's figures had been measured.
 
 ## Dependency chains
 
