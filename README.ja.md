@@ -423,7 +423,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `LinearNDInterpolator`
 
-`D` 次元で、点の Delaunay 分割の上で線形に補間します（SciPy の `LinearNDInterpolator`）。点の凸包の外では値がありません。`rescaled` は、各座標を同じ範囲にそろえてから三角形分割します（`rescale=True`）。
+`D` 次元で、点の Delaunay 分割の上で線形に補間します（SciPy の `LinearNDInterpolator`）。点の凸包の外では値がありません。`rescaled` は、各座標を同じ範囲にそろえてから三角形分割します（`rescale=True`）。`with_simplex_tolerance` は、単体の内側とみなす範囲を広げます（SciPy 1.18 の `simplex_tolerance`。SciPy では評価のたびに渡します）。
 
 ```rust
 use interpx::{InterpolateError, Interpolator, LinearNDInterpolator};

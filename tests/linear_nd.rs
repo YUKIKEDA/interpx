@@ -58,6 +58,12 @@ fn check<const D: usize>(case: &Json) -> (usize, usize, f64) {
         Linear::new(&points, &values)
     }
     .expect("valid points");
+    let linear = match case["options"]["simplex_tolerance"].as_f64() {
+        Some(tolerance) => linear
+            .with_simplex_tolerance(tolerance)
+            .expect("a tolerance above zero"),
+        None => linear,
+    };
     assert_eq!(linear.len(), points.len(), "{name}");
     let scale = values.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
     let expected = nums(&case["expected"]);
@@ -135,7 +141,7 @@ fn scipy_linear_interpolants_evaluate_to_the_golden_values() {
         cases[dimension] += 1;
         (apart, outside, worst) = (apart + a, outside + o, worst.max(w));
     }
-    assert_eq!(cases, [0, 0, 16, 4, 1]);
+    assert_eq!(cases, [0, 0, 18, 4, 1]);
     println!("apart {apart}, outside {outside}, worst {worst:.1e}");
     assert!(worst < 1e-14, "{worst}");
 }
@@ -266,6 +272,43 @@ fn the_constructors_report_each_fault_in_the_order_of_the_design() {
             })
         );
     }
+}
+
+#[test]
+fn a_simplex_tolerance_is_above_zero_and_finite() {
+    let linear = Linear::new(&[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], &[0.0; 3]).expect("valid");
+    let refused = |reason| {
+        Some(E::InvalidParameter {
+            name: "simplex_tolerance",
+            reason,
+        })
+    };
+    for zero_or_below in [0.0, -0.0, -1.0, f64::NEG_INFINITY] {
+        let reason = if zero_or_below.is_finite() {
+            ParamReason::NotPositive
+        } else {
+            ParamReason::NonFinite
+        };
+        assert_eq!(
+            linear.clone().with_simplex_tolerance(zero_or_below).err(),
+            refused(reason),
+            "{zero_or_below}"
+        );
+    }
+    for not_finite in [f64::NAN, f64::INFINITY] {
+        assert_eq!(
+            linear.clone().with_simplex_tolerance(not_finite).err(),
+            refused(ParamReason::NonFinite)
+        );
+    }
+    // A smaller tolerance than the default narrows what is inside.
+    let narrow = linear
+        .clone()
+        .with_simplex_tolerance(1e-3)
+        .expect("above zero");
+    assert_eq!(narrow.simplex_tolerance(), 1e-3);
+    assert_eq!(linear.eval(&[-1e-15, 0.5]), Some(0.0));
+    assert_eq!(narrow.eval(&[-1e-15, 0.5]), None);
 }
 
 // --- The rules ------------------------------------------------------------------

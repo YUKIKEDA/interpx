@@ -250,6 +250,17 @@ def linear_chosen(rng) -> list[dict]:
         lv = np.sin(3.0 * lp).sum(axis=1)
         lq = -0.05 + 1.1 * rng.random((200, d))
         add(f"linear/random_{n}_d{d}", {"rescale": False}, lp, lv, lq, lambda: si.LinearNDInterpolator(lp, lv, fill_value=np.nan))
+
+    # SciPy 1.18's simplex_tolerance: queries just outside the edges of the
+    # hull (moved out from the centre by 1e-14 to 1e-11 of their distance),
+    # with the default tolerance and with 100 times it. No random numbers are
+    # drawn, so the cases above stay as they are.
+    shifts = [1e-14, 1e-13, 1e-12, 1e-11]
+    qt = np.vstack([centre + (1.0 + s) * (mids - centre) for s in shifts])
+    for tol in (1.0, 100.0):
+        name = "linear/hull_edges/tolerance" + ("" if tol == 1.0 else f"_{tol:g}")
+        expected = si.LinearNDInterpolator(hp, hv, fill_value=np.nan)(qt, simplex_tolerance=tol)
+        out.append(golden.case(name, reference, {"rescale": False, "simplex_tolerance": tol}, points=hp, values=hv, queries=qt, expected=expected))
     return out
 
 

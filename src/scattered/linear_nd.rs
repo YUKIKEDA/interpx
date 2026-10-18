@@ -11,7 +11,8 @@ use std::borrow::Cow;
 const NO_NEIGHBOR: u32 = u32::MAX;
 
 /// How far below zero (or above one) a barycentric coordinate may be for the
-/// point to be inside the simplex: SciPy's `eps`.
+/// point to be inside the simplex: SciPy's `eps`, with a simplex tolerance of
+/// one.
 const EPS: f64 = 100.0 * f64::EPSILON;
 
 /// The wider leeway toward a degenerate simplex, in the search over every
@@ -120,6 +121,10 @@ pub struct LinearNDInterpolator<const D: usize, V: Value<f64> = f64> {
     /// What is taken off each coordinate and what it is divided by, before
     /// the points are triangulated and a query is located.
     scaling: Option<Scaling<D>>,
+    /// The multiplier of [`EPS`]: SciPy's `simplex_tolerance`.
+    tolerance: f64,
+    /// [`EPS`] times the tolerance.
+    eps: f64,
 }
 
 impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
@@ -332,6 +337,8 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
             per_axis: 0,
             cell_scale: [0.0; D],
             scaling,
+            tolerance: 1.0,
+            eps: EPS,
         };
         linear.place_cells();
         Ok(linear)
@@ -469,6 +476,65 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
         self.simplices.len() / (D + 1)
     }
 
+    /// Returns the same interpolant, with the tolerance by which a query is
+    /// taken to be in a simplex multiplied by `tolerance`: SciPy's
+    /// `simplex_tolerance` (SciPy 1.18), which SciPy takes at each call.
+    ///
+    /// A barycentric coordinate down to `-100 * f64::EPSILON * tolerance`
+    /// (and up to one more than that) counts as inside. Raise it when points
+    /// on the edges of very oblique simplices find none. The wider leeway of
+    /// the search toward a degenerate simplex (`sqrt(f64::EPSILON)`) does not
+    /// change, as in SciPy. The default is 1.
+    ///
+    /// # Errors
+    ///
+    /// [`InterpolateError::InvalidParameter`] for `simplex_tolerance` when
+    /// `tolerance` is NaN or infinite ([`ParamReason::NonFinite`]), or zero
+    /// or below ([`ParamReason::NotPositive`]; SciPy raises `ValueError`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use interpx::{InterpolateError, Interpolator, LinearNDInterpolator};
+    ///
+    /// # fn main() -> Result<(), InterpolateError> {
+    /// let linear = LinearNDInterpolator::new(&[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], &[0.0; 3])?;
+    /// assert_eq!(linear.simplex_tolerance(), 1.0);
+    /// // Outside the edge x = 0 by 1e-13: farther than the default tolerance.
+    /// let near = [-1e-13, 0.5];
+    /// assert_eq!(linear.eval(&near), None);
+    /// let wider = linear.with_simplex_tolerance(10.0)?;
+    /// assert_eq!(wider.eval(&near), Some(0.0));
+    /// assert!(wider.clone().with_simplex_tolerance(0.0).is_err());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn with_simplex_tolerance(mut self, tolerance: f64) -> Result<Self, InterpolateError> {
+        let reason = if !tolerance.is_finite() {
+            Some(ParamReason::NonFinite)
+        } else if tolerance <= 0.0 {
+            Some(ParamReason::NotPositive)
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            return Err(InterpolateError::InvalidParameter {
+                name: "simplex_tolerance",
+                reason,
+            });
+        }
+        self.tolerance = tolerance;
+        self.eps = EPS * tolerance;
+        Ok(self)
+    }
+
+    /// Returns the simplex tolerance. See
+    /// [`with_simplex_tolerance`](LinearNDInterpolator::with_simplex_tolerance)
+    /// for an example.
+    pub fn simplex_tolerance(&self) -> f64 {
+        self.tolerance
+    }
+
     /// The transform of a simplex: `L^-1 P`, `U`, the last vertex.
     fn transform(&self, simplex: u32) -> &[f64] {
         let stride = 2 * D * D + D;
@@ -490,7 +556,7 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
     /// some axis: then it is outside the hull. SciPy's
     /// `_is_point_fully_outside`.
     fn fully_outside(&self, x: &[f64; D]) -> bool {
-        (0..D).any(|d| x[d] < self.lower[d] - EPS || x[d] > self.upper[d] + EPS)
+        (0..D).any(|d| x[d] < self.lower[d] - self.eps || x[d] > self.upper[d] + self.eps)
     }
 
     /// The walk from `start` toward `x`: across the face opposite the first
@@ -506,12 +572,12 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
             let mut inside = true;
             let mut across = None;
             for (k, ck) in c.iter().copied().chain([last]).enumerate() {
-                if ck < -EPS {
+                if ck < -self.eps {
                     across = Some((k, ck));
                     break;
                 }
                 // Above one, or NaN: a degenerate simplex is in the way.
-                if ck.is_nan() || ck > 1.0 + EPS {
+                if ck.is_nan() || ck > 1.0 + self.eps {
                     inside = false;
                 }
             }
@@ -560,12 +626,12 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
                 .copied()
                 .chain([last])
                 .enumerate()
-                .all(|(k, ck)| -low(k) <= ck && ck <= 1.0 + EPS)
+                .all(|(k, ck)| -low(k) <= ck && ck <= 1.0 + self.eps)
         };
         for simplex in 0..self.simplex_count() as u32 {
             if !self.transform(simplex)[0].is_nan() {
                 let (c, last) = self.barycentric(simplex, x);
-                if within(&c, last, &|_| EPS) {
+                if within(&c, last, &|_| self.eps) {
                     return Some((simplex, c, last));
                 }
                 continue;
@@ -580,7 +646,7 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
                     if self.neighbor(next, k) == simplex {
                         EPS_BROAD
                     } else {
-                        EPS
+                        self.eps
                     }
                 };
                 if within(&c, last, &toward) {
@@ -894,6 +960,7 @@ mod stored {
         simplices: Cow<'a, [u32]>,
         neighbors: Cow<'a, [u32]>,
         scaling: Option<Scaling<D>>,
+        simplex_tolerance: f64,
     }
 
     impl<const D: usize, V: Value<f64>> Serialize for LinearNDInterpolator<D, V> {
@@ -905,6 +972,7 @@ mod stored {
                 simplices: Cow::Borrowed(&self.simplices),
                 neighbors: Cow::Borrowed(&self.neighbors),
                 scaling: self.scaling,
+                simplex_tolerance: self.tolerance,
             }
             .serialize(to)
         }
@@ -994,6 +1062,7 @@ mod stored {
                 }
             }
             LinearNDInterpolator::assemble(points, values, simplices, neighbors, form.scaling)
+                .and_then(|linear| linear.with_simplex_tolerance(form.simplex_tolerance))
                 .map_err(de::Error::custom)
         }
     }

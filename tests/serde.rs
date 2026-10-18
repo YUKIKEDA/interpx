@@ -847,6 +847,17 @@ fn scattered_types_come_back_and_a_broken_form_does_not() {
     broken["simplices"] = json!([]);
     broken["neighbors"] = json!([]);
     assert!(serde_json::from_value::<LinearNDInterpolator<2>>(broken).is_err());
+    // The simplex tolerance comes back, and one that is not above zero is
+    // not read.
+    let wider = LinearNDInterpolator::new(&data, &twice)
+        .and_then(|linear| linear.with_simplex_tolerance(50.0))
+        .expect("valid");
+    check("LinearND, a simplex tolerance", &wider, &points, &[], false);
+    let back: LinearNDInterpolator<2> = serde_json::from_value(json!(wider)).expect("read");
+    assert_eq!(back.simplex_tolerance(), 50.0);
+    let mut broken = json!(wider);
+    broken["simplex_tolerance"] = json!(0.0);
+    assert!(serde_json::from_value::<LinearNDInterpolator<2>>(broken).is_err());
     // Without dimensions: no simplex, and the first value.
     let nowhere = LinearNDInterpolator::new(&[[], []], &[7.0, 8.0]).expect("valid");
     let back: LinearNDInterpolator<0> = serde_json::from_value(json!(nowhere)).expect("read");

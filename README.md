@@ -423,7 +423,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `LinearNDInterpolator`
 
-Linear interpolation on the Delaunay triangulation of the points, in `D` dimensions (SciPy's `LinearNDInterpolator`). No value outside the convex hull of the points. `rescaled` triangulates after each coordinate is brought to the same range (`rescale=True`).
+Linear interpolation on the Delaunay triangulation of the points, in `D` dimensions (SciPy's `LinearNDInterpolator`). No value outside the convex hull of the points. `rescaled` triangulates after each coordinate is brought to the same range (`rescale=True`). `with_simplex_tolerance` widens what counts as inside a simplex (SciPy 1.18's `simplex_tolerance`, which SciPy takes at each call).
 
 ```rust
 use interpx::{InterpolateError, Interpolator, LinearNDInterpolator};

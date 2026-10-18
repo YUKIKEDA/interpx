@@ -687,6 +687,7 @@ interpx/
 
 * **`LinearNDInterpolator<const D: usize, V: Value<f64> = f64>`（M4-1、#180、SciPy の `LinearNDInterpolator`）**: 点の Delaunay 分割の単体ごとに線形な補間。`Point = [f64; D]`、`Output = V`。
   * **構築**: `new(points, values)`、`from_owned(points: Vec<..>, values: Vec<V>)`（点と値を移す）、`rescaled`（SciPy の `rescale=True`。`NearestND` と同じ変換のあとで三角形分割する）、`rescaled_from_owned`（移した点をその場で変換する）。点と値を持つ。`points()` は三角形分割した点を返す（SciPy の `points` と同じく、変換のあとのもの）。
+  * **`with_simplex_tolerance(t)`**（SciPy 1.18 の `simplex_tolerance`。M4-1 のオーナーの決定）: 単体の内側の判定の許容誤差を `100ε × t` にする。SciPy は呼び出しごとに受け取るが、`Interpolator::eval` に引数の場所がないので、`NearestND` の距離の上限と同じく補間器に持たせる。`eps_broad` は変えない（SciPy と同じ）。正で有限でない `t` は `InvalidParameter`（SciPy は `ValueError`）。golden（凸包の辺の外へ 1e-14〜1e-11 ずらした 36 問い合わせ、既定と 100 倍）で、値があるかないかが SciPy と一致する（既定で 1、100 倍で 15 に値がある）。保存する。
   * **検査の順**: 長さ → 点の数（$D + 1$ 以上）→ 点の数の上限（`u32`）→ 座標 → 値 →（`rescaled` だけ）平均と範囲 → 三角形分割（相異なる点が $D + 1$ 未満、低次元、正確な計算の作業領域）。
   * **0 次元と 1 次元**: 0 次元では全部の点が同じ 1 点なので、最初の値を返す（`convx` は呼ばない。`NearestND` と同じ）。1 次元では、隣り合う点の間の線形補間になる。SciPy は 1 次元の点を受け付けない（`ValueError: Need at least 2-D data`）。
   * **SciPy との一致**（golden 21 件、`compare/goldens/scattered.json`。2・3・4 次元）: 相対の差は最大 $2.6 \times 10^{-15}$（許容は $10^{-13}$）。格子から点を抜いたケースは 4 点以上が同じ円の上にあり、64 問い合わせのうち 20 で値が違う（分け方が違う区画）。そこでも、1 次関数は両方で厳密に再現される（テスト）。
