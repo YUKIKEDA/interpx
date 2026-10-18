@@ -46,8 +46,9 @@ const RCOND_LIMIT: f64 = 1000.0 * f64::EPSILON;
 ///
 /// The simplex of a query is found by a walk across the faces toward it, from
 /// a simplex that the construction chose for the part of the box of the
-/// points the query is in (the box is cut into about as many cells as there
-/// are simplices). Where the walk starts depends on the query alone, so a
+/// points the query is in (the box is cut into at most as many cells as
+/// there are points: `p` along each axis, the largest `p` with `p^D` no more
+/// than the number of points). Where the walk starts depends on the query alone, so a
 /// batch, and a parallel one, gives what `eval` gives, bit for bit. A walk
 /// that does not arrive within as many steps as there are simplices, or that
 /// meets a degenerate simplex, gives way to a look at every simplex.
@@ -304,7 +305,9 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
         neighbors: Vec<u32>,
         scaling: Option<Scaling<D>>,
     ) -> Result<Self, InterpolateError> {
-        let mut transforms = Vec::with_capacity(simplices.len() / (D + 1) * (2 * D * D + D));
+        // As many simplices as points or many more: by `reserve`.
+        let mut transforms = Vec::new();
+        crate::reserve::room(&mut transforms, simplices.len() / (D + 1) * (2 * D * D + D))?;
         for simplex in simplices.chunks_exact(D + 1) {
             push_transform(&points, simplex, &mut transforms);
         }
@@ -333,21 +336,29 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
         Ok(linear)
     }
 
-    /// Cuts the box into about as many cells as there are simplices, and
-    /// walks to the middle of each from the start of the cell before it: the
-    /// last simplex of that walk (the one that holds the middle, or one on
-    /// the hull toward it) is the start of the cell.
+    /// Cuts the box into at most as many cells as there are points, and walks
+    /// to the middle of each from the start of the cell before it: the last
+    /// simplex of that walk (the one that holds the middle, or one on the
+    /// hull toward it) is the start of the cell.
+    ///
+    /// The number of cells along each axis is the largest `p` with `p^D` no
+    /// more than the number of points. A rounding up of `n^(1/D)` made `p`
+    /// two or more whatever the dimension, and `2^D` cells for a few points:
+    /// a million at 20 dimensions for 62 simplices (0.37 s to build; the
+    /// review of #183 measured 3.5 s at 22). In high dimensions `p` is 1, and
+    /// a walk starts from where the walk to the middle of the box ended.
     fn place_cells(&mut self) {
         let count = self.simplex_count();
         if D == 0 || count == 0 {
             return;
         }
-        let per_axis = ((self.points.len() as f64).powf(1.0 / D as f64).ceil() as usize).max(1);
+        let per_axis = per_axis(self.points.len(), D);
         // Every axis has a range above zero: the points span D dimensions.
         let width: [f64; D] =
             core::array::from_fn(|d| (self.upper[d] - self.lower[d]) / per_axis as f64);
         self.cell_scale = core::array::from_fn(|d| 1.0 / width[d]);
         self.per_axis = per_axis;
+        // No more than the number of points (`per_axis`).
         let total = per_axis.pow(D as u32);
         self.cells = Vec::with_capacity(total);
         let mut start = 0;
@@ -584,8 +595,35 @@ enum Walked<const D: usize> {
     Lost(u32),
 }
 
+/// The largest `p` with `p^dim` no more than `n`, and 1 at least.
+fn per_axis(n: usize, dim: usize) -> usize {
+    let fits = |p: usize| {
+        u32::try_from(dim)
+            .ok()
+            .and_then(|dim| p.checked_pow(dim))
+            .is_some_and(|cells| cells <= n)
+    };
+    let mut p = ((n as f64).powf(1.0 / dim as f64).floor() as usize).max(1);
+    // The root in floating point can be a little off either way.
+    while p > 1 && !fits(p) {
+        p -= 1;
+    }
+    while fits(p + 1) {
+        p += 1;
+    }
+    p
+}
+
 /// The simplices of the Delaunay triangulation of the points, and their
 /// neighbors, `D + 1` of each a simplex. Without dimensions there is none.
+///
+/// Every distinct point is a vertex, and a point given more than once is
+/// represented by the smallest index of the points equal to it (`convx`'s
+/// documentation of `DelaunayTriangulation`): so a vertex has the value of
+/// the first of equal points, and the others are no vertex.
+///
+/// The number of simplices can be far more than the number of points in high
+/// dimensions, so the copies are made by `reserve`.
 fn triangulate<const D: usize>(
     points: &[[f64; D]],
 ) -> Result<(Vec<u32>, Vec<u32>), InterpolateError> {
@@ -596,8 +634,10 @@ fn triangulate<const D: usize>(
         .build()
         .map_err(|error| from_convx(error, points.len()))?;
     let simplices = delaunay.simplices();
-    let mut vertices = Vec::with_capacity(simplices.len() * (D + 1));
-    let mut neighbors = Vec::with_capacity(simplices.len() * (D + 1));
+    let mut vertices = Vec::new();
+    let mut neighbors = Vec::new();
+    crate::reserve::room(&mut vertices, simplices.len() * (D + 1))?;
+    crate::reserve::room(&mut neighbors, simplices.len() * (D + 1))?;
     for simplex in simplices.iter() {
         vertices.extend_from_slice(simplex.vertices());
         neighbors.extend_from_slice(simplex.neighbors());
@@ -865,10 +905,15 @@ mod stored {
 
     /// The points and the values pass the checks of
     /// [`LinearNDInterpolator::new`] up to the triangulation. The simplices
-    /// and their neighbors are checked to be whole and to name points and
-    /// simplices that exist; that they are a Delaunay triangulation is not
-    /// checked again (a walk over a broken triangulation ends at its limit,
-    /// and the search over every simplex follows).
+    /// and their neighbors are checked to be whole, to name points and
+    /// simplices that exist, each simplex `D + 1` distinct points, and every
+    /// neighbor to have the simplex among its neighbors (as every
+    /// triangulation has; the review of #183). That they are a Delaunay
+    /// triangulation is not checked again: a walk over a form that passes
+    /// these and is still wrong ends at its limit, as many steps as there are
+    /// simplices, and the search over every simplex follows. Building the
+    /// starts of the cells takes such walks too, at most one a cell, and
+    /// there are no more cells than points.
     impl<'de, const D: usize, V: Value<f64>> Deserialize<'de> for LinearNDInterpolator<D, V> {
         fn deserialize<D2: Deserializer<'de>>(from: D2) -> Result<Self, D2::Error> {
             let form = Form::<D, V>::deserialize(from)?;
@@ -914,6 +959,24 @@ mod stored {
                     "a neighbor names a simplex that does not exist",
                 ));
             }
+            fn row(list: &[u32], s: usize, width: usize) -> &[u32] {
+                &list[s * width..(s + 1) * width]
+            }
+            for s in 0..count {
+                let vertices = row(&simplices, s, D + 1);
+                let repeated = (0..=D).any(|i| vertices[..i].contains(&vertices[i]));
+                if repeated {
+                    return Err(de::Error::custom("a simplex names a point twice"));
+                }
+                for &t in row(&neighbors, s, D + 1) {
+                    if t != NO_NEIGHBOR && !row(&neighbors, t as usize, D + 1).contains(&(s as u32))
+                    {
+                        return Err(de::Error::custom(
+                            "a simplex is a neighbor of one that is not its neighbor",
+                        ));
+                    }
+                }
+            }
             if let Some(scaling) = &form.scaling {
                 let usable = scaling.offset.iter().all(|c| c.is_finite())
                     && scaling.scale.iter().all(|c| c.is_finite() && *c > 0.0);
@@ -932,6 +995,7 @@ mod stored {
 #[cfg(test)]
 mod tests {
     use super::{LinearNDInterpolator, Walked, EPS};
+    use crate::Interpolator;
 
     /// A small generator, so that the sets are the same on every run.
     fn generator(seed: u64) -> impl FnMut() -> f64 {
@@ -990,6 +1054,27 @@ mod tests {
         }
         // Some of these walks leave the hull by rounding, and are taken back.
         assert!(outside > 0);
+    }
+
+    #[test]
+    fn the_cells_are_no_more_than_the_points_in_any_dimension() {
+        // The largest p with p^D no more than n.
+        assert_eq!(super::per_axis(19, 16), 1);
+        assert_eq!(super::per_axis(7, 3), 1);
+        assert_eq!(super::per_axis(8, 3), 2);
+        assert_eq!(super::per_axis(26, 3), 2);
+        assert_eq!(super::per_axis(27, 3), 3);
+        assert_eq!(super::per_axis(100_000, 2), 316);
+        assert_eq!(super::per_axis(1000, 64), 1);
+        assert_eq!(super::per_axis(usize::MAX, 2), 4_294_967_295);
+        // 23 points in 20 dimensions: one cell (it was 2^20, and 0.37 s).
+        let mut next = generator(5);
+        let points: Vec<[f64; 20]> = (0..23).map(|_| core::array::from_fn(|_| next())).collect();
+        let linear = LinearNDInterpolator::new(&points, &[0.0; 23]).expect("valid");
+        assert_eq!(linear.cells.len(), 1);
+        for point in &points {
+            assert!(linear.eval(point).is_some());
+        }
     }
 
     #[test]

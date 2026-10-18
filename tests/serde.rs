@@ -826,9 +826,20 @@ fn scattered_types_come_back_and_a_broken_form_does_not() {
     let count = form["simplices"].as_array().expect("simplices").len() / 3;
     broken["neighbors"][0] = json!(count);
     assert!(serde_json::from_value::<LinearNDInterpolator<2>>(broken).is_err());
+    // A neighbor taken away on one side only: the other simplex still names
+    // this one (the review of #183).
+    let first = form["neighbors"][0].as_u64().expect("a neighbor");
     let mut broken = form.clone();
-    broken["neighbors"][0] = json!(u32::MAX);
-    assert!(serde_json::from_value::<LinearNDInterpolator<2>>(broken).is_ok());
+    broken["neighbors"][0] = json!(if first == u64::from(u32::MAX) {
+        0
+    } else {
+        u32::MAX
+    });
+    assert!(serde_json::from_value::<LinearNDInterpolator<2>>(broken).is_err());
+    // A simplex that names a point twice.
+    let mut broken = form.clone();
+    broken["simplices"][1] = broken["simplices"][0].clone();
+    assert!(serde_json::from_value::<LinearNDInterpolator<2>>(broken).is_err());
     let mut broken = form.clone();
     broken["scaling"]["scale"][1] = json!(0.0);
     assert!(serde_json::from_value::<LinearNDInterpolator<2>>(broken).is_err());
