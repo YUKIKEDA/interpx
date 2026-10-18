@@ -214,6 +214,7 @@ impl<const D: usize> Mesh<D> {
     }
 
     /// The `D + 1` vertices of a simplex.
+    #[inline]
     pub(super) fn vertices(&self, simplex: u32) -> &[u32] {
         &self.simplices[simplex as usize * (D + 1)..][..D + 1]
     }
@@ -242,6 +243,7 @@ impl<const D: usize> Mesh<D> {
     /// The simplex that holds `point`, with its barycentric coordinates
     /// there: none for a point that is not finite or is outside the hull.
     /// The point is changed as the points were, first.
+    #[inline]
     pub(super) fn find(&self, point: &[f64; D]) -> Option<(u32, [f64; D], f64)> {
         if !point.iter().all(|c| c.is_finite()) {
             return None;
