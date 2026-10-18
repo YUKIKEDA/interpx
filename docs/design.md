@@ -300,6 +300,7 @@ pub enum InterpolateError {
   | `SolverFailed(SolverError)`                                | M3 (RBF)           | A singular linear system (`SolverError::Singular`)     |
   | `AllocationFailed { bytes: usize }`                        | #110               | An allocation far larger than the input failed for lack of memory ("The size of allocations and their failure" below) |
   | `DegenerateGeometry(DegeneracyKind)`                       | M4 (`LinearND`)    | `LowerDimensional { affine_dim }`, `NumericalLimit`    |
+  | `SolverError::NotConverged`                                | M4-2 (`CloughTocher2D`) | the system of the gradient estimate was not solved within the limit on steps (§6.3) |
 
 * The `index` of `NonFinite { index }` is the position of the coordinate when a coordinate is not finite, and the position of the value only when every coordinate is finite (the coordinates are checked first. §3.5). The variant does not say which array.
 * No string payloads (only typed values that can be matched). `ParamReason`, `AxisFault`, `SolverError`, and `DegeneracyKind` are `#[non_exhaustive]` too.
@@ -352,8 +353,9 @@ interpx/
 │   └── regular_grid  # RegularGridInterpolator
 └── scattered/        # interpolation of N-dimensional irregular scattered data
     ├── nearest_nd    # NearestNDInterpolator (kiddo)
+    ├── mesh          # the triangulation and point location shared by LinearND and CloughTocher2D
     ├── linear_nd     # LinearNDInterpolator (convx + walk from cells)
-    ├── clough_tocher # CloughTocher2DInterpolator
+    ├── clough_tocher # CloughTocher2DInterpolator (Mesh + gradient estimate)
     └── rbf           # RBFInterpolator (faer + kiddo)
 ```
 (The module is named `oned`, avoiding Rust's constraint on identifiers.)
@@ -753,10 +755,34 @@ interpx/
   * The goldens compare values only for queries whose nearest point is unique. For queries with equidistant points, the test checks that the value returned is "the value of one of the equidistant points".
 
 ### 6.3 `CloughTocher2DInterpolator` and `RBFInterpolator`
-**CloughTocher2D**
-* An iterative gradient estimate reproducing SciPy's `estimate_gradients_2d_global` (`tol = 1e-6`, `maxiter = 400`, both of them parameters the caller can set).
-* Without convergence it does not return `Err`, and uses the result. The number of iterations and `converged` are returned by getters.
-* The tolerance of the numerical agreement tests is loosened, the method being iterative (§8.2).
+**CloughTocher2D** (M4-2, #185, SciPy's `CloughTocher2DInterpolator`)
+
+`CloughTocher2DInterpolator<V: Value<f64> = f64>`. C1 interpolation (the value and the first derivatives are continuous) on the Delaunay triangulation of points of the plane: each triangle is cut at its centroid into three, and on each part the interpolant is a cubic Bernstein–Bézier patch. `Point = [f64; 2]`, `Output = V`.
+
+* **Construction**: `new`, `from_owned`, `rescaled`, `rescaled_from_owned`, `with_simplex_tolerance`, of the same shape as `LinearNDInterpolator`. The triangulation, the way a point is located, the change of coordinates of `rescaled`, the tolerance, and the checks of the stored form are held by `Mesh` (`src/scattered/mesh.rs`), which `LinearND` shares (owner's decision). Getters: `len`, `values`, `points`, `gradients` (SciPy's `grad`), `simplex_count`, `simplex_tolerance`.
+* **Gradients at the points** (the global estimate of Nielson 1983 and Renka and Cline 1984; the equations of SciPy's `estimate_gradients_2d_global`): the gradients $G_i$ that minimize the sum over the edges of the integral of the square of the second derivative along the edge. Setting the derivative to zero gives, at each vertex $i$, with the edges $E = p_j - p_i$ and $L = \lvert E \rvert$,
+  $$
+  \sum_j \frac{4 E E^{\mathsf T}}{L^3} G_i + \sum_j \frac{2 E E^{\mathsf T}}{L^3} G_j = -\sum_j \frac{6 (f_i - f_j) E}{L^3}.
+  $$
+  The whole is a symmetric positive definite system.
+  * **How it is solved**: conjugate gradients with the 2 × 2 block of each vertex as the preconditioner, all columns of the values at once (the inner products and the coefficients are per column). A column that is solved stops there. Every column comes out bit for bit as it does when solved alone (a test).
+  * **SciPy does not solve it through**: SciPy stops its Gauss–Seidel iteration over the vertices at `tol` (default $10^{-6}$) or `maxiter` (default 400), and only warns when it has not converged. Its gradients, and its values, are that far from the solution. interpx solves until the residual is below $10^{-14}$ of the right-hand side (owner's decision). There are no `tol` and `maxiter`. A system not solved within the limit ($10 n + 100$ steps) returns `SolverFailed(SolverError::NotConverged)`.
+  * **Convergence**: about a quarter per step, and below $10^{-16}$ within 26 steps on every set tried (random points up to $10^5$, coordinates whose ranges are a thousand times apart, clustered points, two points $10^{-12}$ apart, triangles $10^{-9}$ thin). No input that gives `NotConverged` has been found.
+  * **The threshold**: at $10^{-14}$ the values are within $4.5 \times 10^{-13}$ of the largest value from SciPy iterated to convergence. At $10^{-12}$ they were $2.9 \times 10^{-11}$ apart (`units/plain`).
+  * A point that is no vertex of a triangle (the second and later of points with the same coordinates) has the gradient zero.
+* **The coefficients of the patch**: SciPy's `_clough_tocher_2d_single`, copied down to the order of operations. The direction of the derivative across an edge (SciPy's `g[k]`) comes from the centroid of the triangle across the edge, in the barycentric coordinates of this one ($-1/2$ on an edge of the hull). It depends on the positions of the points only, so it is computed for each triangle at construction and kept (owner's decision; SciPy computes it at every evaluation).
+* **Evaluation**: `Mesh` finds the triangle and the barycentric coordinates (§6.2; the search and tolerance of `LinearND`), and the patch is evaluated. A query outside the convex hull, or with a coordinate that is not finite, is `None`. It does not allocate (`tests/alloc.rs`).
+* **Order of the checks**: that of `LinearNDInterpolator` in two dimensions (lengths → number of points (3 or more) → the limit on the number of points → coordinates → values → (`rescaled` only) mean and range → triangulation), and then `NotConverged`.
+* **Agreement with SciPy** (golden, `compare/goldens/scattered.json`):
+  * 10 cases with SciPy iterated to convergence (`tol=1e-14`, `maxiter=10^6`, warnings as errors): within $4.5 \times 10^{-13}$ of the largest absolute value (allowed $10^{-12}$). Four sets of points on Franke's first function, coordinates in different units (with and without `rescaled`), two columns of values, points with the same coordinates, queries just outside an edge of the hull (tolerance 100), 2000 points.
+  * 11 cases at SciPy's defaults: within $2.8 \times 10^{-8}$ (allowed $10^{-7}$), the part SciPy leaves unsolved.
+  * The 2 cases with four or more points on one circle (`franke_33`, and a lattice with points taken out) are not compared. The triangulation differs from Qhull's, and since the gradients are the solution of one system through all edges, one edge that differs moves the values everywhere (`franke_33`: one edge of 88 differs, $6 \times 10^{-3}$ of the largest value). For `LinearND` only the values in that region differed.
+* **Properties** (tests): a linear function is reproduced exactly, with its gradient. At a data point, the value given. The difference of the slopes across an edge goes down tenfold or more when the step does (C1; for linear interpolation it stays).
+* **Order of convergence**: §8.4.2.
+* **Measured speed** (criterion, this machine, uniform points of the unit square, 1000 queries): construction 77 µs for 100 points, 1.19 ms for 1000, 187 ms for 100 000 (`LinearND` in 2-D: 79 ms for 100 000). Evaluation 42 ns a query (100 points), 57 ns (1000), 109 ns (100 000).
+  * **Where construction goes** (a temporary build with a clock around each stage, 3 to 4 constructions in one process): at 100 000 points, the triangulation and the search's preparation (`Mesh`) 94 to 98 ms, the gradient estimate 144 to 178 ms, `g[k]` 7 to 10 ms. 70 to 80% of the estimate is the conjugate gradient steps (19); collecting the edges and assembling the system are the rest (40 to 80% at 1000 points). At 1000 points, `Mesh` 0.89 to 1.05 ms, the gradients 0.80 to 0.84 ms (21 steps). The figures moved by up to a factor of two from one construction to the next.
+* **Differences from SciPy**: the gradients are solved through (above). The division of points on one circle (above). Of points with the same coordinates, the value of the first is used (as in `LinearND`).
+* **Stored form**: what `LinearND` stores (points, values, vertices of the simplices, their neighbors, change of coordinates, tolerance) and the gradients. Reading does not solve the system again. `g[k]` is rebuilt (§6.5).
 
 **RBF**
 * The linear system:
@@ -1162,7 +1188,8 @@ M3-2 puts the parts up to assembling the linear system into the crate. It expose
     | `BSplineCurve` | the `BSpline1D`, the parameters of the data points | the same |
     | `RegularGridInterpolator` | the axes (ascending, as kept), values, method, extrapolation, what the method solved (coefficients for `cubic` and `quintic`, slopes for `pchip`) | strides, the spline knots, whether each axis is evenly spaced |
     | `NearestNDInterpolator` | the tree's points (one per coordinate; after the change of coordinates for `rescaled`), the position of each point's value, the values, the change of coordinates, the distance bound | the k-d tree |
-    | `LinearNDInterpolator` | the points (after the change of coordinates for `rescaled`), the values, the vertices of the simplices, their neighbors, the change of coordinates | the inverse of every simplex's matrix, the box of the points, the starts of the cells |
+    | `LinearNDInterpolator` | the points (after the change of coordinates for `rescaled`), the values, the vertices of the simplices, their neighbors, the change of coordinates | the LU decomposition of every simplex's matrix, the box of the points, the starts of the cells |
+    | `CloughTocher2DInterpolator` | what `LinearNDInterpolator` stores, and the gradient at each point | what `LinearNDInterpolator` rebuilds, and `g[k]` of every triangle (§6.3) |
     | `RBFInterpolator` | points, kernel, smoothing, degree of the polynomial, number of neighbors; when solved over all points the coefficients and the estimate of the reciprocal condition number, with neighbors the values | the powers of the monomials, the change of coordinates of the polynomial, the k-d tree of the neighbors |
 
     * The k-d tree is not stored so that the stored form is not tied to the internal order of a version of `kiddo` (the same reason as for `convx`). A tree rebuilt from the same points is the same tree.
@@ -1215,7 +1242,7 @@ serde   = ["dep:serde"]
 | Subject                          | `rtol` / `atol`   |
 | :------------------------------- | :---------------- |
 | Direct methods (f64)             | `1e-12` / `1e-12` |
-| Iterative methods (CloughTocher gradients) | about `1e-6` |
+| CloughTocher (goldens of SciPy iterated to convergence / at SciPy's defaults) | `1e-12` / `1e-7` (relative to the largest absolute value; §6.3) |
 | RBF (the global solve)           | the test's constant (below) |
 | f32                              | `1e-5`            |
 
@@ -1434,7 +1461,7 @@ The data the tests (§8.1) and benchmarks (§8.3) use is divided by purpose into
   | `BSpline1D` (degree $k$)                    | $k + 1$        |
   | grid `quintic`                              | 6              |
 
-  Of the interpolants not above, the order of `CloughTocher2D` is written, with its source, in the Issue of its row. `LinearND` is in the table below (M4-1).
+  Of the interpolants not above, `LinearND` (M4-1) and `CloughTocher2D` (M4-2) are in the table below.
 * **The orders measured, and the types not in the table** (M5-4, #157; `tests/convergence.rs`). The function is $\sin(1.3x + 0.4) + 0.5\,e^{0.7x}$ (on $[0, 3]$; not symmetric, with an extremum). The points are both evenly spaced and not (the widest interval about 3 times the narrowest). The orders read over the last 2 halvings:
 
   | Interpolant | Order | Measured | Grounds |
@@ -1453,6 +1480,7 @@ The data the tests (§8.1) and benchmarks (§8.3) use is divided by purpose into
   | Grid `quintic` (2-D) | 6 | 5.42 → 5.77 → 5.87 (even), 4.55 → 5.05 → 5.70 (uneven) | still on its way up to the order. The test looks at the last order and at the rise |
   | Grid `linear` / `cubic` (3-D, Genz's oscillatory) | 2 / 4 | within widths 0.2 / 0.45 | the function of §8.4.4 |
   | `LinearNDInterpolator` (2-D, Franke's first function) | 2 | 1.55 → 2.01 → 2.01 (a lattice with its inner points moved by up to 0.15 h). On Halton points, 16 times the points bring the error down 12.8 times | piecewise linear interpolation on a triangulation whose angles stay away from zero is off by $C h^2$ (Ciarlet, *The Finite Element Method for Elliptic Problems*, 1978, theorem 3.1.6) |
+  | `CloughTocher2DInterpolator` (2-D, Franke's first function, points moved the same way) | set from the measurement (right) | 2.38 on average over $h = 1/10 \to 1/160$ (error $2.06 \times 10^{-2} \to 2.79 \times 10^{-5}$). SciPy iterated to convergence gives the same errors on the same points within 15% | The order in theory has not been checked against a source. With the gradients replaced by the exact ones of the function, SciPy goes 3.25 → 3.66 → 3.69 → 3.05 ($h = 1/20 \to 1/160$): the estimate of the gradients is what sets the order. The test checks that the average is in 2.2 to 2.6 |
 
   * The widths of the tests (the tolerance from the expected order) were decided from the values measured and fixed in the tests. They are narrower than the distance to the next order (1).
   * **The points where the error is measured are at least 3 in the narrowest cell.** On a 3-dimensional grid, measuring with a lattice of 1 point or fewer per cell let the largest error (in a cell at the not-a-knot end) fall between the points measured, and the order read as 5.9 or 7.0 (correctly 4).
@@ -1492,7 +1520,7 @@ The comparison uses **the same parameters as SciPy 1.18's benchmarks (`benchmark
 | `CloughTocher2D`                             | $n \in \{10, 50, 100\}$, $50 \times 50$ evaluation                                                                                 |
 | `RBFInterpolator`                            | `neighbors` `None` or 50, $N \in \{10, 100, 1000\}$, all 8 kernels, `epsilon = 5.0`, random points in $[-1, 1]^2$                  |
 
-* **Large Rust-only sizes**: `NearestND` and `LinearND` with $N$ up to $10^5$, grids up to several hundred points per axis. RBF's global mode at $N \le 10^4$ (the memory is $O(N^2)$), and for larger $N$ only with `neighbors`.
+* **Large Rust-only sizes**: `NearestND`, `LinearND`, and `CloughTocher2D` with $N$ up to $10^5$ (`CloughTocher2D` from 1000 points, evaluated at the pixels of a 500 × 500 image), grids up to several hundred points per axis. RBF's global mode at $N \le 10^4$ (the memory is $O(N^2)$), and for larger $N$ only with `neighbors`.
 * The comparison with the existing pure Rust crates is done in M5-5 (§8.3).
 * Construction and evaluation are measured separately. For batch evaluation, `eval_batch_into` and `eval_batch_into_par` are compared with SciPy's vectorized calls.
 
@@ -1551,7 +1579,7 @@ The expected behavior follows ADR 0005 and 0006.
   | Size | 4800 × 7200 cells (a 1 m grid, 34.56 million points). No cell without a value. Elevations $-9.6$ to $195.7$ m | 12 185 rows for that day. 12 095 passed the source's quality checks, 12 042 stations with distinct coordinates |
   | Coordinates | the northing and easting of the cell centers (NZTM2000, m). The rows go from north to south, so the northing axis is reordered into ascending order before being passed | longitude and latitude (degrees) as two-dimensional coordinates as they are (not spherical distances. Using the data as it is means choosing no transformation) |
   | Data and held-out points | every second row and column of cells (and the last row and column) make the grid: 3601 × 2401 points. The other 25.91 million cells are held out as the query points. The last row and column go into the grid so that every held-out point is inside the grid | in the order of the file, the last of every 10 stations is held out: 1 204 stations. The other 10 838 stations are the data |
-  | What runs | all 5 methods of the grid | `NearestNDInterpolator`, and `RBFInterpolator` with the 4 kernels without a shape parameter (`linear`, `thin_plate_spline`, `cubic`, `quintic`), with one system over all points and with 50 neighbors |
+  | What runs | all 5 methods of the grid | `NearestNDInterpolator`, `LinearNDInterpolator` (M4-1), `CloughTocher2DInterpolator` (M4-2), and `RBFInterpolator` with the 4 kernels without a shape parameter (`linear`, `thin_plate_spline`, `cubic`, `quintic`), with one system over all points and with 50 neighbors |
 
   * **How the tile was chosen**: of the tiles containing the summit of Maungawhau (Mount Eden) (longitude 174.7644, latitude $-36.8773$), the one from the most recently acquired survey (the 2016–2018 survey has a tile of the same sheet too). **The mountain straddles the south edge of the tile** (the summit is about 110 m from the edge). Cutting out the mountain alone would mean deciding the extent ourselves, so one whole tile is used. The mountain's name is not put in the name.
   * **How the day and element were chosen**: January 1 of the latest completed year. The element with the most stations after precipitation (which is 0 at most stations). Of stations with the same coordinates, the first in the file's order is taken (53 rows drop; RBF does not accept duplicate points).

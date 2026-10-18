@@ -13,7 +13,8 @@
 //! - Values on a rectilinear grid: [`RegularGridInterpolator`], with the
 //!   methods of [`GridMethod`].
 //! - Scattered data (the `scattered` feature, on by default):
-//!   `NearestNDInterpolator`, `LinearNDInterpolator`, and `RBFInterpolator`.
+//!   `NearestNDInterpolator`, `LinearNDInterpolator`,
+//!   `CloughTocher2DInterpolator`, and `RBFInterpolator`.
 //!
 //! Every interpolator implements [`Interpolator`]: `eval` returns `None`
 //! outside the domain unless an [`Extrapolate`] mode says otherwise, and

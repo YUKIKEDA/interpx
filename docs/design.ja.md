@@ -298,6 +298,7 @@ pub enum InterpolateError {
   | `SolverFailed(SolverError)`                                | M3（RBF）          | 特異な連立方程式（`SolverError::Singular`）            |
   | `AllocationFailed { bytes: usize }`                        | #110               | 入力よりはるかに大きい確保が、メモリ不足で失敗した（下の「確保の大きさと失敗」） |
   | `DegenerateGeometry(DegeneracyKind)`                       | M4（`LinearND`）   | `LowerDimensional { affine_dim }`、`NumericalLimit`    |
+  | `SolverError::NotConverged`                                | M4-2（`CloughTocher2D`） | 傾きの推定の系が、上限の回数までに解けなかった（§6.3） |
 
 * `NonFinite { index }` の `index` は、座標に非有限値があればその座標の位置で、座標がすべて有限のときに限り値の位置である（検証は座標が先。§3.5）。variant からはどちらの配列かを区別できない。
 * 文字列のペイロードは持たない（パターンマッチできる型付きの値だけ）。`ParamReason`・`AxisFault`・`SolverError`・`DegeneracyKind` も `#[non_exhaustive]`。
@@ -350,8 +351,9 @@ interpx/
 │   └── regular_grid  # RegularGridInterpolator
 └── scattered/        # N次元不規則散乱データ補間
     ├── nearest_nd    # NearestNDInterpolator (kiddo)
+    ├── mesh          # LinearND と CloughTocher2D が共有する三角形分割と点の探し方
     ├── linear_nd     # LinearNDInterpolator (convx + walk from cells)
-    ├── clough_tocher # CloughTocher2DInterpolator
+    ├── clough_tocher # CloughTocher2DInterpolator (Mesh + 傾きの推定)
     └── rbf           # RBFInterpolator (faer + kiddo)
 ```
 （モジュール名は Rust の識別子制約を避け `oned` とする。）
@@ -751,10 +753,34 @@ interpx/
   * golden で値を照合するのは、最近傍が 1 点に決まる問い合わせだけである。等距離の点がある問い合わせは、返した値が「等距離の点のどれかの値」であることを検査する。
 
 ### 6.3 `CloughTocher2DInterpolator` と `RBFInterpolator`
-**CloughTocher2D**
-* SciPy の `estimate_gradients_2d_global` を再現する反復勾配推定（`tol = 1e-6`、`maxiter = 400`、いずれもパラメータ化）。
-* 未収束でも `Err` にせず結果を使う。反復回数・`converged` を取得メソッドで返す。
-* 数値一致テストの許容誤差は反復法のため緩める（§8.2）。
+**CloughTocher2D**（M4-2、#185、SciPy の `CloughTocher2DInterpolator`）
+
+`CloughTocher2DInterpolator<V: Value<f64> = f64>`。平面の点の Delaunay 分割の各三角形を重心で 3 つに分け、それぞれの上で 3 次の Bernstein–Bézier 片になる、C1（値と 1 階導関数が連続）の補間。`Point = [f64; 2]`、`Output = V`。
+
+* **構築**: `new`、`from_owned`、`rescaled`、`rescaled_from_owned`、`with_simplex_tolerance`。`LinearNDInterpolator` と同じ形で、三角形分割、点の探し方、`rescaled` の変換、許容誤差、保存の形の検査は、`LinearND` と共有する `Mesh`（`src/scattered/mesh.rs`）が持つ（オーナーの決定）。取得は `len`、`values`、`points`、`gradients`（SciPy の `grad`）、`simplex_count`、`simplex_tolerance`。
+* **点での傾き**（Nielson 1983、Renka・Cline 1984 の全体推定。SciPy の `estimate_gradients_2d_global` と同じ式）: 辺に沿った 2 階導関数の 2 乗の積分の和を最小にする傾き $G_i$。微分して 0 とおくと、頂点 $i$ ごとに、辺 $E = p_j - p_i$、$L = \lvert E \rvert$ について
+  $$
+  \sum_j \frac{4 E E^{\mathsf T}}{L^3} G_i + \sum_j \frac{2 E E^{\mathsf T}}{L^3} G_j = -\sum_j \frac{6 (f_i - f_j) E}{L^3}
+  $$
+  になる。全体は対称正定値の連立方程式である。
+  * **解き方**: 頂点ごとの 2 × 2 の塊を前処理にした共役勾配法で、値の列を全部いっしょに解く（内積と係数は列ごと）。解けた列はそこで止める。どの列も、その列だけを解いたときとビットで同じになる（テスト）。
+  * **SciPy は解き切らない**: SciPy は頂点ごとの Gauss–Seidel を `tol`（既定 $10^{-6}$）か `maxiter`（既定 400）で止め、収束しなくても警告だけを出す。その傾きと値は、解からその分だけ離れている。interpx は、残差が右辺の $10^{-14}$ 倍を下回るまで解く（オーナーの決定）。`tol` と `maxiter` は持たない。上限（$10 n + 100$ 回）までに解けなければ `SolverFailed(SolverError::NotConverged)` を返す。
+  * **収束**: 1 回でおよそ 4 分の 1 に減り、試したどの点の集合でも 26 回以内で $10^{-16}$ を下回った（$10^5$ 点までの乱数の点、座標の範囲が 1000 倍違う点、固まった点、$10^{-12}$ 離れた 2 点、細さ $10^{-9}$ の三角形）。`NotConverged` になる入力は見つかっていない。
+  * **しきい値**: $10^{-14}$ で、収束まで回した SciPy との差は値の最大の絶対値の $4.5 \times 10^{-13}$ 以内になる。$10^{-12}$ では $2.9 \times 10^{-11}$ だった（`units/plain`）。
+  * 三角形の頂点でない点（同じ座標の 2 つめ以降）の傾きは 0 である。
+* **片の係数**: SciPy の `_clough_tocher_2d_single` を、演算の順まで写した。辺をまたぐ方向の傾き（SciPy の `g[k]`）は、辺の向こうの三角形の重心を、こちらの三角形の重心座標で表して決める（凸包の辺では $-1/2$）。点の位置だけで決まるので、構築時に三角形ごとに求めて持つ（オーナーの決定。SciPy は評価のたびに求める）。
+* **評価**: `Mesh` で三角形と重心座標を求め（§6.2。`LinearND` と同じ探し方と許容誤差）、片を評価する。凸包の外と、座標が有限でない問い合わせは `None`。確保しない（`tests/alloc.rs`）。
+* **検査の順**: `LinearNDInterpolator` の 2 次元と同じ（長さ → 点の数（3 以上）→ 点の数の上限 → 座標 → 値 →（`rescaled` だけ）平均と範囲 → 三角形分割）。そのあとに `NotConverged`。
+* **SciPy との一致**（golden、`compare/goldens/scattered.json`）:
+  * SciPy を収束まで回した（`tol=1e-14`、`maxiter=10^6`、警告をエラーにして）10 件: 差は値の最大の絶対値の $4.5 \times 10^{-13}$ 以内（許容 $10^{-12}$）。Franke の第 1 関数の 4 種の点、単位の違う座標（`rescaled` あり・なし）、2 列の値、同じ座標の点、凸包の辺のすぐ外（許容誤差 100 倍）、2000 点。
+  * SciPy の既定の 11 件: $2.8 \times 10^{-8}$ 以内（許容 $10^{-7}$）。SciPy が解き切らない分である。
+  * 4 点以上が同じ円の上にある 2 件（`franke_33`、格子から点を抜いたもの）は、照合から外す。三角形分割が Qhull と違い、傾きは全部の辺を通じた 1 つの系の解なので、違う辺が 1 本でも、値が全体で動く（`franke_33` は 88 辺のうち 1 辺が違い、値の最大の $6 \times 10^{-3}$）。`LinearND` では、違うのはその区画の値だけだった。
+* **性質**（テスト）: 1 次関数を厳密に再現し、傾きもその関数のもの。データ点では与えた値。辺をまたぐ傾きの差は、刻みを 10 分の 1 にすると 10 分の 1 以下になる（C1。1 次補間では変わらない）。
+* **収束の次数**: §8.4.2。
+* **測った速さ**（criterion、この機械、単位正方形の一様な点、1000 問い合わせ）: 構築は 100 点 77 µs、1000 点 1.19 ms、10 万点 187 ms（`LinearND` の 2 次元は 10 万点で 79 ms）。評価は 1 問い合わせ 42 ns（100 点）、57 ns（1000 点）、109 ns（10 万点）。
+  * **構築の内訳**（段階の前後に時計を入れた一時的なビルド、1 プロセスで 3〜4 回）: 10 万点で、三角形分割と探索の準備（`Mesh`）94〜98 ms、傾きの推定 144〜178 ms、`g[k]` 7〜10 ms。傾きの推定のうち 7〜8 割が共役勾配法の反復（19 回）で、辺を集める処理と系の組み立てが残りである（1000 点では 4〜8 割）。1000 点では `Mesh` 0.89〜1.05 ms、傾き 0.80〜0.84 ms（21 回）。計測は回ごとに 2 倍ほど揺れた。
+* **SciPy との差**: 傾きを解き切る（上）。同じ円の上の点の分け方（上）。同じ座標の点では、最初の点の値を使う（`LinearND` と同じ）。
+* **保存**: `LinearND` が保存するもの（点、値、単体の頂点、単体の隣、座標変換、許容誤差）と傾き。読み込みは系を解き直さない。`g[k]` は作り直す（§6.5）。
 
 **RBF**
 * 連立一次方程式:
@@ -1160,7 +1186,8 @@ M3-2 は、連立方程式を組み立てるところまでの部品を crate �
     | `BSplineCurve` | `BSpline1D`、データ点のパラメータ | 同上 |
     | `RegularGridInterpolator` | 軸（昇順。持っているとおり）、値、方式、外側の扱い、方式が解いたもの（`cubic`・`quintic` は係数、`pchip` は傾き） | ストライド、スプラインのノット、軸が等間隔かどうか |
     | `NearestNDInterpolator` | 木の点（座標ごとに 1 つ。`rescaled` なら座標変換のあと）、各点の値の位置、値、座標変換、距離の上限 | k-d 木 |
-    | `LinearNDInterpolator` | 点（`rescaled` なら座標変換のあと）、値、単体の頂点、単体の隣、座標変換 | 単体ごとの逆行列、点の箱、セルの始点 |
+    | `LinearNDInterpolator` | 点（`rescaled` なら座標変換のあと）、値、単体の頂点、単体の隣、座標変換 | 単体ごとの LU 分解、点の箱、セルの始点 |
+    | `CloughTocher2DInterpolator` | `LinearNDInterpolator` と同じものと、点ごとの傾き | `LinearNDInterpolator` と同じものと、三角形ごとの `g[k]`（§6.3） |
     | `RBFInterpolator` | 点、カーネル、平滑化、多項式の次数、近傍の数、全点で解いたときは係数と条件数の逆数の見積もり・近傍のときは値 | 単項式のべき、多項式の座標変換、近傍の k-d 木 |
 
     * k-d 木を保存しないのは、保存形式を `kiddo` のバージョンの内部の並びに結びつけないためである（`convx` と同じ理由）。同じ点から作り直した木は、同じ木になる。
@@ -1213,7 +1240,7 @@ serde   = ["dep:serde"]
 | 対象                             | `rtol` / `atol`   |
 | :------------------------------- | :---------------- |
 | 直接法（f64）                    | `1e-12` / `1e-12` |
-| 反復法（CloughTocher 勾配）      | `1e-6` 程度       |
+| CloughTocher（SciPy を収束まで回した golden / SciPy の既定の golden） | `1e-12` / `1e-7`（値の最大の絶対値に対して。§6.3） |
 | RBF（全域の求解）                | テストの定数（下）|
 | f32                              | `1e-5`            |
 
@@ -1432,7 +1459,7 @@ serde   = ["dep:serde"]
   | `BSpline1D`（次数 $k$）                     | $k + 1$        |
   | グリッド `quintic`                          | 6              |
 
-  上に無い補間のうち、`CloughTocher2D` の次数は、その行の Issue に出典付きで書く。`LinearND` は下の表にある（M4-1）。
+  上に無い補間のうち、`LinearND`（M4-1）と `CloughTocher2D`（M4-2）は下の表にある。
 * **測った次数と、表に無かった型**（M5-4、#157。`tests/convergence.rs`）。関数は $\sin(1.3x + 0.4) + 0.5\,e^{0.7x}$（$[0, 3]$。対称でなく、極値を持つ）。点は、等間隔と、等間隔でないもの（最も広い区間が最も狭い区間の約 3 倍）の両方。最後の 2 回の半減で読んだ次数:
 
   | 補間 | 次数 | 測った値 | 根拠 |
@@ -1451,6 +1478,7 @@ serde   = ["dep:serde"]
   | グリッド `quintic`（2 次元） | 6 | 5.42 → 5.77 → 5.87（等間隔）、4.55 → 5.05 → 5.70（等間隔でない） | まだ次数へ上がっていく途中。テストは、最後の次数と、上がっていくことを見る |
   | グリッド `linear` / `cubic`（3 次元、Genz の振動） | 2 / 4 | 幅 0.2 / 0.45 に入る | §8.4.4 の関数 |
   | `LinearNDInterpolator`（2 次元、Franke の第 1 関数） | 2 | 1.55 → 2.01 → 2.01（格子の内側の点を 0.15 h までずらした点）。Halton 点では、点を 16 倍にして誤差が 12.8 分の 1 | 角が 0 に寄らない三角形分割の上の区分 1 次補間の誤差は $C h^2$（Ciarlet, *The Finite Element Method for Elliptic Problems*, 1978, 定理 3.1.6） |
+  | `CloughTocher2DInterpolator`（2 次元、Franke の第 1 関数、同じずらし方の点） | 測った値で決める（下） | $h = 1/10 \to 1/160$ の平均で 2.38（誤差 $2.06 \times 10^{-2} \to 2.79 \times 10^{-5}$）。収束まで回した SciPy も、同じ点で誤差が 15% 以内で同じ | 理論の次数は出典で確かめていない。傾きを関数の厳密な傾きに置き換えると、SciPy で 3.25 → 3.66 → 3.69 → 3.05（$h = 1/20 \to 1/160$）と速くなるので、次数を決めているのは傾きの推定である。テストは平均が 2.2〜2.6 に入ることを見る |
 
   * テストの幅（期待する次数からの許容）は、測った値から決めてテストに固定した。隣の次数までの距離（1）より狭い。
   * **誤差を測る点は、いちばん狭いセルに 3 点以上置く。** 3 次元のグリッドで、セルあたり 1 点以下の格子で測ると、最大の誤差（not-a-knot の端のセル）が測る点の間に落ち、次数が 5.9 や 7.0 と読めた（正しくは 4）。
@@ -1490,7 +1518,7 @@ serde   = ["dep:serde"]
 | `CloughTocher2D`                             | $n \in \{10, 50, 100\}$、$50 \times 50$ 評価                                                                                       |
 | `RBFInterpolator`                            | `neighbors` が `None` または 50、$N \in \{10, 100, 1000\}$、全 8 カーネル、`epsilon = 5.0`、$[-1, 1]^2$ の乱数点                   |
 
-* **Rust 単独の大規模**: `NearestND`・`LinearND` は $N$ を $10^5$ まで、グリッドは軸あたり数百点まで。RBF の全域モードは $N \le 10^4$（メモリは $O(N^2)$）、$N$ がそれ以上は `neighbors` 指定のみ。
+* **Rust 単独の大規模**: `NearestND`・`LinearND`・`CloughTocher2D` は $N$ を $10^5$ まで（`CloughTocher2D` は 1000 点から、500 × 500 画素の評価）、グリッドは軸あたり数百点まで。RBF の全域モードは $N \le 10^4$（メモリは $O(N^2)$）、$N$ がそれ以上は `neighbors` 指定のみ。
 * 既存の Pure Rust クレートとの比較は M5-5 で行う（§8.3）。
 * 構築と評価は別々に測る。バッチ評価は `eval_batch_into` と `eval_batch_into_par` を、SciPy のベクトル化呼び出しと比べる。
 
@@ -1549,7 +1577,7 @@ serde   = ["dep:serde"]
   | 大きさ | 4800 × 7200 セル（1 m 格子、3456 万点）。値のないセルはない。標高 $-9.6$〜$195.7$ m | その日の行は 12 185。配布元の品質検査を通ったもの 12 095、座標が互いに異なる地点 12 042 |
   | 座標 | セルの中心の、北距と東距（NZTM2000、m）。行は北から南へ並ぶので、北距の軸は昇順に並べ替えて渡す | 経度と緯度（度）をそのまま 2 次元の座標にする（球面の距離ではない。データをそのまま使うという意味で、変換を選ばない） |
   | データと取り置き | 1 行おき・1 列おきのセル（と、最後の行・列）を格子にする: 3601 × 2401 点。残りのセル 2591 万点を取り置き、問い合わせ点にする。最後の行・列を格子に入れるのは、取り置いた点がすべて格子の内側に来るようにするため | ファイルの順で、10 地点ごとの最後の 1 地点を取り置く: 1 204 地点。残り 10 838 地点がデータ |
-  | 走らせるもの | グリッドの 5 方式すべて | `NearestNDInterpolator`、`RBFInterpolator` の形状パラメータのない 4 カーネル（`linear`・`thin_plate_spline`・`cubic`・`quintic`）を、全点の 1 つの系と近傍 50 で |
+  | 走らせるもの | グリッドの 5 方式すべて | `NearestNDInterpolator`、`LinearNDInterpolator`（M4-1）、`CloughTocher2DInterpolator`（M4-2）、`RBFInterpolator` の形状パラメータのない 4 カーネル（`linear`・`thin_plate_spline`・`cubic`・`quintic`）を、全点の 1 つの系と近傍 50 で |
 
   * **タイルの選び方**: Maungawhau（Mount Eden）の山頂（経度 174.7644、緯度 $-36.8773$）を含むタイルのうち、取得がいちばん新しいサーベイのもの（2016〜2018 年のサーベイにも同じ図郭のタイルがある）。**山はタイルの南の端をまたぐ**（山頂は端から約 110 m）。山だけを切り出すと範囲をこちらで決めることになるので、タイル 1 枚をそのまま使う。名前に山の名は付けない。
   * **日と要素の選び方**: 完了している直近の年の 1 月 1 日。要素は、降水量（大半の地点で 0 である）の次に地点の多いもの。同じ座標の観測所は、ファイルの順で最初のものを採る（53 行が落ちる。RBF は重複点を受け付けない）。
