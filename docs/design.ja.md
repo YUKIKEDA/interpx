@@ -298,7 +298,7 @@ pub enum InterpolateError {
   | `SolverFailed(SolverError)`                                | M3（RBF）          | 特異な連立方程式（`SolverError::Singular`）            |
   | `AllocationFailed { bytes: usize }`                        | #110               | 入力よりはるかに大きい確保が、メモリ不足で失敗した（下の「確保の大きさと失敗」） |
   | `DegenerateGeometry(DegeneracyKind)`                       | M4（`LinearND`）   | `LowerDimensional { affine_dim }`、`NumericalLimit`    |
-  | `SolverError::NotConverged`                                | M4-2（`CloughTocher2D`） | 傾きの推定の系が、上限の回数までに解けなかった（§6.3） |
+  | `SolverError::NotConverged`                                | M4-2（`CloughTocher2D`） | 傾きを推定する連立方程式が、反復の上限までに収束しなかった（§6.3） |
 
 * `NonFinite { index }` の `index` は、座標に非有限値があればその座標の位置で、座標がすべて有限のときに限り値の位置である（検証は座標が先。§3.5）。variant からはどちらの配列かを区別できない。
 * 文字列のペイロードは持たない（パターンマッチできる型付きの値だけ）。`ParamReason`・`AxisFault`・`SolverError`・`DegeneracyKind` も `#[non_exhaustive]`。
@@ -380,7 +380,7 @@ interpx/
 | **N-D Grid**      | `pchip`                                         | 同上                                          | 軸ごとの PCHIP を最後の軸から（§6.4） |
 | **N-D Scattered** | `NearestNDInterpolator`                         | `NearestNDInterpolator<D>`                    | `kiddo`                                |
 | **N-D Scattered** | `LinearNDInterpolator`                          | `LinearNDInterpolator<D>`                     | `convx` + セルからの歩き               |
-| **N-D Scattered** | `CloughTocher2DInterpolator`                    | `CloughTocher2DInterpolator`                  | `convx` + 勾配推定 + Bernstein-Bézier  |
+| **N-D Scattered** | `CloughTocher2DInterpolator`                    | `CloughTocher2DInterpolator`                  | `convx` + 傾きの推定 + Bernstein-Bézier |
 | **N-D Scattered** | `RBFInterpolator`                               | `RBFInterpolator<D>`                          | `faer` LU + `kiddo`                    |
 
 * `interp1d` は SciPy では旧API扱い。`kind='quadratic'` / `'slinear'` は `BSpline1D` で代替する。`interp2d` は SciPy で削除済みのため対象外。
@@ -755,30 +755,30 @@ interpx/
 ### 6.3 `CloughTocher2DInterpolator` と `RBFInterpolator`
 **CloughTocher2D**（M4-2、#185、SciPy の `CloughTocher2DInterpolator`）
 
-`CloughTocher2DInterpolator<V: Value<f64> = f64>`。平面の点の Delaunay 分割の各三角形を重心で 3 つに分け、それぞれの上で 3 次の Bernstein–Bézier 片になる、C1（値と 1 階導関数が連続）の補間。`Point = [f64; 2]`、`Output = V`。
+`CloughTocher2DInterpolator<V: Value<f64> = f64>`。C1（値と 1 階導関数が連続）の補間。平面の点の Delaunay 分割の各三角形を重心で 3 つに分け、それぞれの上で 3 次の Bernstein–Bézier 片とする。`Point = [f64; 2]`、`Output = V`。
 
-* **構築**: `new`、`from_owned`、`rescaled`、`rescaled_from_owned`、`with_simplex_tolerance`。`LinearNDInterpolator` と同じ形で、三角形分割、点の探し方、`rescaled` の変換、許容誤差、保存の形の検査は、`LinearND` と共有する `Mesh`（`src/scattered/mesh.rs`）が持つ（オーナーの決定）。取得は `len`、`values`、`points`、`gradients`（SciPy の `grad`）、`simplex_count`、`simplex_tolerance`。
-* **点での傾き**（Nielson 1983、Renka・Cline 1984 の全体推定。SciPy の `estimate_gradients_2d_global` と同じ式）: 辺に沿った 2 階導関数の 2 乗の積分の和を最小にする傾き $G_i$。微分して 0 とおくと、頂点 $i$ ごとに、辺 $E = p_j - p_i$、$L = \lvert E \rvert$ について
+* **構築**: `new`、`from_owned`、`rescaled`、`rescaled_from_owned`、`with_simplex_tolerance`（`LinearNDInterpolator` と同じ形）。三角形分割、点の探し方、`rescaled` の変換、許容誤差、保存の形の検査は、`LinearND` と共有する `Mesh`（`src/scattered/mesh.rs`）が持つ（オーナーの決定）。取得メソッドは `len`、`values`、`points`、`gradients`（SciPy の `grad`）、`simplex_count`、`simplex_tolerance`。
+* **点での傾き**（Nielson 1983、Renka・Cline 1984 の全体推定。SciPy の `estimate_gradients_2d_global` と同じ式）: 各辺に沿って 2 階導関数の 2 乗を積分し、全辺での和を最小にする傾き $G_i$。微分して 0 とおくと、頂点 $i$ ごとに、辺 $E = p_j - p_i$、$L = \lvert E \rvert$ について
   $$
   \sum_j \frac{4 E E^{\mathsf T}}{L^3} G_i + \sum_j \frac{2 E E^{\mathsf T}}{L^3} G_j = -\sum_j \frac{6 (f_i - f_j) E}{L^3}
   $$
   になる。全体は対称正定値の連立方程式である。
-  * **解き方**: 頂点ごとの 2 × 2 の塊を前処理にした共役勾配法で、値の列を全部いっしょに解く（内積と係数は列ごと）。解けた列はそこで止める。どの列も、その列だけを解いたときとビットで同じになる（テスト）。
-  * **SciPy は解き切らない**: SciPy は頂点ごとの Gauss–Seidel を `tol`（既定 $10^{-6}$）か `maxiter`（既定 400）で止め、収束しなくても警告だけを出す。その傾きと値は、解からその分だけ離れている。interpx は、残差が右辺の $10^{-14}$ 倍を下回るまで解く（オーナーの決定）。`tol` と `maxiter` は持たない。上限（$10 n + 100$ 回）までに解けなければ `SolverFailed(SolverError::NotConverged)` を返す。
-  * **収束**: 1 回でおよそ 4 分の 1 に減り、試したどの点の集合でも 26 回以内で $10^{-16}$ を下回った（$10^5$ 点までの乱数の点、座標の範囲が 1000 倍違う点、固まった点、$10^{-12}$ 離れた 2 点、細さ $10^{-9}$ の三角形）。`NotConverged` になる入力は見つかっていない。
-  * **しきい値**: $10^{-14}$ で、収束まで回した SciPy との差は値の最大の絶対値の $4.5 \times 10^{-13}$ 以内になる。$10^{-12}$ では $2.9 \times 10^{-11}$ だった（`units/plain`）。
+  * **解き方**: 頂点ごとの 2 × 2 ブロックを前処理行列とする共役勾配法で、値のすべての列を同時に解く（内積と係数は列ごと）。収束した列から反復を止める。どの列も、その列だけを解いたときとビット単位で同じになる（テスト）。
+  * **SciPy は解き切らない**: SciPy は頂点ごとの Gauss–Seidel を `tol`（既定 $10^{-6}$）か `maxiter`（既定 400）で止め、収束しなくても警告だけを出す。そのため傾きも値も、打ち切った分だけ解から離れている。interpx は、残差が右辺の $10^{-14}$ 倍を下回るまで解く（オーナーの決定）。`tol` と `maxiter` は持たない。反復の上限（$10 n + 100$ 回）までに収束しなければ `SolverFailed(SolverError::NotConverged)` を返す。
+  * **収束**: 残差は反復 1 回でおよそ 4 分の 1 に減り、試したどの点の集合でも 26 回以内で $10^{-16}$ を下回った（$10^5$ 点までの乱数の点、座標の範囲が 1000 倍違う点、固まった点、$10^{-12}$ 離れた 2 点、幅 $10^{-9}$ の細い三角形）。`NotConverged` になる入力は見つかっていない。
+  * **しきい値**: しきい値を $10^{-14}$ にすると、収束まで回した SciPy との差は値の最大の絶対値の $4.5 \times 10^{-13}$ 以内、$10^{-12}$ にすると $2.9 \times 10^{-11}$ だった（`units/plain`）。
   * 三角形の頂点でない点（同じ座標の 2 つめ以降）の傾きは 0 である。
-* **片の係数**: SciPy の `_clough_tocher_2d_single` を、演算の順まで写した。辺をまたぐ方向の傾き（SciPy の `g[k]`）は、辺の向こうの三角形の重心を、こちらの三角形の重心座標で表して決める（凸包の辺では $-1/2$）。点の位置だけで決まるので、構築時に三角形ごとに求めて持つ（オーナーの決定。SciPy は評価のたびに求める）。
+* **片の係数**: SciPy の `_clough_tocher_2d_single` を、演算の順まで写した。辺をまたぐ微分の方向（SciPy の `g[k]`）は、辺の向こうの三角形の重心を、こちらの三角形の重心座標で表して決める（凸包の辺では $-1/2$）。点の位置だけで決まるので、構築時に三角形ごとに求めて持つ（オーナーの決定。SciPy は評価のたびに求める）。
 * **評価**: `Mesh` で三角形と重心座標を求め（§6.2。`LinearND` と同じ探し方と許容誤差）、片を評価する。凸包の外と、座標が有限でない問い合わせは `None`。確保しない（`tests/alloc.rs`）。
 * **検査の順**: `LinearNDInterpolator` の 2 次元と同じ（長さ → 点の数（3 以上）→ 点の数の上限 → 座標 → 値 →（`rescaled` だけ）平均と範囲 → 三角形分割）。そのあとに `NotConverged`。
 * **SciPy との一致**（golden、`compare/goldens/scattered.json`）:
-  * SciPy を収束まで回した（`tol=1e-14`、`maxiter=10^6`、警告をエラーにして）10 件: 差は値の最大の絶対値の $4.5 \times 10^{-13}$ 以内（許容 $10^{-12}$）。Franke の第 1 関数の 4 種の点、単位の違う座標（`rescaled` あり・なし）、2 列の値、同じ座標の点、凸包の辺のすぐ外（許容誤差 100 倍）、2000 点。
-  * SciPy の既定の 11 件: $2.8 \times 10^{-8}$ 以内（許容 $10^{-7}$）。SciPy が解き切らない分である。
-  * 4 点以上が同じ円の上にある 2 件（`franke_33`、格子から点を抜いたもの）は、照合から外す。三角形分割が Qhull と違い、傾きは全部の辺を通じた 1 つの系の解なので、違う辺が 1 本でも、値が全体で動く（`franke_33` は 88 辺のうち 1 辺が違い、値の最大の $6 \times 10^{-3}$）。`LinearND` では、違うのはその区画の値だけだった。
+  * SciPy を収束まで回した（`tol=1e-14`、`maxiter=10^6`、警告をエラーにして）10 件: 差は値の最大の絶対値の $4.5 \times 10^{-13}$ 以内（許容 $10^{-12}$）。Franke の第 1 関数の 4 種の点、単位の違う座標（`rescaled` あり・なし）、2 列の値、同じ座標の点、凸包の辺のすぐ外の問い合わせ（許容誤差 100 倍）、2000 点。
+  * SciPy の既定の 11 件: $2.8 \times 10^{-8}$ 以内（許容 $10^{-7}$）。差は SciPy が解き切らない分である。
+  * 4 点以上が同じ円の上にある 2 件（`franke_33`、格子から点を抜いたもの）は、照合から外す。三角形分割が Qhull と違い、傾きは全部の辺にまたがる 1 つの系の解なので、違う辺が 1 本でも、値が全体で動く（`franke_33` は 88 辺のうち 1 辺が違い、値の最大の $6 \times 10^{-3}$）。`LinearND` では、違うのはその区画の値だけだった。
 * **性質**（テスト）: 1 次関数を厳密に再現し、傾きもその関数のもの。データ点では与えた値。辺をまたぐ傾きの差は、刻みを 10 分の 1 にすると 10 分の 1 以下になる（C1。1 次補間では変わらない）。
 * **収束の次数**: §8.4.2。
-* **測った速さ**（criterion、この機械、単位正方形の一様な点、1000 問い合わせ）: 構築は 100 点 77 µs、1000 点 1.19 ms、10 万点 187 ms（`LinearND` の 2 次元は 10 万点で 79 ms）。評価は 1 問い合わせ 42 ns（100 点）、57 ns（1000 点）、109 ns（10 万点）。
-  * **構築の内訳**（段階の前後に時計を入れた一時的なビルド、1 プロセスで 3〜4 回）: 10 万点で、三角形分割と探索の準備（`Mesh`）94〜98 ms、傾きの推定 144〜178 ms、`g[k]` 7〜10 ms。傾きの推定のうち 7〜8 割が共役勾配法の反復（19 回）で、辺を集める処理と系の組み立てが残りである（1000 点では 4〜8 割）。1000 点では `Mesh` 0.89〜1.05 ms、傾き 0.80〜0.84 ms（21 回）。計測は回ごとに 2 倍ほど揺れた。
+* **測った速さ**（criterion、この機械、単位正方形の一様な点、1000 問い合わせ）: 構築は 100 点 77 µs、1000 点 1.19 ms、10 万点 187 ms（`LinearND` の 2 次元は 10 万点で 79 ms）。評価は 1 問い合わせあたり 42 ns（100 点）、57 ns（1000 点）、109 ns（10 万点）。
+  * **構築の内訳**（段階ごとに計時を入れた一時的なビルド、1 プロセスで 3〜4 回）: 10 万点で、三角形分割と探索の準備（`Mesh`）94〜98 ms、傾きの推定 144〜178 ms、`g[k]` 7〜10 ms。傾きの推定のうち 7〜8 割が共役勾配法の反復（19 回）で、辺を集める処理と系の組み立てが残りである（1000 点では反復が 4〜8 割）。1000 点では `Mesh` 0.89〜1.05 ms、傾き 0.80〜0.84 ms（21 回）。計測値は回ごとに最大 2 倍揺れた。
 * **SciPy との差**: 傾きを解き切る（上）。同じ円の上の点の分け方（上）。同じ座標の点では、最初の点の値を使う（`LinearND` と同じ）。
 * **保存**: `LinearND` が保存するもの（点、値、単体の頂点、単体の隣、座標変換、許容誤差）と傾き。読み込みは系を解き直さない。`g[k]` は作り直す（§6.5）。
 
@@ -1478,7 +1478,7 @@ serde   = ["dep:serde"]
   | グリッド `quintic`（2 次元） | 6 | 5.42 → 5.77 → 5.87（等間隔）、4.55 → 5.05 → 5.70（等間隔でない） | まだ次数へ上がっていく途中。テストは、最後の次数と、上がっていくことを見る |
   | グリッド `linear` / `cubic`（3 次元、Genz の振動） | 2 / 4 | 幅 0.2 / 0.45 に入る | §8.4.4 の関数 |
   | `LinearNDInterpolator`（2 次元、Franke の第 1 関数） | 2 | 1.55 → 2.01 → 2.01（格子の内側の点を 0.15 h までずらした点）。Halton 点では、点を 16 倍にして誤差が 12.8 分の 1 | 角が 0 に寄らない三角形分割の上の区分 1 次補間の誤差は $C h^2$（Ciarlet, *The Finite Element Method for Elliptic Problems*, 1978, 定理 3.1.6） |
-  | `CloughTocher2DInterpolator`（2 次元、Franke の第 1 関数、同じずらし方の点） | 測った値で決める（下） | $h = 1/10 \to 1/160$ の平均で 2.38（誤差 $2.06 \times 10^{-2} \to 2.79 \times 10^{-5}$）。収束まで回した SciPy も、同じ点で誤差が 15% 以内で同じ | 理論の次数は出典で確かめていない。傾きを関数の厳密な傾きに置き換えると、SciPy で 3.25 → 3.66 → 3.69 → 3.05（$h = 1/20 \to 1/160$）と速くなるので、次数を決めているのは傾きの推定である。テストは平均が 2.2〜2.6 に入ることを見る |
+  | `CloughTocher2DInterpolator`（2 次元、Franke の第 1 関数、同じずらし方の点） | 測った値で決める（右） | $h = 1/10 \to 1/160$ の平均で 2.38（誤差 $2.06 \times 10^{-2} \to 2.79 \times 10^{-5}$）。収束まで回した SciPy の誤差も、同じ点で 15% 以内の差で一致する | 理論の次数は出典で確かめていない。傾きを関数の厳密な傾きに置き換えると、SciPy で 3.25 → 3.66 → 3.69 → 3.05（$h = 1/20 \to 1/160$）と速くなるので、次数を決めているのは傾きの推定である。テストは平均が 2.2〜2.6 に入ることを見る |
 
   * テストの幅（期待する次数からの許容）は、測った値から決めてテストに固定した。隣の次数までの距離（1）より狭い。
   * **誤差を測る点は、いちばん狭いセルに 3 点以上置く。** 3 次元のグリッドで、セルあたり 1 点以下の格子で測ると、最大の誤差（not-a-knot の端のセル）が測る点の間に落ち、次数が 5.9 や 7.0 と読めた（正しくは 4）。
@@ -1518,7 +1518,7 @@ serde   = ["dep:serde"]
 | `CloughTocher2D`                             | $n \in \{10, 50, 100\}$、$50 \times 50$ 評価                                                                                       |
 | `RBFInterpolator`                            | `neighbors` が `None` または 50、$N \in \{10, 100, 1000\}$、全 8 カーネル、`epsilon = 5.0`、$[-1, 1]^2$ の乱数点                   |
 
-* **Rust 単独の大規模**: `NearestND`・`LinearND`・`CloughTocher2D` は $N$ を $10^5$ まで（`CloughTocher2D` は 1000 点から、500 × 500 画素の評価）、グリッドは軸あたり数百点まで。RBF の全域モードは $N \le 10^4$（メモリは $O(N^2)$）、$N$ がそれ以上は `neighbors` 指定のみ。
+* **Rust 単独の大規模**: `NearestND`・`LinearND`・`CloughTocher2D` は $N$ を $10^5$ まで（`CloughTocher2D` は 1000 点から。評価は 500 × 500 画素の画像で）、グリッドは軸あたり数百点まで。RBF の全域モードは $N \le 10^4$（メモリは $O(N^2)$）、$N$ がそれ以上は `neighbors` 指定のみ。
 * 既存の Pure Rust クレートとの比較は M5-5 で行う（§8.3）。
 * 構築と評価は別々に測る。バッチ評価は `eval_batch_into` と `eval_batch_into_par` を、SciPy のベクトル化呼び出しと比べる。
 
@@ -1622,7 +1622,7 @@ serde   = ["dep:serde"]
   - [ ] `RBFInterpolator`（`faer` LU、8 カーネル、多項式項、局所近傍）
 - [ ] **M4: `convx` 依存の散乱系**（`convx` 公開後に着手）
   - [ ] `LinearNDInterpolator`（Delaunay + セルからの歩き、§6.2）
-  - [ ] `CloughTocher2DInterpolator`（勾配推定 + Bernstein-Bézier）
+  - [ ] `CloughTocher2DInterpolator`（傾きの推定 + Bernstein-Bézier）
 - [ ] **M5: 統合と品質**
   - [ ] `rayon` 並列バッチ評価、`serde`（`ndarray` の相互運用は v0.1.0 のあと。§7）
   - [ ] SciPy 1.18 golden テストスイート、`proptest`
