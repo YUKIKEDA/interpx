@@ -29,7 +29,7 @@ interpx = "0.1"
 - **規則格子の `cubic` と `quintic` は厳密に解きます。** SciPy の既定は反復解法で解くため、値がスプラインからずれます。ずれは、滑らかなデータで最大値の 1e-5〜1e-2（2 次元・3 次元の格子、等間隔でも不等間隔でも）、乱数の値では値そのものの大きさに達します。interpx はスプラインそのものを返し、SciPy の `method="cubic_legacy"` と丸め誤差の範囲で一致します。
 - **`RBFInterpolator` に既定のカーネルはありません。** 系は LU 分解で解きます（SciPy は対称な分解。値の差は 1e-12 未満）。重複した点と、カーネルが求める最小の次数より低い多項式の次数は拒否します（次数については、SciPy は警告を出すだけです）。
 - **`LinearNDInterpolator` は、同じ円の上にある 4 点以上（球の上なら 5 点以上、…）が作る区画を、独自の規則で分割します。** SciPy の三角形分割（Qhull）は別の分け方をするので、そのような区画の中では値が SciPy と違います。格子の上の点がこれに当たります。座標が同じ点が複数あるときは、最初に渡された点の値を使います（Qhull はそのうちの 1 つを残しますが、最初の点とは限りません）。また、SciPy が受け付けない 1 次元の点も扱えます。
-- **`CloughTocher2DInterpolator` は、点での傾きを、連立方程式を最後まで解いて求めます。** SciPy は反復を `tol=1e-6` か `maxiter=400` で打ち切り、収束しなかったときも警告を出すだけです。比べた 11 組のデータでは、SciPy の値は解から最大で、値の最大の絶対値の 3e-8 倍ずれていました。interpx には `tol` と `maxiter` がなく、解けなかったときはエラーを返します。同じ円の上に 4 点以上あると、`LinearNDInterpolator` と同じく三角形分割が SciPy と違います。傾きはすべての辺をまとめた 1 つの連立方程式から決まるので、同じ円の上の点の周りだけでなく、全体で値が違ってきます。
+- **`CloughTocher2DInterpolator` は、点での傾きを、連立方程式を最後まで解いて求めます。** SciPy は反復を `tol=1e-6` か `maxiter=400` で打ち切り、収束しなかったときも警告を出すだけです。比べた 11 組のデータでは、SciPy の値と解とのずれは、最大で値の最大の絶対値の 3e-8 倍でした。interpx には `tol` と `maxiter` がなく、解けなかったときはエラーを返します。同じ円の上に 4 点以上あると、`LinearNDInterpolator` と同じく三角形分割が SciPy と違います。傾きはすべての辺をまとめた 1 つの連立方程式から決まるので、同じ円の上の点の周りだけでなく、全体で値が違ってきます。
 - **値は実数です。** 複素数は扱いません。値を固定長の配列 `[T; M]` にすると、`M` 列をまとめて補間できます。
 - **補間の方式は構築時に決めます。** 評価のたびには変えられません。
 
@@ -445,7 +445,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `CloughTocher2DInterpolator`
 
-平面の点の Delaunay 分割の上で、区分 3 次の補間をします。値も 1 階導関数も連続です（SciPy の `CloughTocher2DInterpolator`）。点での傾きは、曲面が辺に沿ってなるべく曲がらないように、データから推定します。推定した傾きは `gradients()` で取り出せます。点の凸包の外では値がありません。`rescaled`、`with_simplex_tolerance`、問い合わせ点を含む三角形の探し方は、`LinearNDInterpolator` と同じです。
+平面の点の Delaunay 分割の上で、区分 3 次の補間をします（SciPy の `CloughTocher2DInterpolator`）。値も 1 階導関数も連続です。点での傾きは、曲面が辺に沿ってなるべく曲がらないように、データから推定します。推定した傾きは `gradients()` で取り出せます。点の凸包の外では値がありません。`rescaled`、`with_simplex_tolerance`、問い合わせ点を含む三角形の探し方は、`LinearNDInterpolator` と同じです。
 
 ```rust
 use interpx::{CloughTocher2DInterpolator, InterpolateError, Interpolator};
