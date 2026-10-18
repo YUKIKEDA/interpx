@@ -172,7 +172,8 @@ pub use ppoly::PPoly;
 pub use scalar::Scalar;
 #[cfg(feature = "scattered")]
 pub use scattered::{
-    LinearNDInterpolator, NearestNDInterpolator, RBFInterpolator, RbfDegree, RbfKernel, RbfOptions,
+    CloughTocher2DInterpolator, LinearNDInterpolator, NearestNDInterpolator, RBFInterpolator,
+    RbfDegree, RbfKernel, RbfOptions,
 };
 pub use search::Hint;
 pub use value::Value;

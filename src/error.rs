@@ -285,6 +285,11 @@ pub enum SolverError {
     /// The system has no solution, or more than one: its matrix is singular.
     #[error("the system is singular")]
     Singular,
+
+    /// An iterative solution did not come within its tolerance in as many
+    /// steps as it is given.
+    #[error("the iteration did not converge")]
+    NotConverged,
 }
 
 #[cfg(test)]

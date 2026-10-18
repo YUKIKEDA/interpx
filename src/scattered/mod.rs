@@ -1,12 +1,14 @@
 //! Interpolators of values at points without structure, in any number of
 //! dimensions. Built with the `scattered` feature.
 
+mod clough_tocher;
 mod kdtree;
 mod linear_nd;
 mod mesh;
 mod nearest_nd;
 mod rbf;
 
+pub use clough_tocher::CloughTocher2DInterpolator;
 pub use linear_nd::LinearNDInterpolator;
 pub use nearest_nd::NearestNDInterpolator;
 pub use rbf::{RBFInterpolator, RbfDegree, RbfKernel, RbfOptions};

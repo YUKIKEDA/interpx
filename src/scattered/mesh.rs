@@ -322,7 +322,7 @@ impl<const D: usize> Mesh<D> {
 
     /// The barycentric coordinates of `x` in `simplex`: those of the first
     /// `D` vertices, and that of the last. NaN for a degenerate simplex.
-    fn barycentric(&self, simplex: u32, x: &[f64; D]) -> ([f64; D], f64) {
+    pub(super) fn barycentric(&self, simplex: u32, x: &[f64; D]) -> ([f64; D], f64) {
         barycentric(self.transform(simplex), x)
     }
 

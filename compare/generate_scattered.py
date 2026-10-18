@@ -15,6 +15,8 @@ point, and larger sets in two and three dimensions.
 Run: `just gen-goldens`
 """
 
+import warnings
+
 import numpy as np
 from scipy import interpolate as si
 from scipy import spatial
@@ -264,6 +266,89 @@ def linear_chosen(rng) -> list[dict]:
     return out
 
 
+def clough_chosen(rng) -> list[dict]:
+    """Cases chosen for `CloughTocher2DInterpolator` (M4-2). Drawn after
+    everything else, so that the cases above stay as they are.
+
+    interpx solves the system of the gradient estimate to convergence; SciPy
+    stops its Gauss-Seidel iteration at `tol` (1e-6 by default). These cases
+    run SciPy until it has converged (`tol=1e-14`, a `maxiter` it does not
+    reach; a warning that it did not converge is an error of this script), so
+    that the two can be held together to rounding. The points are in general
+    position: four points on one circle let Qhull and `convx` triangulate
+    otherwise, and the gradients are then another solution everywhere.
+    """
+    reference = "scipy.interpolate.CloughTocher2DInterpolator"
+    out = []
+    converged = {"tol": 1e-14, "maxiter": 1_000_000}
+
+    def add(name, options, points, values, queries, rescale=False, tolerance=None, **more):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            f = si.CloughTocher2DInterpolator(points, values, fill_value=np.nan, rescale=rescale, **converged)
+            expected = f(queries) if tolerance is None else f(queries, simplex_tolerance=tolerance)
+        options = {"rescale": rescale, **converged, **options}
+        if tolerance is not None:
+            options["simplex_tolerance"] = tolerance
+        out.append(golden.case(name, reference, options, points=points, values=values, queries=queries, expected=expected, **more))
+        return f
+
+    # The node sets of the cases above without four points on one circle.
+    for i, (name, pts) in enumerate(node_sets_2d().items()):
+        if name in ("franke_33", "grid_holes_10"):
+            continue
+        q = np.vstack([datasets.queries_2d(60, SEED + 10 + i), pts[:3], pts.mean(axis=0, keepdims=True)])
+        add(f"clough_tocher/converged/{name}/f1", {"function": "franke_f1"}, pts, datasets.franke(1, pts[:, 0], pts[:, 1]), q)
+
+    # Coordinates of different sizes, as they stand and rescaled.
+    pts = np.column_stack([rng.random(60), 1000.0 * rng.random(60)])
+    vals = np.sin(3.0 * pts[:, 0]) * np.cos(pts[:, 1] / 300.0)
+    q = np.column_stack([-0.1 + 1.2 * rng.random(50), 1000.0 * (-0.1 + 1.2 * rng.random(50))])
+    add("clough_tocher/converged/units/plain", {}, pts, vals, q)
+    add("clough_tocher/converged/units/rescaled", {}, pts, vals, q, rescale=True)
+    # Two values at every point.
+    both = np.column_stack([vals, rng.uniform(-1.0, 1.0, 60)])
+    add("clough_tocher/converged/units/columns", {}, pts, vals, q)
+    f = si.CloughTocher2DInterpolator(pts, both, fill_value=np.nan, **converged)
+    out[-1]["values_columns"] = golden.encode(both)
+    out[-1]["expected_columns"] = golden.encode(f(q))
+
+    # Points given more than once: the first counts; the reference is SciPy
+    # on the points without the repeats.
+    base = rng.random((30, 2))
+    order = rng.permutation(np.concatenate([np.arange(30), np.arange(30)[:12]]))
+    dpts = base[order]
+    dvals = rng.uniform(-1.0, 1.0, len(dpts))
+    _, firsts = np.unique(dpts, axis=0, return_index=True)
+    firsts = np.sort(firsts)
+    qd = -0.1 + 1.2 * rng.random((40, 2))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        expected = si.CloughTocher2DInterpolator(dpts[firsts], dvals[firsts], fill_value=np.nan, **converged)(qd)
+    out.append(golden.case(
+        "clough_tocher/converged/duplicates", reference,
+        {"rescale": False, **converged, "reference_points": "the first of each set of equal points"},
+        points=dpts, values=dvals, queries=qd, expected=expected,
+    ))
+
+    # Queries just outside the edges of the hull, with 100 times the
+    # simplex tolerance.
+    hp = rng.random((40, 2))
+    hv = np.cos(4.0 * hp[:, 0]) + hp[:, 1] ** 2
+    hull = spatial.ConvexHull(hp)
+    mids = np.array([(hp[a] + hp[b]) / 2.0 for a, b in hull.simplices])
+    centre = hp.mean(axis=0)
+    qt = np.vstack([centre + (1.0 + s) * (mids - centre) for s in (1e-14, 1e-13, 1e-12, 1e-11)] + [hp])
+    add("clough_tocher/converged/hull_edges/tolerance_100", {}, hp, hv, qt, tolerance=100.0)
+
+    # A larger set: 2000 points.
+    lp = rng.random((2000, 2))
+    lv = np.sin(3.0 * lp[:, 0]) * np.cos(2.0 * lp[:, 1])
+    lq = -0.05 + 1.1 * rng.random((200, 2))
+    add("clough_tocher/converged/random_2000", {}, lp, lv, lq)
+    return out
+
+
 def main() -> None:
     cases = []
     for i, (name, pts) in enumerate(node_sets_2d().items()):
@@ -288,6 +373,7 @@ def main() -> None:
 
     cases += nearest_chosen(rng)
     cases += linear_chosen(rng)
+    cases += clough_chosen(rng)
 
     path = golden.write("scattered", GENERATOR, SEED, cases)
     print(f"wrote {path.name} ({len(cases)} cases)")
