@@ -12,6 +12,7 @@ use scirs2_interpolate::interp1d::{ExtrapolateMode, Interp1d, InterpolationMetho
 use scirs2_interpolate::interpnd::{
     ExtrapolateMode as GridExtrapolate, InterpolationMethod as GridMethod, RegularGridInterpolator,
 };
+use scirs2_interpolate::triangulation_interp::make_linear_triangulation;
 use scirs2_interpolate::{AkimaSpline, CubicSpline, PchipInterpolator, RBFInterpolator, RBFKernel};
 
 const LIBRARY: &str = "scirs2";
@@ -143,12 +144,45 @@ fn rbf(case: &Case) {
     );
 }
 
+/// Linear interpolation on a Delaunay triangulation of the plane:
+/// `triangulation_interp::make_linear_triangulation` (barycentric within each
+/// triangle, no value outside the hull). It takes the points and the values
+/// as owned arrays, so the copy is part of its construction, as the copy of
+/// `new` is part of interpx's.
+fn linear_nd(case: &Case) {
+    if case.count_or_none("dim").unwrap_or(2) != 2 {
+        unsupported("points of the plane only");
+    }
+    let (points, values, q) = (case.array("points"), case.array("values"), case.array("q"));
+    let points = ArrayView2::from_shape((points.len() / 2, 2), &points).expect("rows of points");
+    let q = ArrayView2::from_shape((q.len() / 2, 2), &q)
+        .expect("rows of points")
+        .to_owned();
+    let values = ArrayView1::from(&values);
+    run(
+        case,
+        LIBRARY,
+        q.nrows(),
+        || {
+            make_linear_triangulation(points.to_owned(), values.to_owned())
+                .unwrap_or_else(|error| refused(error))
+        },
+        |built, out| {
+            copy(
+                built.evaluate(&q).unwrap_or_else(|error| refused(error)),
+                out,
+            )
+        },
+    );
+}
+
 fn main() {
     let case = Case::from_args();
     match case.family() {
         "oned" => oned(&case),
         "grid" => grid(&case),
         "rbf" => rbf(&case),
+        "linear_nd" => linear_nd(&case),
         other => unsupported(&format!("no family {other}")),
     }
 }

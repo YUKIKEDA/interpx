@@ -1236,7 +1236,7 @@ serde   = ["dep:serde"]
   | `scirs2-interpolate` | 0.6.5 | 1 次元、グリッド、RBF | SciPy の移植を掲げる、範囲がいちばん広い Rust のクレート |
   | `ndarray-interp` | 0.6.0 | 1 次元（線形、3 次スプライン）、2 次元の双線形 | 1 次元でいちばん使われている |
   | `interpn` | 0.11.2 | 直交グリッド（線形、最近傍、3 次） | グリッド専用で、速さを掲げている |
-  | `spade` | 2.15.1 | 平面の Delaunay 分割と、その上の補間 | `LinearNDInterpolator` の 2 次元と同じもの（Delaunay 分割の上の重心座標の補間）を計算する（M4-1 で調べた）。`scirs2-interpolate` は、`griddata` の linear が自然近傍による近似で、Delaunay の上の 1 次の補間（`LinearTriangulationInterp`）は公開されていないモジュールにあるので、`LinearND` の相手にしない |
+  | `spade` | 2.15.1 | 平面の Delaunay 分割と、その上の補間 | `LinearNDInterpolator` の 2 次元と同じもの（Delaunay 分割の上の重心座標の補間）を計算する（M4-1 で調べた）。`scirs2-interpolate` も、`triangulation_interp::make_linear_triangulation`（2 次元、Bowyer–Watson、許容誤差 1e-10）で同じものを計算するので、`LinearND` の 2 次元の相手にする（値は SciPy と相対 1e-15 で一致した）。はじめは公開されていない `scattered_2d` だけを見て、相手にしないとしていた（#183 の作業中に見つけて直した）。`griddata` の linear は自然近傍による近似で、別のもの |
 
   * **いまの結果**（`LinearNDInterpolator` を足した M4-1 の最後のコミット `959c7c5`（重心座標を LU 分解で解く）で、全 310 ケースを 1 回の実行で測った。構築は測る前に 1 秒慣らす（P-18）。3 巡。1 回が 2 秒以上かかり 1 回で測った組は 1 巡。`docs/performance.md` はこの実行の結果である。実行の前に、ドライバの検査（`just compare-check`）を通している）:
 

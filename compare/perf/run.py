@@ -80,7 +80,7 @@ def supports(library: str, case: dict) -> bool:
     if library == "spade":
         return family == "linear_nd" and case.get("dim", 2) == 2
     if family == "linear_nd":
-        return library in ("scipy", "interpx", "interpx_par")
+        return library in ("scipy", "interpx", "interpx_par") or (library == "scirs2" and case.get("dim", 2) == 2)
     if library == "interpn":
         return family == "grid" and ascending and method in ("linear", "nearest", "cubic")
     if library == "ndarray_interp":
