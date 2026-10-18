@@ -1,5 +1,6 @@
 //! The value of the nearest data point, in any number of dimensions.
 
+use super::Scaling;
 use crate::error::ParamReason;
 use crate::{validate, InterpolateError, Interpolator, Value};
 use kiddo::{ImmutableKdTree, SquaredEuclidean};
@@ -67,63 +68,6 @@ pub struct NearestNDInterpolator<const D: usize, V: Value<f64> = f64> {
     scaling: Option<Scaling<D>>,
     /// A query has a value when its nearest point is nearer than this.
     bound: Option<f64>,
-}
-
-/// The change of coordinates of a rescaled interpolant: `(x - offset) / scale`
-/// on each axis.
-#[derive(Debug, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(bound = ""))]
-struct Scaling<const D: usize> {
-    #[cfg_attr(feature = "serde", serde(with = "crate::stored"))]
-    offset: [f64; D],
-    #[cfg_attr(feature = "serde", serde(with = "crate::stored"))]
-    scale: [f64; D],
-}
-
-impl<const D: usize> Scaling<D> {
-    /// The mean of the points on each axis, and their range. An axis on which
-    /// all points agree keeps its scale.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`InterpolateError::NonFinite`] when the sum of the coordinates
-    /// of an axis overflows (with the point at which it does), or their range
-    /// (with the point that has the largest coordinate). With a mean or a
-    /// range that is not finite every point would land on one place, or on
-    /// none.
-    fn of(points: &[[f64; D]]) -> Result<Self, InterpolateError> {
-        let count = points.len() as f64;
-        let mut offset = [0.0; D];
-        let mut scale = [1.0; D];
-        for d in 0..D {
-            let (mut sum, mut least, mut most) = (0.0, f64::INFINITY, f64::NEG_INFINITY);
-            let mut largest = 0;
-            for (index, point) in points.iter().enumerate() {
-                sum += point[d];
-                if !sum.is_finite() {
-                    return Err(InterpolateError::NonFinite { index });
-                }
-                least = least.min(point[d]);
-                if point[d] > most {
-                    (most, largest) = (point[d], index);
-                }
-            }
-            offset[d] = sum / count;
-            let range = most - least;
-            if !range.is_finite() {
-                return Err(InterpolateError::NonFinite { index: largest });
-            }
-            if range > 0.0 {
-                scale[d] = range;
-            }
-        }
-        Ok(Self { offset, scale })
-    }
-
-    fn apply(&self, point: &[f64; D]) -> [f64; D] {
-        core::array::from_fn(|d| (point[d] - self.offset[d]) / self.scale[d])
-    }
 }
 
 impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {

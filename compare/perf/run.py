@@ -50,7 +50,7 @@ STOPPED = "stopped at the time limit"
 # twice its time.
 NEAR = TIME_LIMIT / 2
 
-RUST_RUNNERS = ("interpx", "scirs2", "ndarray_interp", "interpn")
+RUST_RUNNERS = ("interpx", "scirs2", "ndarray_interp", "interpn", "spade")
 # interpx again, built with `from_owned` (the data handed over, not copied).
 # and with its parallel batch, on `PAR_THREADS` threads and every core.
 VARIANTS = {"interpx_owned": ("interpx", "owned"), "interpx_par": ("interpx", "par")}
@@ -76,7 +76,11 @@ def supports(library: str, case: dict) -> bool:
     family, method = case["family"], case.get("method")
     ascending = not case["name"].endswith("/flipped")
     if library == "interpx_owned":
-        return family in ("grid", "nearest_nd", "rbf")
+        return family in ("grid", "nearest_nd", "linear_nd", "rbf")
+    if library == "spade":
+        return family == "linear_nd" and case.get("dim", 2) == 2
+    if family == "linear_nd":
+        return library in ("scipy", "interpx", "interpx_par") or (library == "scirs2" and case.get("dim", 2) == 2)
     if library == "interpn":
         return family == "grid" and ascending and method in ("linear", "nearest", "cubic")
     if library == "ndarray_interp":

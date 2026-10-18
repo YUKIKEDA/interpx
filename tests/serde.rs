@@ -596,7 +596,10 @@ fn grids_come_back_and_a_broken_form_does_not() {
 #[cfg(feature = "scattered")]
 #[test]
 fn scattered_types_come_back_and_a_broken_form_does_not() {
-    use interpx::{NearestNDInterpolator, RBFInterpolator, RbfDegree, RbfKernel, RbfOptions};
+    use interpx::{
+        LinearNDInterpolator, NearestNDInterpolator, RBFInterpolator, RbfDegree, RbfKernel,
+        RbfOptions,
+    };
 
     let mut rng = Lcg(23);
     let mut data: Vec<[f64; 2]> = (0..80).map(|_| [rng.next(), 5.0 * rng.next()]).collect();
@@ -797,6 +800,67 @@ fn scattered_types_come_back_and_a_broken_form_does_not() {
     // Without dimensions all points are one point.
     let nowhere = NearestNDInterpolator::new(&[[], []], &[7.0, 8.0]).expect("valid");
     let back: NearestNDInterpolator<0> = serde_json::from_value(json!(nowhere)).expect("read");
+    assert_eq!(back.eval(&[]), Some(7.0));
+
+    // LinearNDInterpolator keeps its triangulation: points given twice stay,
+    // and no simplex names the second of them.
+    let linear = LinearNDInterpolator::new(&data, &twice).expect("valid");
+    check("LinearND", &linear, &points, &[], false);
+    let rescaled = LinearNDInterpolator::rescaled(&data, &twice).expect("valid");
+    check("LinearND, rescaled", &rescaled, &points, &[], false);
+    let linear = LinearNDInterpolator::new(&data, &pairs_of(&twice)).expect("valid");
+    check("LinearND, two columns", &linear, &points, &[], false);
+    let back: LinearNDInterpolator<2, [f64; 2]> =
+        serde_json::from_value(json!(linear)).expect("read");
+    assert_eq!(
+        (back.simplex_count(), back.points()),
+        (linear.simplex_count(), linear.points())
+    );
+    // A simplex that names no point, a neighbor that names no simplex, a
+    // scale of zero: each refused.
+    let form = json!(LinearNDInterpolator::rescaled(&data, &twice).expect("valid"));
+    let mut broken = form.clone();
+    broken["simplices"][0] = json!(data.len());
+    assert!(serde_json::from_value::<LinearNDInterpolator<2>>(broken).is_err());
+    let mut broken = form.clone();
+    let count = form["simplices"].as_array().expect("simplices").len() / 3;
+    broken["neighbors"][0] = json!(count);
+    assert!(serde_json::from_value::<LinearNDInterpolator<2>>(broken).is_err());
+    // A neighbor taken away on one side only: the other simplex still names
+    // this one (the review of #183).
+    let first = form["neighbors"][0].as_u64().expect("a neighbor");
+    let mut broken = form.clone();
+    broken["neighbors"][0] = json!(if first == u64::from(u32::MAX) {
+        0
+    } else {
+        u32::MAX
+    });
+    assert!(serde_json::from_value::<LinearNDInterpolator<2>>(broken).is_err());
+    // A simplex that names a point twice.
+    let mut broken = form.clone();
+    broken["simplices"][1] = broken["simplices"][0].clone();
+    assert!(serde_json::from_value::<LinearNDInterpolator<2>>(broken).is_err());
+    let mut broken = form.clone();
+    broken["scaling"]["scale"][1] = json!(0.0);
+    assert!(serde_json::from_value::<LinearNDInterpolator<2>>(broken).is_err());
+    let mut broken = form;
+    broken["simplices"] = json!([]);
+    broken["neighbors"] = json!([]);
+    assert!(serde_json::from_value::<LinearNDInterpolator<2>>(broken).is_err());
+    // The simplex tolerance comes back, and one that is not above zero is
+    // not read.
+    let wider = LinearNDInterpolator::new(&data, &twice)
+        .and_then(|linear| linear.with_simplex_tolerance(50.0))
+        .expect("valid");
+    check("LinearND, a simplex tolerance", &wider, &points, &[], false);
+    let back: LinearNDInterpolator<2> = serde_json::from_value(json!(wider)).expect("read");
+    assert_eq!(back.simplex_tolerance(), 50.0);
+    let mut broken = json!(wider);
+    broken["simplex_tolerance"] = json!(0.0);
+    assert!(serde_json::from_value::<LinearNDInterpolator<2>>(broken).is_err());
+    // Without dimensions: no simplex, and the first value.
+    let nowhere = LinearNDInterpolator::new(&[[], []], &[7.0, 8.0]).expect("valid");
+    let back: LinearNDInterpolator<0> = serde_json::from_value(json!(nowhere)).expect("read");
     assert_eq!(back.eval(&[]), Some(7.0));
 }
 

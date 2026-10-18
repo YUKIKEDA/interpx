@@ -530,3 +530,63 @@ fn scattered_interpolants_come_nearer_the_function_with_more_points() {
         "nearest: {few:.1e}, {many:.1e}"
     );
 }
+
+#[cfg(feature = "scattered")]
+#[test]
+fn linear_nd_converges_at_the_second_order() {
+    use common::functions::franke;
+    use interpx::LinearNDInterpolator;
+
+    // Piecewise linear interpolation on a triangulation whose angles stay
+    // away from zero is off by C h^2 for a smooth function (Ciarlet, The
+    // Finite Element Method for Elliptic Problems, 1978, theorem 3.1.6):
+    // order 2. Franke's first function; the error on a lattice inside the
+    // square.
+    let f = |p: [f64; 2]| franke(1, p[0], p[1]).expect("F1");
+    let worst = |linear: &LinearNDInterpolator<2>| {
+        let mut worst = 0.0_f64;
+        for i in 0..=40 {
+            for j in 0..=40 {
+                let p = [i, j].map(|m| 0.1 + 0.8 * f64::from(m) / 40.0);
+                worst = worst.max((linear.eval(&p).unwrap_or(f64::NAN) - f(p)).abs());
+            }
+        }
+        worst
+    };
+    let build = |points: Vec<[f64; 2]>| {
+        let values: Vec<f64> = points.iter().map(|p| f(*p)).collect();
+        LinearNDInterpolator::from_owned(points, values).expect("valid")
+    };
+
+    // A lattice of spacing h, each inner point moved by up to 0.15 h along
+    // each axis (Halton numbers, so that no four points are on one circle).
+    // Measured: 5.8e-2, 2.0e-2, 4.9e-3, 1.2e-3 at h = 1/10, 1/20, 1/40,
+    // 1/80; orders 1.55, 2.01, 2.01.
+    let lattice = |m: u32| {
+        let h = 1.0 / f64::from(m);
+        let mut points = Vec::new();
+        for i in 0..=m {
+            for j in 0..=m {
+                let shift = halton((i * (m + 1) + j + 1) as usize).map(|u| (u - 0.5) * 0.3 * h);
+                let moved = |c: u32, s: f64| if c == 0 || c == m { 0.0 } else { s };
+                points.push([
+                    f64::from(i) * h + moved(i, shift[0]),
+                    f64::from(j) * h + moved(j, shift[1]),
+                ]);
+            }
+        }
+        worst(&build(points))
+    };
+    let errors: Vec<f64> = [10, 20, 40, 80].map(lattice).to_vec();
+    for pair in errors[1..].windows(2) {
+        let order = (pair[0] / pair[1]).log2();
+        assert!((1.9..=2.1).contains(&order), "{errors:?}: order {order}");
+    }
+
+    // Halton points have no spacing to halve: 16 times the points should
+    // bring the error down 16 times. Measured 12.8 (8.6e-2 at 100 points,
+    // 6.8e-3 at 1600); the largest error moves with the points.
+    let halton_error = |n: usize| worst(&build((1..=n).map(halton).collect()));
+    let (few, many) = (halton_error(100), halton_error(1600));
+    assert!(few / many >= 8.0 && many <= 1e-2, "{few:.1e}, {many:.1e}");
+}

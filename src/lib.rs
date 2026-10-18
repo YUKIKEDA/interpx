@@ -13,7 +13,7 @@
 //! - Values on a rectilinear grid: [`RegularGridInterpolator`], with the
 //!   methods of [`GridMethod`].
 //! - Scattered data (the `scattered` feature, on by default):
-//!   `NearestNDInterpolator` and `RBFInterpolator`.
+//!   `NearestNDInterpolator`, `LinearNDInterpolator`, and `RBFInterpolator`.
 //!
 //! Every interpolator implements [`Interpolator`]: `eval` returns `None`
 //! outside the domain unless an [`Extrapolate`] mode says otherwise, and
@@ -158,7 +158,7 @@ mod value;
 pub use boundary::{BoundaryCondition, EndCondition};
 pub use bspline::{BSpline, BSPLINE_MAX_DEGREE};
 pub use curve::{BSplineCurve, Parametrization};
-pub use error::{AxisFault, InterpolateError, ParamReason, SolverError};
+pub use error::{AxisFault, DegeneracyKind, InterpolateError, ParamReason, SolverError};
 pub use extrapolate::Extrapolate;
 pub use grid::{GridMethod, RegularGridInterpolator};
 pub use interpolator::Interpolator;
@@ -171,7 +171,9 @@ pub use par::ParInterpolator;
 pub use ppoly::PPoly;
 pub use scalar::Scalar;
 #[cfg(feature = "scattered")]
-pub use scattered::{NearestNDInterpolator, RBFInterpolator, RbfDegree, RbfKernel, RbfOptions};
+pub use scattered::{
+    LinearNDInterpolator, NearestNDInterpolator, RBFInterpolator, RbfDegree, RbfKernel, RbfOptions,
+};
 pub use search::Hint;
 pub use value::Value;
 

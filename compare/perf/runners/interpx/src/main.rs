@@ -5,9 +5,9 @@
 
 use interpx::{
     Akima1D, AkimaMethod, BSpline, BSpline1D, BSplineCurve, BoundaryCondition, CubicSpline,
-    GridMethod, Interpolator, Linear1D, Nearest1D, NearestKind, NearestNDInterpolator, PPoly,
-    ParInterpolator, PchipInterpolator, RBFInterpolator, RbfKernel, RbfOptions,
-    RegularGridInterpolator,
+    GridMethod, Interpolator, Linear1D, LinearNDInterpolator, Nearest1D, NearestKind,
+    NearestNDInterpolator, PPoly, ParInterpolator, PchipInterpolator, RBFInterpolator, RbfKernel,
+    RbfOptions, RegularGridInterpolator,
 };
 use perf_harness::{run, run_given, unsupported, Case};
 use std::cell::RefCell;
@@ -204,9 +204,28 @@ fn rbf(case: &Case) {
     run(case, library(), q.len(), build, eval);
 }
 
+fn linear_nd<const D: usize>(case: &Case) {
+    let (points, values, q) = (
+        case.rows::<D>("points"),
+        case.array("values"),
+        case.rows::<D>("q"),
+    );
+    let eval = |built: &LinearNDInterpolator<D>, out: &mut [f64]| {
+        batch(built, &q, out, f64::NAN);
+    };
+    if owned() {
+        let make = || (points.clone(), values.clone());
+        let build =
+            |(points, values)| LinearNDInterpolator::from_owned(points, values).expect("valid");
+        return run_given(case, OWNED, q.len(), make, build, eval);
+    }
+    let build = || LinearNDInterpolator::new(&points, &values).expect("valid");
+    run(case, library(), q.len(), build, eval);
+}
+
 fn main() {
     let case = Case::from_args();
-    if owned() && !matches!(case.family(), "grid" | "nearest_nd" | "rbf") {
+    if owned() && !matches!(case.family(), "grid" | "nearest_nd" | "linear_nd" | "rbf") {
         unsupported("built with `from_owned` for the types that keep their data");
     }
     match case.family() {
@@ -234,6 +253,11 @@ fn main() {
             other => unsupported(&format!("no grid of {other} dimensions")),
         },
         "nearest_nd" => nearest_nd(&case),
+        "linear_nd" => match case.count_or_none("dim").unwrap_or(2) {
+            2 => linear_nd::<2>(&case),
+            3 => linear_nd::<3>(&case),
+            other => unsupported(&format!("no points of {other} dimensions")),
+        },
         "rbf" => rbf(&case),
         other => unsupported(&format!("no family {other}")),
     }

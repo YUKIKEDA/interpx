@@ -11,7 +11,7 @@ interpx = "0.1"
 
 フィーチャー:
 
-- `scattered`（既定で有効）: `NearestNDInterpolator` と `RBFInterpolator` を使えるようにします。この 2 つだけが使う依存 crate も、このフィーチャーで入ります。
+- `scattered`（既定で有効）: `NearestNDInterpolator`、`LinearNDInterpolator`、`RBFInterpolator` を使えるようにします。これらだけが使う依存 crate も、このフィーチャーで入ります。
 - `rayon`: 一括評価を複数のスレッドで行います（`ParInterpolator`）。結果は直列の一括評価とビット単位で同じです。
 - `serde`: すべての補間器と、その構築に使う引数に `Serialize` と `Deserialize` を実装します。
 
@@ -28,6 +28,7 @@ interpx = "0.1"
 - **入力は検査され、SciPy が別のものを計算する入力は拒否されます。** 1 変数では座標が狭義単調増加である必要があります（SciPy の `interp1d` は並べ替えます）。データはどこでも有限である必要があり、NaN や無限大を含むデータはエラー（`InterpolateError::NonFinite`）になります。データの NaN が補間の値に紛れ込むことはありません。
 - **規則格子の `cubic` と `quintic` は厳密に解きます。** SciPy の既定は反復解法で解くため、値がスプラインからずれます。ずれは、滑らかなデータで最大値の 1e-5〜1e-2（2 次元・3 次元の格子、等間隔でも不等間隔でも）、乱数の値では値そのものの大きさに達します。interpx はスプラインそのものを返し、SciPy の `method="cubic_legacy"` と丸め誤差の範囲で一致します。
 - **`RBFInterpolator` に既定のカーネルはありません。** 系は LU 分解で解きます（SciPy は対称な分解。値の差は 1e-12 未満）。重複した点と、カーネルが求める最小の次数より低い多項式の次数は拒否します（次数については、SciPy は警告を出すだけです）。
+- **`LinearNDInterpolator` は、同じ円の上にある 4 点以上（球の上なら 5 点以上、…）が作る区画を、独自の規則で分割します。** SciPy の三角形分割（Qhull）は別の分け方をするので、そのような区画の中では値が SciPy と違います。格子の上の点がこれに当たります。座標が同じ点が複数あるときは、最初に渡された点の値を使います（Qhull はそのうちの 1 つを残しますが、最初の点とは限りません）。また、SciPy が受け付けない 1 次元の点も扱えます。
 - **値は実数です。** 複素数は扱いません。値を固定長の配列 `[T; M]` にすると、`M` 列をまとめて補間できます。
 - **補間の方式は構築時に決めます。** 評価のたびには変えられません。
 
@@ -59,14 +60,14 @@ fn main() -> Result<(), InterpolateError> {
 
 ## 使う前に知っておくこと
 
-- **補間器はすべて自分のデータを所有し**、`Send + Sync + 'static` です。保持しておくことも、別のスレッドへ渡すことも、共有することもできます。コンストラクタは渡されたものを複製します。データの一部を渡されたまま保持する型（`PPoly`、`BSpline`、`RegularGridInterpolator`、`NearestNDInterpolator`、`RBFInterpolator`）には `from_owned` もあり、そのデータを `Vec` で受け取って複製せずに保持します。
+- **補間器はすべて自分のデータを所有し**、`Send + Sync + 'static` です。保持しておくことも、別のスレッドへ渡すことも、共有することもできます。コンストラクタは渡されたものを複製します。データの一部を渡されたまま保持する型（`PPoly`、`BSpline`、`RegularGridInterpolator`、`NearestNDInterpolator`、`LinearNDInterpolator`、`RBFInterpolator`）には `from_owned` もあり、そのデータを `Vec` で受け取って複製せずに保持します。
 - **座標は `f32` か `f64` です**（1 変数、曲線、規則格子）。散布点は `f64` だけです。
 - **規則格子の値は C 順です。** 最後の軸が最も速く変わります。NumPy が `values[i, j, k]` を並べる順と同じです。
 - **NaN と無限大**: データに含まれるとき、構築時のエラーになります。NaN を問い合わせると値はありません（`None`、または埋める値）。無限大の問い合わせは定義域の外として扱います。`Forbid` と `Periodic` では値なし、`Clamp` では端の値です。`Extend` では端の区間の式をその点で評価するので、値が無限大や NaN になることがあります。
 - **全点の `RBFInterpolator` は、構築の間 `N` × `N` の行列を持ちます。** 10 838 点で 940 MB です。近傍の点だけを使う設定（`RbfOptions::with_neighbors`）では、代わりに問い合わせごとに小さな系を解きます。`reciprocal_condition` は、全点の系がどれだけ正確に解けたかを示します。
 - **評価はメモリを確保しません。** 例外は、`Vec` を返す `eval_batch` と `eval_batch_par`、および近傍を使う `RBFInterpolator` のスレッドごとの最初の評価（そのスレッドが持ち続ける作業領域を確保します）です。
 - **0.x のリリース**: マイナーバージョン（0.1 から 0.2）で公開 API が変わることがあります。ここでいう公開 API は、既定のフィーチャーで公開されるものを指します。
-- **この crate にないもの**: `interp2d`（SciPy から削除済み）と、型としての `interp1d`（その種類は `Linear1D`、`Nearest1D`、`BSpline1D` で扱えます）。関数の `griddata` もありません。代わりに、`method` に当たる補間器を作って評価してください（`nearest` は `NearestNDInterpolator`、`linear` は `LinearNDInterpolator`、`cubic` は `CloughTocher2DInterpolator`。後の 2 つはまだありません）。まだないもの: `LinearNDInterpolator` と `CloughTocher2DInterpolator`、規則格子と散布点の補間の導関数、`roots`、`NdPPoly`、`BarycentricInterpolator` と `KroghInterpolator`、FITPACK 系（`UnivariateSpline`、`splrep`、`RectBivariateSpline`）、実行時に決める次元と出力の幅。
+- **この crate にないもの**: `interp2d`（SciPy から削除済み）と、型としての `interp1d`（その種類は `Linear1D`、`Nearest1D`、`BSpline1D` で扱えます）。関数の `griddata` もありません。代わりに、`method` に当たる補間器を作って評価してください（`nearest` は `NearestNDInterpolator`、`linear` は `LinearNDInterpolator`、`cubic` は `CloughTocher2DInterpolator`。最後の 1 つはまだありません）。まだないもの: `CloughTocher2DInterpolator`、規則格子と散布点の補間の導関数、`roots`、`NdPPoly`、`BarycentricInterpolator` と `KroghInterpolator`、FITPACK 系（`UnivariateSpline`、`splrep`、`RectBivariateSpline`）、実行時に決める次元と出力の幅。
 
 ## 使い方
 
@@ -416,6 +417,27 @@ fn main() -> Result<(), InterpolateError> {
 
     let rescaled = NearestNDInterpolator::rescaled(&points, &[1.0, 2.0, 3.0])?;
     assert_eq!(rescaled.len(), 3);
+    Ok(())
+}
+```
+
+### `LinearNDInterpolator`
+
+`D` 次元で、点の Delaunay 分割の上で線形に補間します（SciPy の `LinearNDInterpolator`）。点の凸包の外では値がありません。`rescaled` は、各座標を同じ範囲にそろえてから三角形分割します（`rescale=True`）。`with_simplex_tolerance` は、単体の内側とみなす範囲を広げます（SciPy 1.18 の `simplex_tolerance` にあたります。SciPy では評価のたびに渡します）。
+
+```rust
+use interpx::{InterpolateError, Interpolator, LinearNDInterpolator};
+
+fn main() -> Result<(), InterpolateError> {
+    // f(x, y) = 1 + 2x + 3y at the corners of the unit square.
+    let points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
+    let linear = LinearNDInterpolator::new(&points, &[1.0, 3.0, 4.0, 6.0])?;
+    let v = linear.eval(&[0.25, 0.5]).unwrap_or(f64::NAN);
+    assert!((v - 3.0).abs() < 1e-12);
+    assert_eq!(linear.eval(&[1.5, 0.5]), None);
+
+    let rescaled = LinearNDInterpolator::rescaled(&points, &[1.0, 3.0, 4.0, 6.0])?;
+    assert_eq!(rescaled.simplex_count(), 2);
     Ok(())
 }
 ```

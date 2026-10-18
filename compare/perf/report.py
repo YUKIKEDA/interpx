@@ -20,10 +20,10 @@ OUT = HERE / "out"
 DOCS = HERE.parent.parent / "docs"
 FIGURES = DOCS / "performance"
 
-LIBRARIES = ("interpx", "interpx_par", "interpx_owned", "scipy", "scirs2", "ndarray_interp", "interpn")
+LIBRARIES = ("interpx", "interpx_par", "interpx_owned", "scipy", "scirs2", "ndarray_interp", "interpn", "spade")
 # The libraries interpx is compared with: not itself built another way.
-OTHERS = ("scipy", "scirs2", "ndarray_interp", "interpn")
-RUST = ("scirs2", "ndarray_interp", "interpn")
+OTHERS = ("scipy", "scirs2", "ndarray_interp", "interpn", "spade")
+RUST = ("scirs2", "ndarray_interp", "interpn", "spade")
 TITLES = {
     "interpx": "interpx",
     "interpx_par": "interpx, parallel",
@@ -32,6 +32,7 @@ TITLES = {
     "scirs2": "scirs2-interpolate",
     "ndarray_interp": "ndarray-interp",
     "interpn": "interpn",
+    "spade": "spade",
 }
 # interpx counts as slower when its median is this much over another
 # library's, and its fastest repeat is over that library's fastest too.
@@ -47,6 +48,7 @@ FAMILIES = (
     ("curve", "`BSplineCurve`", "A cubic curve through `n` points of the plane, evaluated at `4 n` parameters in order."),
     ("grid", "Regular grid", "Points in no order inside the grid. `maxN`: the first axis has `N` points and each axis half the one before (SciPy's suite); `eachN`: every axis has `N` points; `flipped`: every axis given from its high end."),
     ("nearest_nd", "`NearestNDInterpolator`", "`n` points of the unit square, evaluated at the pixels of a square image."),
+    ("linear_nd", "`LinearNDInterpolator`", "`n` points of the unit square, evaluated at the pixels of a square image (some outside the hull, with no value); `3d`: `n` points of the unit cube, evaluated at 10 000 points of the cube in no order."),
     ("rbf", "`RBFInterpolator`", "`n` points of a square, evaluated at 1000 points in no order (`scattered`) or at the 10 000 pixels of an image (`image`). `global`: all points; `k50`: the 50 nearest."),
 )
 # The cases whose memory over time is reported and drawn.

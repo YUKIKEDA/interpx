@@ -51,13 +51,15 @@ stats_alloc = "0.1.10"
 [features]
 default = ["scattered"]
 # Interpolators of scattered data, and the dependencies only they need.
-scattered = ["dep:kiddo", "dep:faer"]
+scattered = ["dep:convx", "dep:kiddo", "dep:faer"]
 # `ParInterpolator`: batches evaluated on several threads.
 rayon = ["dep:rayon"]
 # `Serialize` and `Deserialize` for the interpolators and their parameters.
 serde = ["dep:serde"]
 
 [dependencies]
+# The Delaunay triangulation of `LinearNDInterpolator`, with exact predicates.
+convx = { version = "0.1.0", optional = true }
 # The dense LU of the RBF interpolator. Without the default features: no rayon,
 # no sparse matrices, no file formats.
 faer = { version = "0.24.4", default-features = false, features = ["std"], optional = true }
@@ -143,6 +145,11 @@ harness = false
 
 [[bench]]
 name = "nearest_nd"
+harness = false
+required-features = ["scattered"]
+
+[[bench]]
+name = "linear_nd"
 harness = false
 required-features = ["scattered"]
 
