@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-The rows of M5 that do not wait for `convx` are done, and M4 is done: M4-1 (#180) and M4-2 (#185). P-21 (#186) took `convx` 0.1.1. The rows the comparison left open are done too, before the release (the owner, 2026-10-19): P-20 (#184), P-10 (#138), P-11 (#144), and P-19 (#181), which ran the whole comparison again for `docs/performance.md`. M5-9 (#201) checked the publish fields, and M5-12 (#203) ran `publish-review` again and fixed what it found. Next the release PR M5-10, which names the commit the review ran on and points the README's links to the comparison page and the crate rustdoc's link to the README at the tag `v0.1.0`.
+The rows of M5 that do not wait for `convx` are done, and M4 is done: M4-1 (#180) and M4-2 (#185). P-21 (#186) took `convx` 0.1.1. The rows the comparison left open are done too, before the release (the owner, 2026-10-19): P-20 (#184), P-10 (#138), P-11 (#144), and P-19 (#181), which ran the whole comparison again for `docs/performance.md`. M5-9 (#201) checked the publish fields, and M5-12 (#203) ran `publish-review` again and fixed what it found. M5-10 (#207) prepared v0.1.0: the version, `CHANGELOG.md`, the `Release` workflow for the versions after it, and the links at the tag `v0.1.0`. Next the owner publishes 0.1.0 by hand and registers the Trusted Publisher (`.cursor/rules/publish.mdc`), and then a PR dates `## [0.1.0]` in the changelog.
 
 ## Dependencies
 
@@ -105,7 +105,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | M5-8  | Task | Run `publish-review`, fix rustdoc and README failures                                                                                                           | #178  | Done   |
 | M5-9  | Task | Check the publish fields of `Cargo.toml` (the `convx` dependency is added from crates.io by M4-1; the license is set)                                          | #201  | Done   |
 | M5-12 | Task | Run `publish-review` again on the release candidate, fix what fails (before M5-10)                                                                         | #203  | Done   |
-| M5-10 | Task | Release PR for v0.1.0                                                                                                                                           |       | Todo   |
+| M5-10 | Task | Release PR for v0.1.0                                                                                                                                           | #207  | Done   |
 | M5-11 | Task | `compare/perf`: the real-world data sets of design section 8.4.7 (left out of M5-5) | #160  | Done   |
 
 ## After v0.1.0

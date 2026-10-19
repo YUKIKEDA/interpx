@@ -92,10 +92,25 @@ fn every_file_records_the_baseline_and_its_generator() {
             file.meta.scipy
         );
         assert!(!file.meta.numpy.is_empty(), "{name}");
+        let generator = &file.meta.generator;
+        assert!(
+            generator.starts_with("generate_") && generator.ends_with(".py"),
+            "{name}: generator {generator}"
+        );
+        // The generators are in the repository and not in the package
+        // (`.cursor/rules/publish.mdc`). A tree that cargo packaged has
+        // `.cargo_vcs_info.json`; there the name is checked and not the file.
+        let packaged = golden_dir()
+            .parent()
+            .and_then(|compare| compare.parent())
+            .is_some_and(|root| root.join(".cargo_vcs_info.json").is_file());
+        if packaged {
+            continue;
+        }
         let script = golden_dir()
             .parent()
             .expect("compare directory")
-            .join(&file.meta.generator);
+            .join(generator);
         assert!(
             script.is_file(),
             "{name}: no generator {}",
