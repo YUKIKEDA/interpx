@@ -13,7 +13,7 @@ Grill (when the design branches) → Issue → branch → work → PR → human 
 2. One Issue is one PR. Create the Issue from a template in `.github/ISSUE_TEMPLATE/`. Blank issues are off.
 3. A change to the meaning of the spec is a `design` Issue that updates `docs/design.ja.md` before any implementation Issue. The Japanese file is the spec.
 4. Acceptance text lives on the Issue. The roadmap keeps ID, title, Issue, and status only.
-5. Branch from `main`: `type/<issue-number>-<slug>`, for example `feat/12-pchip`. `type` is a Conventional Commits type (`.cursor/rules/conventional-commits.mdc`).
+5. Branch from `main`, with the start named: `git switch -c <branch> origin/main` after a fetch. `git switch -c` alone starts from the branch checked out, and M5-10's branch started from the previous PR's branch that way (#208). The name is `type/<issue-number>-<slug>`, for example `feat/12-pchip`. `type` is a Conventional Commits type (`.cursor/rules/conventional-commits.mdc`).
 6. Open the PR in the same turn that the branch is pushed. Use `.github/pull_request_template.md` (`.cursor/rules/pull-requests.mdc`). Write `Closes #N` on its own line under `## Related` (`.cursor/rules/github-closing.mdc`).
 7. A human reviews and squash-merges. An agent never merges.
 8. After the merge, delete the local and remote branch. A withdrawn prototype's branch is not a merged branch: post its diff on the Issue and leave the branch until the owner names it.
@@ -25,6 +25,7 @@ Grill (when the design branches) → Issue → branch → work → PR → human 
   - CI lints with the newest stable toolchain, and a new clippy brings new lints. Before a PR is opened, `rustup update stable`, and say in the PR which `clippy --version` passed. In #129 the local toolchain was two releases behind (1.97 against 1.99): `just lint` passed here and `lint (stable)` was red in CI on a lint the older clippy did not have, and the PR said only that `just lint` passed.
   - The Rust packages under `compare/perf/runners/` are not in `just lint`. When a PR touches one, run `cargo fmt` and `cargo clippy -- -D warnings` in it.
 - `just test`: `cargo test`. It never runs Python. Golden data is read from `compare/goldens/`.
+  - The counts of a run come from its `test result:` lines only. In #208 a pattern for `error:` also matched test names (`error::tests::...`), and the sum read "failed 1686" for a run with no failure.
 - `just coverage`: line coverage of at least 90% (`cargo-llvm-cov`). Raising the threshold is a new Issue.
   - The table counts a generic function by the one instantiation that ran the most of its lines, not by all of them together. A function whose instantiations run different lines (a branch for zero dimensions) shows a missed line though every line ran. When the table and the per-line report (`cargo llvm-cov report --lcov`) disagree, compute which line it is from the exported data (`--json`) before saying why (`.cursor/rules/open-ends.mdc`). A `?` that never runs shows up the same way, and is a finding (`.cursor/rules/types.mdc`).
 - `just bench` is not a gate. CI does not run criterion.
