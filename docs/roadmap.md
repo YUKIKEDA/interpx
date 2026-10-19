@@ -90,7 +90,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | P-18 | Task   | Some constructions of interpx take one of two times depending on the process (`CubicSpline` of 1000 points: 15 or 38 µs), so whether the comparison counts them as slower depends on the run | #172  | Done   |
 | P-19 | Task   | After the warm-up of P-18, some constructions at 10 000 points take 1.3 to 1.6 times as long in some rounds (`Akima1D`, `Pchip`: medians 83 to 138 µs, fastest 81 to 91 µs) | #181  | Done   |
 | P-20 | Task   | `LinearNDInterpolator`: what each evaluation always pays, profiled (at the pixels of an image it is level with SciPy, 1.01 times; the walk is 1.8 steps) | #184  | Done   |
-| P-21 | Task   | convx 0.1.1 (its 2-D Delaunay build level with `spade`): take it, and measure again what `LinearND` and `CloughTocher2D` pay on top of it; before M5-10 | #186  | Todo   |
+| P-21 | Task   | convx 0.1.1 (its 2-D Delaunay build level with `spade`): take it, and measure again what `LinearND` and `CloughTocher2D` pay on top of it; before M5-10 | #186  | Done   |
 
 ## M5: Integration and quality
 
