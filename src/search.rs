@@ -80,7 +80,14 @@ fn locate<T: Scalar>(grid: &[T], x: T) -> usize {
     // evaluation took 328 µs from one place of a program and 707 µs from
     // another (40 000 points in no order on 100 entries). With the step
     // written this way both places took about 307 µs. Why the two places
-    // differed was not confirmed in the disassembly (#138).
+    // differed is not known: built again with the rustc of the time, every
+    // copy of the old search is a conditional move, not a branch (#138).
+    //
+    // The indexing below keeps a bounds check, a compare and a jump that
+    // is never taken: about a tenth of a search of 10 000 entries not
+    // evenly spaced (#138, measured against a version without it that
+    // needs `unsafe`). Clamping the index, or choosing between the halves
+    // of a split slice, removes the check and is slower (#138).
     let mut low = 0;
     let mut size = grid.len();
     while size > 1 {
