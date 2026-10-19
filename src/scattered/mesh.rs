@@ -173,9 +173,14 @@ impl<const D: usize> Mesh<D> {
         self.per_axis = per_axis;
         // No more than twice the number of points (`per_axis`).
         let total = per_axis.pow(D as u32);
-        self.cells = Vec::with_capacity(total);
+        let mut cells = vec![0_u32; total];
         let mut start = 0;
         let mut at = [0_usize; D];
+        // The cells in the order of a snake: the last axis fastest, each axis
+        // turning back where it ends instead of jumping to its start, so that
+        // each walk starts from the cell beside it (a jump back across a row
+        // was a walk across the whole triangulation, once a row).
+        let mut forward = [true; D];
         for _ in 0..total {
             let middle: [f64; D] =
                 core::array::from_fn(|d| self.lower[d] + (at[d] as f64 + 0.5) * width[d]);
@@ -184,16 +189,21 @@ impl<const D: usize> Mesh<D> {
                 | Walked::Outside(simplex, _)
                 | Walked::Lost(simplex) => simplex,
             };
-            self.cells.push(start);
-            // The next cell: the last axis fastest.
+            let index = at.iter().fold(0, |cell, &place| cell * per_axis + place);
+            cells[index] = start;
             for d in (0..D).rev() {
-                at[d] += 1;
-                if at[d] < per_axis {
+                if forward[d] && at[d] + 1 < per_axis {
+                    at[d] += 1;
                     break;
                 }
-                at[d] = 0;
+                if !forward[d] && at[d] > 0 {
+                    at[d] -= 1;
+                    break;
+                }
+                forward[d] = !forward[d];
             }
         }
+        self.cells = cells;
     }
 
     /// The simplex the walk to `x` starts from: that of the cell `x` is in
