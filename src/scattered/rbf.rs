@@ -959,10 +959,11 @@ impl RbfOptions {
 /// `f64`; a value is a scalar or a fixed-length array.
 ///
 /// The interpolant passes through the data, unless
-/// [smoothing](RbfOptions::with_smoothing) is asked for. It has a value
-/// everywhere: there is no domain to be outside of. Far from the data the
-/// value is what the kernel and the polynomial make of it, and is to be read
-/// with care.
+/// [smoothing](RbfOptions::with_smoothing) is asked for. There is no domain
+/// to be outside of: far from the data the value is what the kernel and the
+/// polynomial make of it, and is to be read with care, and where they give no
+/// finite number (a query at 1e300 with `ThinPlateSpline`, for one) there is
+/// none.
 ///
 /// # Cost
 ///

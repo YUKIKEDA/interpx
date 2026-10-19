@@ -6,8 +6,10 @@ use crate::{
 
 /// The polygon through data points: linear interpolation in one variable.
 ///
-/// NumPy's `numpy.interp`. Between two neighboring points `(x[i], y[i])` and
-/// `(x[i + 1], y[i + 1])` the value is `y[i] + s (x - x[i])` with the slope
+/// NumPy's `numpy.interp`. SciPy's `interp1d(kind="linear")` is the same
+/// interpolant; it raises an error outside the data unless told otherwise,
+/// which is [`Extrapolate::Forbid`]. Between two neighboring points
+/// `(x[i], y[i])` and `(x[i + 1], y[i + 1])` the value is `y[i] + s (x - x[i])` with the slope
 /// `s = (y[i + 1] - y[i]) / (x[i + 1] - x[i])`. At every `x[i]`, the last one
 /// included, the result is `y[i]` exactly.
 ///
