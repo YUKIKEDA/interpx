@@ -36,6 +36,14 @@ const SOLVED: f64 = 1e-14;
 /// fixed-length array; each column has its gradients estimated on its own.
 /// Coordinates are `f64`.
 ///
+/// The gradient estimate does not depend on the size of the values or of the
+/// coordinates: it is solved with both brought near one by powers of two.
+/// Two limits remain. Values above about `6e307` in magnitude overflow the
+/// sums of the patch, and evaluations give NaN (SciPy 1.18's gradients are
+/// NaN from about `1e306`). Axes whose spans are `1e200` or more apart
+/// overflow the system of the estimate, an error that
+/// [`rescaled`](CloughTocher2DInterpolator::rescaled) avoids.
+///
 /// Points with the same coordinates are taken as one, with the value of the
 /// one given first. The simplex of a query is found as
 /// [`LinearNDInterpolator`](crate::LinearNDInterpolator) finds it, with the
