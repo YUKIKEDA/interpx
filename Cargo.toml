@@ -10,7 +10,8 @@ keywords = ["interpolation", "scipy", "spline", "scattered-data", "numerics"]
 categories = ["mathematics", "science", "algorithms"]
 include = [
     "/src/",
-    "/tests/",
+    # The tests, not the regression files proptest writes beside them.
+    "/tests/**/*.rs",
     "/benches/",
     "/examples/",
     "/compare/goldens/",

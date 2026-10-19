@@ -30,7 +30,7 @@ fi
 
 # The package holds only the files .cursor/rules/publish.mdc lists.
 bad="$(cargo package --list --allow-dirty | tr '\\' '/' | grep -Ev \
-    '^(src/|examples/|tests/|benches/|compare/goldens/[^/]+\.json$|README\.md$|README\.ja\.md$|LICENSE-MIT$|LICENSE-APACHE$|Cargo\.toml$|Cargo\.toml\.orig$|Cargo\.lock$|\.cargo_vcs_info\.json$)' \
+    '^(src/|examples/|tests/.+\.rs$|benches/|compare/goldens/[^/]+\.json$|README\.md$|README\.ja\.md$|LICENSE-MIT$|LICENSE-APACHE$|Cargo\.toml$|Cargo\.toml\.orig$|Cargo\.lock$|\.cargo_vcs_info\.json$)' \
     || true)"
 [[ -z "$bad" ]] || fail "files outside the package whitelist: $bad"
 

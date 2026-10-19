@@ -13,7 +13,7 @@ The process is that of convx and gprx, which were published before (the owner, 2
 
 crates.io registers a Trusted Publisher only for a crate that exists, so the first version needs the owner's API token (convx found this at its 0.1.0). After the release pull request of 0.1.0 is merged, the owner, on that `main` commit:
 
-1. runs `cargo publish --locked` in a fresh clone of it. A working tree has files that git ignores and `include` takes (`tests/*.proptest-regressions`), and cargo refuses to publish them without `--allow-dirty`;
+1. runs `cargo publish --locked` from a clean working tree;
 2. creates the annotated tag `v0.1.0` on that commit and pushes it;
 3. creates the GitHub Release on the tag, with the `## [0.1.0]` section of `CHANGELOG.md` as its notes (`.github/scripts/release-notes.sh 0.1.0`);
 4. creates the GitHub environment `release`, registers this repository's `release.yml` with environment `release` as the Trusted Publisher of `interpx` on crates.io, and lets GitHub Actions create pull requests (Settings, Actions, General, Workflow permissions).
@@ -53,7 +53,7 @@ The MSRV is `rust-version` in `Cargo.toml`, 1.89 at 0.1.0. CI and the workflow r
 
 ## Package files
 
-`Cargo.toml` `include` is a whitelist: `src/`, `tests/`, `benches/`, `examples/`, `compare/goldens/` (the SciPy golden data the tests read), `README.md`, `README.ja.md`, `LICENSE-MIT`, and `LICENSE-APACHE`. A root file's pattern starts with `/`. `compare/perf`, other Python, `.cursor/`, `.agents/`, `.github/`, `docs/`, `CHANGELOG.md`, and the `justfile` are not packaged. Links from the README to development documents are absolute GitHub URLs, because the documents are not in the package.
+`Cargo.toml` `include` is a whitelist: `src/`, the `.rs` files of `tests/` (not the regression files proptest writes there), `benches/`, `examples/`, `compare/goldens/` (the SciPy golden data the tests read), `README.md`, `README.ja.md`, `LICENSE-MIT`, and `LICENSE-APACHE`. A root file's pattern starts with `/`. `compare/perf`, other Python, `.cursor/`, `.agents/`, `.github/`, `docs/`, `CHANGELOG.md`, and the `justfile` are not packaged. Links from the README to development documents are absolute GitHub URLs, because the documents are not in the package.
 
 ## Contract
 
