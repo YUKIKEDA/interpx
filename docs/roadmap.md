@@ -10,7 +10,7 @@ The rows of M5 that do not wait for `convx` are done. `convx` 0.1.0 is published
 
 ## Dependencies
 
-- M4 depends on `convx` 0.1.0 from crates.io (published with `MIT OR Apache-2.0`); M4-1 adds the dependency.
+- M4 depends on `convx` from crates.io (published with `MIT OR Apache-2.0`); M4-1 added the dependency at 0.1.0, P-21 takes 0.1.1.
 - M1 to M3 do not depend on `convx`.
 
 ## M0: Bootstrap

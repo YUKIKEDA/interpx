@@ -39,7 +39,7 @@ The largest problem of Rust's scientific computing ecosystem is fragmentation. I
 | **Errors**            | **`thiserror`**  | The error types.                                                                                               |
 
 * Tridiagonal systems (CubicSpline and others) are solved by **an O(n) Thomas algorithm of the crate's own** (periodic boundaries as a cyclic tridiagonal system by Sherman–Morrison). Banded systems (`BSpline1D`, the grid's `cubic` / `quintic`) are solved by a banded LU with partial pivoting of the crate's own (§6.1). Neither uses `faer`.
-* `convx` is a dependency on 0.1.0 from crates.io (`MIT OR Apache-2.0`) (M4-1).
+* `convx` is a dependency on 0.1.1 from crates.io (`MIT OR Apache-2.0`) (M4-1 added it at 0.1.0; P-21 took 0.1.1, whose 2-D Delaunay build is faster).
 * The MSRV is **1.89**, that of `convx` and `kiddo`.
 
 ### 2.1 Development dependencies (dev-dependencies)

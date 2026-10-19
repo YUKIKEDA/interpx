@@ -37,7 +37,7 @@ Rust の科学計算エコシステムにおける最大の課題は「断片化
 | **エラー定義**       | **`thiserror`**  | エラー型。                                                                                                     |
 
 * 三重対角系（CubicSpline 等）は **O(n) の Thomas 法を自前実装**する（周期境界は Sherman–Morrison による巡回三重対角）。帯行列系（`BSpline1D`、グリッドの `cubic` / `quintic`）は部分ピボットつきの帯行列 LU を自前実装する（§6.1）。どちらにも `faer` は使わない。
-* `convx` は crates.io の 0.1.0（`MIT OR Apache-2.0`）に依存する（M4-1）。
+* `convx` は crates.io の 0.1.1（`MIT OR Apache-2.0`）に依存する（M4-1 が 0.1.0 で足し、P-21 が 2 次元の Delaunay の構築を速くした 0.1.1 に上げた）。
 * MSRV は `convx`・`kiddo` に合わせ **1.89**。
 
 ### 2.1 開発用依存 (dev-dependencies)
