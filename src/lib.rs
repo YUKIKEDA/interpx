@@ -29,7 +29,7 @@
 //!
 //! What differs from SciPy, what a caller must know, and an example for every
 //! public item are in the
-//! [README](https://github.com/YUKIKEDA/interpx/blob/main/README.md).
+//! [README](https://github.com/YUKIKEDA/interpx/blob/v0.1.0/README.md).
 //!
 //! # Features
 //!

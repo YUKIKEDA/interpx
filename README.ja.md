@@ -535,7 +535,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 性能
 
-SciPy 1.18 と、ほかの純粋な Rust の補間 crate との比較（時間とメモリ。マシン、バージョン、データ、コマンドつき）: [docs/performance.md](https://github.com/YUKIKEDA/interpx/blob/main/docs/performance.md)。
+SciPy 1.18 と、ほかの純粋な Rust の補間 crate との比較（時間とメモリ。マシン、バージョン、データ、コマンドつき）: [docs/performance.md](https://github.com/YUKIKEDA/interpx/blob/v0.1.0/docs/performance.md)。
 
 ## ライセンス
 
