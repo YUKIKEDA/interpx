@@ -508,16 +508,19 @@ fn estimate_gradients<V: Value<f64>>(
     // out as it would alone.
     let open = |rr: V| rr.zip_with(bb, |r, b| f64::from(u8::from(r > SOLVED * SOLVED * b)));
     let limit = 10 * n + 100;
-    for _ in 0..limit {
-        if rr
-            .zip_with(rr, |a, _| f64::from(u8::from(!a.is_finite())))
+    // A sum that is not finite compares as solved (`NaN > b` is false);
+    // when every column looks solved, that is checked before the answer.
+    let finite = |rr: V| {
+        rr.zip_with(rr, |a, _| f64::from(u8::from(!a.is_finite())))
             .largest()
-            != 0.0
-        {
-            break;
-        }
+            == 0.0
+    };
+    for _ in 0..limit {
         let still = open(rr);
         if still.largest() == 0.0 {
+            if !finite(rr) {
+                break;
+            }
             return Ok(back(x, up, near));
         }
         product(&p, &mut ap);
@@ -545,11 +548,7 @@ fn estimate_gradients<V: Value<f64>>(
         rr = rr_next;
         rz = rz_next;
     }
-    let finite = rr
-        .zip_with(rr, |a, _| f64::from(u8::from(!a.is_finite())))
-        .largest()
-        == 0.0;
-    if finite && open(rr).largest() == 0.0 {
+    if finite(rr) && open(rr).largest() == 0.0 {
         return Ok(back(x, up, near));
     }
     Err(InterpolateError::SolverFailed(SolverError::NotConverged))
