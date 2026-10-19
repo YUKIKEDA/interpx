@@ -13,7 +13,7 @@ The process is that of convx and gprx, which were published before (the owner, 2
 
 crates.io registers a Trusted Publisher only for a crate that exists, so the first version needs the owner's API token (convx found this at its 0.1.0). After the release pull request of 0.1.0 is merged, the owner, on that `main` commit:
 
-1. runs `cargo publish --locked`;
+1. runs `cargo publish --locked` in a fresh clone of it. A working tree has files that git ignores and `include` takes (`tests/*.proptest-regressions`), and cargo refuses to publish them without `--allow-dirty`;
 2. creates the annotated tag `v0.1.0` on that commit and pushes it;
 3. creates the GitHub Release on the tag, with the `## [0.1.0]` section of `CHANGELOG.md` as its notes (`.github/scripts/release-notes.sh 0.1.0`);
 4. creates the GitHub environment `release`, registers this repository's `release.yml` with environment `release` as the Trusted Publisher of `interpx` on crates.io, and lets GitHub Actions create pull requests (Settings, Actions, General, Workflow permissions).
@@ -27,7 +27,7 @@ The publish review comes first, in its own Issue, and its fixes are merged befor
 The owner then runs the `Release` workflow from the Actions tab on `main`, with the version. It runs on the `main` commit of that moment and stops at the first failure:
 
 1. `verify`: `.github/scripts/release-check.sh` (the `Cargo.toml` version is the input, `CHANGELOG.md` has exactly one undated `## [{version}]`, there is no tag `v{version}`, `cargo package --list` matches the whitelist below, and the README and the crate rustdoc link the repository at `v{version}`), then `cargo publish --dry-run --locked`.
-2. `test` on 1.89 and stable (the steps of `just lint` and `just test`, the tests with no features and with all of them, `cargo doc --no-deps --all-features` with warnings denied) and `alloc` (`cargo test --release --test alloc --all-features`).
+2. `test` on 1.89 and stable (the steps of `just test`, the tests with no features and with all of them, `cargo doc --no-deps --all-features` with warnings denied; the steps of `just lint` on stable only, as in CI, since the clippy of 1.89 has lints that later ones dropped) and `alloc` (`cargo test --release --test alloc --all-features`).
 3. `publish`: dates the changelog heading with the day it runs on a release commit (branch `release/v{version}`, a child of that `main` commit), creates the annotated tag `v{version}` on it and pushes both, runs `cargo publish` through crates.io Trusted Publishing, creates the GitHub Release on the tag with the changelog section as its notes, and opens a pull request that brings the dated heading to `main`. The owner merges that pull request.
 
 No tag and no GitHub Release is made by hand after 0.1.0. If `cargo publish` fails after the tag is pushed, the tag and the release branch are deleted, the cause is fixed, and the workflow runs again.
@@ -43,7 +43,7 @@ All of these hold for the `main` commit that is published:
 - The README's link to the comparison page (both languages) and the crate rustdoc's link to the README are at the tag `v{version}`, so that a reader of a version reaches the pages of that version.
 - The publish review (`.agents/skills/publish-review/SKILL.md`) has been run on the release's pages by a subagent that did not write them, the Japanese pages that changed have been scored as `.cursor/rules/reader-docs.mdc` says, and no failure remains against `.cursor/rules/reader-docs.mdc` and `.cursor/rules/rust-docs.mdc`. Its commit is recorded in the release's pull request. 0.1.0's review (#204) found false sentences in a README and rustdoc that passed `missing_docs` and a clean `cargo doc`.
 - `cargo doc --no-deps --all-features` has no warning and no broken link.
-- `cargo package --list` is the whitelist below, and the tests pass when run from the packaged tree (`target/package/interpx-{version}`).
+- `cargo package --list` is the whitelist below, and the tests pass when run from the packaged tree (`target/package/interpx-{version}`). For 0.1.0 one did not: a test looked for the golden generators under `compare/`, which are not packaged (#207).
 - `just lint`, `just test`, and `just coverage` pass on that commit; record the local run.
 - `cargo publish --dry-run --locked` exits 0 on a clean tree of that commit.
 

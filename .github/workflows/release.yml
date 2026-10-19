@@ -59,10 +59,16 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           components: rustfmt, clippy
       # The steps of `just lint` and `just test`, and the feature sets of CI.
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo clippy --all-targets --no-default-features -- -D warnings
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      # The lints run on stable only, as in CI: the clippy of 1.89 has lints
+      # that later ones dropped (`needless_range_loop` on this code).
+      - if: matrix.toolchain == 'stable'
+        run: cargo fmt --check
+      - if: matrix.toolchain == 'stable'
+        run: cargo clippy --all-targets -- -D warnings
+      - if: matrix.toolchain == 'stable'
+        run: cargo clippy --all-targets --no-default-features -- -D warnings
+      - if: matrix.toolchain == 'stable'
+        run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --locked --no-default-features
       - run: cargo test --locked --all-features
       - run: cargo run --locked --example one_variable
