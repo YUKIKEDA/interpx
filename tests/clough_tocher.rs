@@ -257,6 +257,68 @@ fn each_column_is_solved_as_it_would_be_alone() {
 }
 
 #[test]
+fn values_scaled_by_any_power_of_ten_give_the_same_interpolant_scaled() {
+    // The interpolant is linear in the values, so values times `scale` give
+    // the interpolant times `scale`, whatever the scale, as long as it is a
+    // finite number. The gradient estimate compares sums of squares with a
+    // threshold: before the right-hand side was brought near one, values
+    // near 1e±160 overflowed or underflowed those squares, and the
+    // gradients came back zero with `Ok` (2.4e-2 off here) or the system
+    // was not solved (the review of #187).
+    let mut next = generator(13);
+    let points: Vec<[f64; 2]> = (0..60).map(|_| [next(), next()]).collect();
+    let f = |p: &[f64; 2]| (3.0 * p[0]).sin() * p[1] + 0.5 * p[0] * p[0];
+    let values: Vec<f64> = points.iter().map(f).collect();
+    let plain = Cubic::new(&points, &values).expect("valid");
+    let queries: Vec<[f64; 2]> = (0..200).map(|_| [next(), next()]).collect();
+    for scale in [1e-300, 1e-200, 1e-160, 1e-150, 1e150, 1e160, 1e200, 1e300] {
+        let scaled: Vec<f64> = values.iter().map(|v| v * scale).collect();
+        let cubic = Cubic::new(&points, &scaled).expect("solved at every scale");
+        for q in &queries {
+            if let (Some(a), Some(b)) = (plain.eval(q), cubic.eval(q)) {
+                assert!(
+                    (b / scale - a).abs() < 1e-12,
+                    "{scale:e} {q:?}: {a} {}",
+                    b / scale
+                );
+            }
+        }
+    }
+    // Coordinates times `scale`: the same interpolant at the scaled queries
+    // (the gradients go as one over the scale). Coordinates near 1e±100 gave
+    // zero gradients or no solution before the system was brought near one.
+    for scale in [1e-300, 1e-160, 1e-100, 1e100, 1e160, 1e300] {
+        let moved: Vec<[f64; 2]> = points
+            .iter()
+            .map(|p| [p[0] * scale, p[1] * scale])
+            .collect();
+        let cubic = Cubic::new(&moved, &values).expect("solved at every scale");
+        for q in &queries {
+            if let (Some(a), Some(b)) = (plain.eval(q), cubic.eval(&[q[0] * scale, q[1] * scale])) {
+                assert!((b - a).abs() < 1e-12, "{scale:e} {q:?}: {a} {b}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_system_that_overflows_is_an_error_and_not_zero_gradients() {
+    // Two points 1e-200 apart in a unit square: the weight of their edge,
+    // which goes as one over its length, overflows the sums of the
+    // iteration. That is an error, not gradients left at zero with `Ok`.
+    let mut next = generator(17);
+    let mut points: Vec<[f64; 2]> = (0..30).map(|_| [next(), next()]).collect();
+    points.extend([[0.0, 0.0], [1e-200, 1e-200]]);
+    let values: Vec<f64> = points.iter().map(|p| p[0] + 2.0 * p[1]).collect();
+    assert!(matches!(
+        Cubic::new(&points, &values),
+        Err(interpx::InterpolateError::SolverFailed(
+            interpx::SolverError::NotConverged
+        ))
+    ));
+}
+
+#[test]
 fn the_interpolant_and_its_gradient_are_continuous_across_edges() {
     // C1: across an edge the difference of the one-sided slopes goes to zero
     // with the step (it is the second derivative times the step), where the
