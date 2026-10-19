@@ -211,8 +211,10 @@ impl<const D: usize> Mesh<D> {
     fn start(&self, x: &[f64; D]) -> u32 {
         let mut cell = 0;
         for (d, coordinate) in x.iter().enumerate() {
-            let along = ((coordinate - self.lower[d]) * self.cell_scale[d]).floor();
-            let place = along.clamp(0.0, (self.per_axis - 1) as f64) as usize;
+            // A cast saturates (below zero to zero), as `floor` and the clamp
+            // would; the coordinate is finite here.
+            let along = ((coordinate - self.lower[d]) * self.cell_scale[d]) as usize;
+            let place = along.min(self.per_axis - 1);
             cell = cell * self.per_axis + place;
         }
         self.cells[cell]
