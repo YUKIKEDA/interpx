@@ -19,7 +19,8 @@ A check or a test that stands for a statement in `docs/design.ja.md` implements 
 - A check of "exactly k" rejects every other count, not only the next one.
 - A comment on a default or a sentinel states the guarantee that holds (`NO_NEIGHBOR`, an empty extrapolation, a default boundary condition).
 - A design argument states the step that carries it, not only its conclusion.
-- A number that the user compares with a fixed threshold ("under `f64::EPSILON` the system is not solved") is tested under the changes that leave the problem as it is: a test of its accuracy alone is a necessary condition. The reciprocal condition of #170 was tested against the true condition and moved by 31 orders when the coordinates were given in another unit; the review found it, not a test.
+- A number that the user compares with a fixed threshold ("under `f64::EPSILON` the system is not solved") is tested under the changes that leave the problem as it is: a test of its accuracy alone is a necessary condition. The reciprocal condition of #170 was tested against the true condition and moved by 31 orders when the coordinates were given in another unit; the review found it, not a test. The gradient estimate of #187 was not tested under values or coordinates in another scale either, and broke near 1e±160 and 1e±100 (`.cursor/rules/numerics.mdc`); the review found it again.
+- Before a Definition of done names a property of an interpolant (it reproduces quadratics, it is C2), the method is run on it in SciPy. #185 asked for quadratics reproduced; with estimated gradients `CloughTocher2D` reproduces them in neither SciPy nor interpx (an error of 3e-3), only its patch from exact gradients does, and the line was rewritten at the end of the row.
 
 ```
 BAD:  "all knots are strictly increasing"  → test checks len > 1 only

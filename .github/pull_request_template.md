@@ -12,7 +12,8 @@ Closes #N
 
 <!-- Commands and cases. -->
 
-- [ ] `just lint`
+- [ ] `just lint`, after `rustup update stable`; `cargo clippy --version`: 
+- [ ] `cargo fmt --check` and `cargo clippy -- -D warnings` in each `compare/perf/runners/*` package the PR touches, or N/A
 - [ ] `just test`
 - [ ] `just bench` (hot path only)
 

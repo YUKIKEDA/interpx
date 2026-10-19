@@ -11,3 +11,4 @@ Remove, in the turn that made them: extra worktrees and checkouts, throwaway cra
 - The only paths allowed to stay: Cargo output, files that a `compare/perf` runner writes under `compare/perf/out/`, and `.dev/` for the owner's local notes (ignored, not tracked).
 - A script that writes scratch stops at its first failed command (`set -e` in bash, `$ErrorActionPreference = 'Stop'` in PowerShell) and names its targets by absolute path.
 - Long text for `gh` goes through a temporary UTF-8 file that is deleted after the call.
+- Scratch goes in the scratchpad. A scratch file that has to sit in the checkout (an example the build has to find) is created and removed by its own name; a directory the repository tracks is never removed to clean up. In #187 a timing example was put in `examples/` and removed with `rm -r examples`, which took the five tracked examples with it (nothing uncommitted was lost; `git restore examples` brought them back).
