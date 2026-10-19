@@ -79,7 +79,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | P-7  | Task   | `BSpline1D` of degree 1 on 10 000 points: evaluation in order (1.14x against SciPy)                                                                                | #130  | Done   |
 | P-8  | Task   | Construction on 10 000 points: `Linear1D` 1.9x, `Nearest1D` 1.1x, `BSpline1D` degree 1 2.9x                                                                        | #131  | Done   |
 | P-9  | Task   | Search: the time for points in no order moves twofold with where it is built in                                                                                    | #132  | Done   |
-| P-10 | Task   | Search: the cause of P-9 in the disassembly, the five cases it made slower, a two-place check                                                                      | #138  | Todo   |
+| P-10 | Task   | Search: the cause of P-9 in the disassembly, the five cases it made slower, a two-place check                                                                      | #138  | Done   |
 | P-11 | Task   | Grid: the search on two and three axes against `interpn` (up to 1.5x, part of it unexplained)                                                                      | #144  | Todo   |
 | P-12 | Bug    | RBF, Gaussian kernel: on an ill-conditioned system the error is three times SciPy's, outside SciPy's own range (it was inside: one order of the points among many) | #159  | Done   |
 | P-13 | Task   | Grid splines: a direct against an iterative solve, inside SciPy and against interpx; whether the solver is the user's to choose                                    | #162  | Done   |
