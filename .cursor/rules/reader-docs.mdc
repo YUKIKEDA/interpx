@@ -28,6 +28,7 @@ Before the first example, state what surprises a SciPy user: boundary default is
 - The `Cargo.toml` description is one sentence and makes the same claim as the first line of the README.
 - `cargo run --example` targets that the README names exist and run.
 - Every claim of the README is checked before the PR: by an example that runs as a doctest, or, for a claim no example shows, by running code against it. Four claims of the first README were false when written (that an infinite query has no value, that evaluation never allocates, what `rescaled` changes, what `from_owned` keeps) and were found that way (#175).
+- A PR that adds or changes a public item, an error variant, or when an evaluation allocates or has no value, updates `README.md`, `README.ja.md`, and the crate `//!` of `src/lib.rs` in the same PR: grep them for the name or the claim. Between M5-8 and the release, the rustdoc was updated and the README was not: the allocation of `eval_batch_into_par`, the RBF working space that widens, and the error `DegenerateGeometry` were missing or false there until the review before the release found them (#204).
 
 ## Japanese pages
 
