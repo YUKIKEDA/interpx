@@ -998,6 +998,33 @@ impl<T: Scalar, const D: usize, V: Value<T>> Interpolator for RegularGridInterpo
 
     fn eval(&self, point: &[T; D]) -> Option<V> {
         let mut cell = [(0, T::zero()); D];
+        // A point inside every axis (on the point of an axis of one point)
+        // needs neither the check of each axis nor the mode outside: one test
+        // for all the axes, then the search of each (the same place
+        // `search::eval` and `alone` find there). NaN fails the test and takes
+        // the way below, as does a point off an axis of one point.
+        let inside = self
+            .axes
+            .iter()
+            .zip(point)
+            .all(|(axis, &x)| match axis[..] {
+                [only] => x == only,
+                _ => axis[0] <= x && x < axis[axis.len() - 1],
+            });
+        if inside {
+            for (d, place) in cell.iter_mut().enumerate() {
+                let axis = &self.axes[d];
+                *place = if axis.len() > 1 {
+                    (
+                        search::interval_inside(axis, self.even[d], point[d]),
+                        point[d],
+                    )
+                } else {
+                    (0, point[d])
+                };
+            }
+            return Some(self.at(&cell));
+        }
         for (d, place) in cell.iter_mut().enumerate() {
             let axis = &self.axes[d];
             *place = if let [only] = axis[..] {

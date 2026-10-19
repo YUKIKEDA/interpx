@@ -135,7 +135,14 @@ fn locate_guessing<T: Scalar>(grid: &[T], x: T) -> usize {
 /// entry: as much as the rest of the construction of `Linear1D`.) Spacings
 /// that are all a little long and then all a little short pass, and the
 /// guess then misses more often than it would; it is still only a guess.
+///
+/// A grid of one interval has nothing to guess: the search by halves takes
+/// one step there, and the guess, a division, took longer (an axis of two
+/// points in a grid of three dimensions, #144).
 pub(crate) fn evenly_spaced<T: Scalar>(grid: &[T]) -> bool {
+    if grid.len() <= 2 {
+        return false;
+    }
     let intervals = grid.len() - 1;
     let numbers = T::from(intervals).zip(T::from(16));
     numbers.is_some_and(|(count, sixteen)| {
@@ -265,6 +272,17 @@ fn resolve_at_or_past_an_end<T: Scalar>(
             let wrapped = (lo + offset).min(hi);
             Some((locate(wrapped), wrapped))
         }
+    }
+}
+
+/// The interval of an `x` that is known to be inside the grid, at or past its
+/// first entry and before its last: the search alone, without the checks of
+/// [`eval`] (the caller has made them).
+pub(crate) fn interval_inside<T: Scalar>(grid: &[T], even: bool, x: T) -> usize {
+    if even {
+        locate_guessing(grid, x)
+    } else {
+        locate(grid, x)
     }
 }
 
@@ -491,7 +509,8 @@ mod tests {
     fn a_grid_is_evenly_spaced_when_every_entry_is_near_its_even_place() {
         let even: Vec<f64> = (0..97).map(|i| 0.1 * f64::from(i) - 3.0).collect();
         assert!(evenly_spaced(&even));
-        assert!(evenly_spaced(&[2.0, 5.0]));
+        // One interval: nothing to guess.
+        assert!(!evenly_spaced(&[2.0, 5.0]));
         assert!(evenly_spaced(&[0.0_f32, 0.5, 1.0]));
         // A spacing a sixteenth of the mean off is taken, more is not:
         // wherever it is, and whether it is long or short.
