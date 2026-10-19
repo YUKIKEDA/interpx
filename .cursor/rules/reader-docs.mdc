@@ -10,14 +10,16 @@ README and comparison pages are read by someone who has only the crate. They nev
 
 ## README order
 
-1. What the crate does, in one or two sentences, with the SciPy baseline.
+1. What the crate does, in one or two sentences, in its own terms.
 2. The `Cargo.toml` dependency block for the published version, and the features (`scattered` is default; `rayon` and `serde` are opt-in).
 3. A copy-and-paste example that uses `?`, not `unwrap`.
-4. What a caller must know: owned types and `Send + Sync`; `f64` only for scattered; C-order grid `values`; `NaN` handling; RBF memory is O(N²); 0.x minor releases may break the API; out-of-scope list.
-5. One link to the comparison page.
-6. License.
+4. What a caller must know: the boundary condition is an argument; no fill value at construction (`eval` returns `None`, the fill is given at the call); what happens outside the domain (`Extrapolate`); the input checks; owned types and `Send + Sync`; `f64` only for scattered; C-order grid `values`; `NaN` handling; RBF memory is O(N²); 0.x minor releases may break the API; out-of-scope list.
+5. Usage: every public item.
+6. Verification: the values are checked against SciPy 1.18, and where interpx computes something else, what and why (the differences listed in `docs/design.ja.md`).
+7. One link to the comparison page.
+8. License.
 
-Before the first example, state what surprises a SciPy user: boundary default is not-a-knot, `fill` is passed at call time, and the differences listed in `docs/design.ja.md`.
+SciPy is the reference interpx is verified against, not a compatibility target (ADR 0011). The README names SciPy, NumPy, or their functions in the Verification section and the link to the comparison page only: not in the first line, not as the counterpart of a type, not in the out-of-scope list. The README does not disclaim an affiliation with SciPy: there is none to disclaim (the owner, 2026-10-20).
 
 ## Rules
 
@@ -25,7 +27,7 @@ Before the first example, state what surprises a SciPy user: boundary default is
 - No Issue or PR numbers, milestone IDs, roadmap, `AGENTS.md`, `.cursor/rules`, Grill, or development `just` recipes.
 - The README has no comparison table or image. It does not link by relative path to anything outside the package.
 - A claim that is false for the code or for `Cargo.toml` fails, even when it repeats in the README, the crate rustdoc, and the description. A comparison number names its source (hardware, versions, data, command).
-- The `Cargo.toml` description is one sentence and makes the same claim as the first line of the README.
+- The `Cargo.toml` description is one sentence and makes the same claim as the first line of the README. Neither it nor `keywords` names SciPy.
 - `cargo run --example` targets that the README names exist and run.
 - Every claim of the README is checked before the PR: by an example that runs as a doctest, or, for a claim no example shows, by running code against it. Four claims of the first README were false when written (that an infinite query has no value, that evaluation never allocates, what `rescaled` changes, what `from_owned` keeps) and were found that way (#175).
 - A PR that adds or changes a public item, an error variant, or when an evaluation allocates or has no value, updates `README.md`, `README.ja.md`, and the crate `//!` of `src/lib.rs` in the same PR: grep them for the name or the claim. Between M5-8 and the release, the rustdoc was updated and the README was not: the allocation of `eval_batch_into_par`, the RBF working space that widens, and the error `DegenerateGeometry` were missing or false there until the review before the release found them (#204).

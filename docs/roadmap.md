@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-The rows of M5 that do not wait for `convx` are done, and M4 is done: M4-1 (#180) and M4-2 (#185). P-21 (#186) took `convx` 0.1.1. The rows the comparison left open are done too, before the release (the owner, 2026-10-19): P-20 (#184), P-10 (#138), P-11 (#144), and P-19 (#181), which ran the whole comparison again for `docs/performance.md`. M5-9 (#201) checked the publish fields, and M5-12 (#203) ran `publish-review` again and fixed what it found. M5-10 (#207) prepared v0.1.0: the version, `CHANGELOG.md`, the `Release` workflow for the versions after it, and the links at the tag `v0.1.0`. The owner published 0.1.0 on crates.io on 2026-10-19 (UTC), by hand, and #213 dated it in the changelog. Every later version goes through the `Release` workflow. Next comes a row of After v0.1.0, which the owner chooses.
+The rows of M5 that do not wait for `convx` are done, and M4 is done: M4-1 (#180) and M4-2 (#185). P-21 (#186) took `convx` 0.1.1. The rows the comparison left open are done too, before the release (the owner, 2026-10-19): P-20 (#184), P-10 (#138), P-11 (#144), and P-19 (#181), which ran the whole comparison again for `docs/performance.md`. M5-9 (#201) checked the publish fields, and M5-12 (#203) ran `publish-review` again and fixed what it found. M5-10 (#207) prepared v0.1.0: the version, `CHANGELOG.md`, the `Release` workflow for the versions after it, and the links at the tag `v0.1.0`. The owner published 0.1.0 on crates.io on 2026-10-19 (UTC), by hand, and #213 dated it in the changelog. Every later version goes through the `Release` workflow. V-1 (#215) made SciPy the verification reference only (ADR 0011). Next V-2, the pages; then a row of After v0.1.0, which the owner chooses.
 
 ## Dependencies
 
@@ -107,6 +107,15 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | M5-12 | Task | Run `publish-review` again on the release candidate, fix what fails (before M5-10)                                                                         | #203  | Done   |
 | M5-10 | Task | Release PR for v0.1.0                                                                                                                                           | #207  | Done   |
 | M5-11 | Task | `compare/perf`: the real-world data sets of design section 8.4.7 (left out of M5-5) | #160  | Done   |
+
+## V: The documentation after 0.1.0
+
+SciPy is the verification reference only (ADR 0011). The pages reach crates.io with the next published version.
+
+| ID  | Kind   | Title                                                                                                 | Issue | Status      |
+| --- | ------ | ----------------------------------------------------------------------------------------------------- | ----- | ----------- |
+| V-1 | Design | SciPy is the verification reference only: ADR 0011, the rules, the first line of the design           | #215  | Done        |
+| V-2 | Docs   | The README, the rustdoc, the description, and the keywords stop putting SciPy forward                 |       | Todo        |
 
 ## After v0.1.0
 
