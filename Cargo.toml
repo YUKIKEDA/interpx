@@ -108,6 +108,10 @@ name = "linear"
 harness = false
 
 [[bench]]
+name = "search_places"
+harness = false
+
+[[bench]]
 name = "nearest"
 harness = false
 
