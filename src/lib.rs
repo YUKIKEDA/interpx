@@ -20,7 +20,8 @@
 //! outside the domain unless an [`Extrapolate`] mode says otherwise, and
 //! `eval_batch_into` writes into a buffer of the caller's without allocating
 //! (the one exception is the working space of `RBFInterpolator` over neighbors,
-//! allocated once per thread).
+//! which a thread allocates at its first evaluation and keeps, widened when an
+//! interpolator with more neighbors is evaluated there).
 //! Constructors check their input and return [`InterpolateError`]. The
 //! coordinates are `f32` or `f64` ([`Scalar`]) in one variable, curves, and
 //! grids, and `f64` for scattered data; a value is a scalar or a fixed-size
@@ -42,8 +43,8 @@
 //!   than a tenth of a millisecond of work is not shared out, and deciding
 //!   that costs up to 0.14 µs (up to two thirds more time on batches under a
 //!   microsecond, and up to a third more on batches up to a tenth of a
-//!   millisecond, over the 277 cases of this crate's comparison with SciPy, 8
-//!   threads).
+//!   millisecond, over the 277 cases that this crate's comparison with SciPy
+//!   had when this was measured, 8 threads).
 //! - `serde`: `Serialize` and `Deserialize` for every interpolator and for
 //!   the parameters they are built with. See below.
 //!

@@ -27,7 +27,7 @@ interpx = "0.1"
   - `Clamp`（端の値）: `Linear1D`。`numpy.interp` と同じです。
 - **入力は検査され、SciPy が別のものを計算する入力は拒否されます。** 1 変数では座標が狭義単調増加である必要があります（SciPy の `interp1d` は並べ替えます）。データはどこでも有限である必要があり、NaN や無限大を含むデータはエラー（`InterpolateError::NonFinite`）になります。データの NaN が補間の値に紛れ込むことはありません。
 - **規則格子の `cubic` と `quintic` は厳密に解きます。** SciPy の既定は反復解法で解くため、値がスプラインからずれます。ずれは、滑らかなデータで最大値の 1e-5〜1e-2（2 次元・3 次元の格子、等間隔でも不等間隔でも）、乱数の値では値そのものの大きさに達します。interpx はスプラインそのものを返し、SciPy の `method="cubic_legacy"` と丸め誤差の範囲で一致します。
-- **`RBFInterpolator` に既定のカーネルはありません。** 系は LU 分解で解きます（SciPy は対称な分解。値の差は 1e-12 未満）。重複した点と、カーネルが求める最小の次数より低い多項式の次数は拒否します（次数については、SciPy は警告を出すだけです）。
+- **`RBFInterpolator` に既定のカーネルはありません。** 系は LU 分解で解きます（SciPy は対称な分解。この crate のテストで解いた系では、値の差は値の最大の絶対値の 1e-12 倍未満）。重複した点と、カーネルが求める最小の次数より低い多項式の次数は拒否します（次数については、SciPy は警告を出すだけです）。
 - **`LinearNDInterpolator` は、同じ円の上にある 4 点以上（球の上なら 5 点以上、…）が作る区画を、独自の規則で分割します。** SciPy の三角形分割（Qhull）は別の分け方をするので、そのような区画の中では値が SciPy と違います。格子の上の点がこれに当たります。座標が同じ点が複数あるときは、最初に渡された点の値を使います（Qhull はそのうちの 1 つを残しますが、最初の点とは限りません）。また、SciPy が受け付けない 1 次元の点も扱えます。
 - **`CloughTocher2DInterpolator` は、点での傾きを、連立方程式を最後まで解いて求めます。** SciPy は反復を `tol=1e-6` か `maxiter=400` で打ち切り、収束しなかったときも警告を出すだけです。比べた 11 組のデータでは、SciPy の値と解とのずれは、最大で値の最大の絶対値の 3e-8 倍でした。interpx には `tol` と `maxiter` がなく、解けなかったときはエラーを返します。同じ円の上に 4 点以上あると、`LinearNDInterpolator` と同じく三角形分割が SciPy と違います。傾きはすべての辺をまとめた 1 つの連立方程式から決まるので、同じ円の上の点の周りだけでなく、全体で値が違ってきます。
 - **値は実数です。** 複素数は扱いません。値を固定長の配列 `[T; M]` にすると、`M` 列をまとめて補間できます。
@@ -66,9 +66,9 @@ fn main() -> Result<(), InterpolateError> {
 - **規則格子の値は C 順です。** 最後の軸が最も速く変わります。NumPy が `values[i, j, k]` を並べる順と同じです。
 - **NaN と無限大**: データに含まれるとき、構築時のエラーになります。NaN を問い合わせると値はありません（`None`、または埋める値）。無限大の問い合わせは定義域の外として扱います。`Forbid` と `Periodic` では値なし、`Clamp` では端の値です。`Extend` では端の区間の式をその点で評価するので、値が無限大や NaN になることがあります。
 - **全点の `RBFInterpolator` は、構築の間 `N` × `N` の行列を持ちます。** 10 838 点で 940 MB です。近傍の点だけを使う設定（`RbfOptions::with_neighbors`）では、代わりに問い合わせごとに小さな系を解きます。`reciprocal_condition` は、全点の系がどれだけ正確に解けたかを示します。
-- **評価はメモリを確保しません。** 例外は、`Vec` を返す `eval_batch` と `eval_batch_par`、および近傍を使う `RBFInterpolator` のスレッドごとの最初の評価（そのスレッドが持ち続ける作業領域を確保します）です。
+- **評価はメモリを確保しません。** 例外は 3 つあります。1 つ目は `Vec` を返す `eval_batch` と `eval_batch_par` で、`eval_batch_par` はチャンクごとにも `Vec` を 1 つ確保します。2 つ目は `eval_batch_into_par` で、バッチをスレッドに分けるときに `rayon` が確保します。3 つ目は近傍を使う `RBFInterpolator` で、スレッドで最初に評価するときに作業領域を確保し、そのスレッドが持ち続けます。それより近傍の数が多い補間器をそのスレッドで評価すると、作業領域を広げます。
 - **0.x のリリース**: マイナーバージョン（0.1 から 0.2）で公開 API が変わることがあります。ここでいう公開 API は、既定のフィーチャーで公開されるものを指します。
-- **この crate にないもの**: `interp2d`（SciPy から削除済み）と、型としての `interp1d`（その種類は `Linear1D`、`Nearest1D`、`BSpline1D` で扱えます）。関数の `griddata` もありません。代わりに、`method` に当たる補間器を作って評価してください（`nearest` は `NearestNDInterpolator`、`linear` は `LinearNDInterpolator`、`cubic` は `CloughTocher2DInterpolator`）。まだないもの: 規則格子と散布点の補間の導関数、`roots`、`NdPPoly`、`BarycentricInterpolator` と `KroghInterpolator`、FITPACK 系（`UnivariateSpline`、`splrep`、`RectBivariateSpline`）、実行時に決める次元と出力の幅。
+- **この crate にないもの**: `interp2d`（SciPy から削除済み）と、型としての `interp1d`（その種類は `Linear1D`、`Nearest1D`、`BSpline1D` で扱えます）。関数の `griddata` もありません。代わりに、`method` に当たる補間器を作って評価してください（`nearest` は `NearestNDInterpolator`、`linear` は `LinearNDInterpolator`、`cubic` は `CloughTocher2DInterpolator`）。まだないもの: 規則格子と散布点の補間の導関数、`roots` と `solve`、`NdPPoly`、`BarycentricInterpolator` と `KroghInterpolator`、FITPACK 系（`UnivariateSpline`、`splrep`、`splprep`、`RectBivariateSpline`）、実行時に決める次元と出力の幅、`no_std`、`RBFInterpolator` の系が特異なときに、代わりに疑似逆行列で解く手段。
 
 ## 使い方
 
@@ -137,14 +137,15 @@ fn main() -> Result<(), InterpolateError> {
 }
 ```
 
-### エラー: `InterpolateError`、`AxisFault`、`ParamReason`、`SolverError`
+### エラー: `InterpolateError`、`AxisFault`、`DegeneracyKind`、`ParamReason`、`SolverError`
 
-コンストラクタは `InterpolateError` を返し、どの入力のどこが悪いかを示します。`InsufficientPoints`、`LengthMismatch`、`NonFinite`、`NotSorted`、`DuplicatePoints`、`NotPeriodic`、`InvalidParameter`（`ParamReason` つき）、`SolverFailed`（`SolverError` つき）、`AllocationFailed`、`GridAxis`（規則格子の 1 本の軸について。`AxisFault` つき）があります。
+コンストラクタは `InterpolateError` を返し、どの入力のどこが悪いかを示します。`InsufficientPoints`、`LengthMismatch`、`NonFinite`、`NotSorted`、`DuplicatePoints`、`NotPeriodic`、`InvalidParameter`（`ParamReason` つき）、`SolverFailed`（`SolverError` つき）、`AllocationFailed`、`DegenerateGeometry`（散布点を三角形に分けられないとき。`DegeneracyKind` つき）、`GridAxis`（規則格子の 1 本の軸について。`AxisFault` つき）があります。
 
 ```rust
 use interpx::{
-    AxisFault, BSpline1D, BoundaryCondition, GridMethod, InterpolateError, Linear1D,
-    ParamReason, RBFInterpolator, RbfKernel, RegularGridInterpolator, SolverError,
+    AxisFault, BSpline1D, BoundaryCondition, DegeneracyKind, GridMethod, InterpolateError,
+    Linear1D, LinearNDInterpolator, ParamReason, RBFInterpolator, RbfKernel,
+    RegularGridInterpolator, SolverError,
 };
 
 fn main() {
@@ -168,6 +169,13 @@ fn main() {
     let line = [[0.0, 3.0], [1.0, 3.0], [2.0, 3.0], [3.0, 3.0]];
     let singular = RBFInterpolator::new(&line, &[0.0, 1.0, 4.0, 9.0], RbfKernel::ThinPlateSpline);
     assert_eq!(singular.err(), Some(InterpolateError::SolverFailed(SolverError::Singular)));
+
+    // 同じ直線上の点では三角形ができない。
+    let flat = LinearNDInterpolator::new(&line, &[0.0, 1.0, 4.0, 9.0]);
+    assert_eq!(
+        flat.err(),
+        Some(InterpolateError::DegenerateGeometry(DegeneracyKind::LowerDimensional { affine_dim: 1 })),
+    );
 }
 ```
 

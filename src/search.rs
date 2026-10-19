@@ -13,10 +13,11 @@ use crate::{Extrapolate, InterpolateError, Scalar, Value};
 /// the next one.
 ///
 /// Queries that come in order mostly hit the same interval or the next. A hint
-/// lets [`PPoly::eval_hinted`](crate::PPoly::eval_hinted) and
-/// [`BSpline::eval_hinted`](crate::BSpline::eval_hinted) look there first and
-/// skip the binary search. The result never depends on the hint, only the time
-/// does.
+/// lets `eval_hinted` look there first and skip the binary search. Every
+/// interpolator of one variable has it, and so have [`PPoly`](crate::PPoly),
+/// [`BSpline`](crate::BSpline), and [`BSplineCurve`](crate::BSplineCurve);
+/// [`RegularGridInterpolator`](crate::RegularGridInterpolator) takes one hint
+/// for each axis. The result never depends on the hint, only the time does.
 ///
 /// # Examples
 ///

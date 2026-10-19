@@ -16,9 +16,10 @@ use std::sync::Arc;
 /// array, and the result is always one of the values given: nothing is
 /// averaged. Coordinates are `f64`.
 ///
-/// The points go into a k-d tree, built once. It suits few dimensions: a
-/// query of 100 000 random points took about 0.14 µs in two dimensions,
-/// 0.22 µs in three, and 0.77 µs in five.
+/// The points go into a k-d tree, built once. It is meant for fewer than
+/// about ten dimensions: beyond that, a search of the tree comes near to
+/// looking at every point. A query of 100 000 random points took about
+/// 0.14 µs in two dimensions, 0.22 µs in three, and 0.77 µs in five.
 ///
 /// Points with the same coordinates are taken as one, with the value of the
 /// one given first. Of several different points at the same distance from a

@@ -6,8 +6,11 @@
 /// its counterpart: `numpy.interp` clamps, `CubicSpline` extends, and
 /// `Akima1DInterpolator` forbids, for example.
 ///
-/// Scattered-data interpolators have no extrapolation mode: `NearestNDInterpolator`
-/// and `RBFInterpolator` give a value at every finite query point.
+/// Scattered-data interpolators have no extrapolation mode. `LinearNDInterpolator`
+/// and `CloughTocher2DInterpolator` have no value outside the convex hull of the
+/// points; `NearestNDInterpolator` has one at every finite query point unless it
+/// is given a distance bound; `RBFInterpolator` has one wherever its kernel and
+/// polynomial give a finite number.
 ///
 /// # Examples
 ///

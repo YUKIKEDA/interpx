@@ -21,6 +21,11 @@ use std::borrow::Cow;
 /// or outside it by no more than rounding (barycentric coordinates down to
 /// `-100 * f64::EPSILON`), has a value.
 ///
+/// It is meant for few dimensions. The triangulation of `n` points can have of
+/// the order of `n` to the power `D / 2` (rounded up) simplices, and each keeps
+/// `2 * D * D + D` numbers, so that in high dimensions the memory
+/// can be far more than that of the points.
+///
 /// Points with the same coordinates are taken as one, with the value of the
 /// one given first. [`rescaled`](LinearNDInterpolator::rescaled) triangulates
 /// the points after each coordinate is brought to the same range, for data
