@@ -20,3 +20,4 @@ The default shell is PowerShell (a Git Bash tool also exists, with POSIX syntax)
 - A script that puts a new item into a source file puts it before the doc comment of the item it comes before, not before the item's first line of code: in #133 a function went between another function and its doc comment, which then described the wrong one (the compiler says nothing).
 - A script is not edited by another script: an edit applied twice left a duplicated line in M3-4. Change the script with the editor and run it again.
 - `gh pr checks --watch` does not return when the PR merges meanwhile: run it under `timeout`.
+- The Git Bash tool rewrites an argument that starts with `/` into a Windows path, so an MSVC tool called from it (`dumpbin /nologo /disasm`) reads its options as files and writes nothing useful. Call such tools from PowerShell. In #194 a disassembly came out as two lines.

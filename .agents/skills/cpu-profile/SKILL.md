@@ -64,6 +64,27 @@ dumpbin /exports C:\Windows\System32\ntdll.dll
 
 `RtlAllocateHeap` and `RtlFreeHeap` are the usual hot exports. `RtlQueryPerformanceCounter` is `Instant::now`, which means a timer was compiled into the binary. Report that share separately from the evaluation path.
 
+## Disassembly
+
+To say whether a loop is a branch or a conditional move, read the instructions, not the profile. `dumpbin` is next to the MSVC compiler; call it from PowerShell (Git Bash turns `/nologo` into a path), on a binary whose PDB is beside it under the name cargo gave it:
+
+```powershell
+$dumpbin = Join-Path (Get-ChildItem "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC" | Select-Object -First 1).FullName "bin\Hostx64\x64\dumpbin.exe"
+& $dumpbin /nologo /disasm:nobytes $exe /out:"$scratch\out.asm"
+```
+
+The names are Rust's v0 mangling (`_RINvNtCs..._7interpx6search15eval_batch_into...`); search them by the parts of the path. Split the file into functions at the lines that end in `:` and do not start with a space, and classify each short backward jump's loop by its instructions: a search by halves is a loop with `shr` and a compare of floats (`ucomisd`), and it has either a `cmov` or only jumps. A rebuild overwrites the PDB: copy the binary and its PDB together before building another version.
+
+A guess about what the compiler did then (an Issue that says "it became a branch in one place") is checked with the compiler of then. The comparison records it (`rustc` in `compare/perf/out/environment*.json`). Install it beside the current one, build the code of then from a worktree, read, and remove both:
+
+```text
+rustup toolchain install 1.99.0 --profile minimal
+cargo +1.99.0 build --release --manifest-path <worktree>/compare/perf/runners/interpx/Cargo.toml
+rustup toolchain uninstall 1.99.0
+```
+
+In #194 the current compiler alone left "it may have been a branch then" open; 1.99.0 on the code before #137 showed 34 conditional moves and no branch.
+
 ## What to report
 
 Inclusive shares of the process samples, for the functions that own the time, and the exclusive heap exports. A leaf list alone hides a caller that spends its time in callees. State the sample count, the rate, and the binary's commit.
