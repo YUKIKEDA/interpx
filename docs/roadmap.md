@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-The rows of M5 that do not wait for `convx` are done, and M4 is done: M4-1 (#180) and M4-2 (#185). P-21 (#186) took `convx` 0.1.1. The rows the comparison left open are done too, before the release (the owner, 2026-10-19): P-20 (#184), P-10 (#138), P-11 (#144), and P-19 (#181), which ran the whole comparison again for `docs/performance.md`. M5-9 (#201) checked the publish fields, and M5-12 (#203) ran `publish-review` again and fixed what it found. M5-10 (#207) prepared v0.1.0: the version, `CHANGELOG.md`, the `Release` workflow for the versions after it, and the links at the tag `v0.1.0`. Next the owner publishes 0.1.0 by hand and registers the Trusted Publisher (`.cursor/rules/publish.mdc`), and then a PR dates `## [0.1.0]` in the changelog.
+The rows of M5 that do not wait for `convx` are done, and M4 is done: M4-1 (#180) and M4-2 (#185). P-21 (#186) took `convx` 0.1.1. The rows the comparison left open are done too, before the release (the owner, 2026-10-19): P-20 (#184), P-10 (#138), P-11 (#144), and P-19 (#181), which ran the whole comparison again for `docs/performance.md`. M5-9 (#201) checked the publish fields, and M5-12 (#203) ran `publish-review` again and fixed what it found. M5-10 (#207) prepared v0.1.0: the version, `CHANGELOG.md`, the `Release` workflow for the versions after it, and the links at the tag `v0.1.0`. The owner published 0.1.0 on crates.io on 2026-10-19 (UTC), by hand, and #213 dated it in the changelog. Every later version goes through the `Release` workflow. Next comes a row of After v0.1.0, which the owner chooses.
 
 ## Dependencies
 
