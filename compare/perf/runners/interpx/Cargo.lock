@@ -85,9 +85,9 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "convx"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3046bfa2e085f7bea4d48b8b6ae201fc857b635e4dcd4c6aeea0370baa295c54"
+checksum = "7c6d28ff3ad1562d18b9c0ffab598a53717cd3c0893be1d681963eb13002b1bb"
 dependencies = [
  "faer",
  "pulp",
