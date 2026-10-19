@@ -1,10 +1,12 @@
-//! Scattered data in two dimensions: the nearest data point, and a radial
-//! basis function interpolant over all points and over the nearest ones.
+//! Scattered data in two dimensions: the nearest data point, linear and
+//! cubic interpolation on the Delaunay triangulation, and a radial basis
+//! function interpolant over all points and over the nearest ones.
 //!
 //! `cargo run --example scattered`
 
 use interpx::{
-    InterpolateError, Interpolator, NearestNDInterpolator, RBFInterpolator, RbfKernel, RbfOptions,
+    CloughTocher2DInterpolator, InterpolateError, Interpolator, LinearNDInterpolator,
+    NearestNDInterpolator, RBFInterpolator, RbfKernel, RbfOptions,
 };
 
 fn main() -> Result<(), InterpolateError> {
@@ -26,6 +28,12 @@ fn main() -> Result<(), InterpolateError> {
 
     let nearest = NearestNDInterpolator::new(&points, &values)?;
     println!("nearest: {:?}", nearest.eval(&query));
+
+    // On the triangles of the points: no value outside their convex hull.
+    let linear = LinearNDInterpolator::new(&points, &values)?;
+    println!("linear: {:?}", linear.eval(&query));
+    let cubic = CloughTocher2DInterpolator::new(&points, &values)?;
+    println!("Clough-Tocher: {:?}", cubic.eval(&query));
 
     // One system over all points: O(N^2) memory, and an estimate of how well
     // it was solved.

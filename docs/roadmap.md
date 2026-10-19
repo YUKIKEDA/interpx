@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-The rows of M5 that do not wait for `convx` are done. `convx` 0.1.0 is published, and M4 has started: M4-1 (#180) is done, M4-2 next; it brings its own `serde`, its own tests of M5-4, and its part of the documents. Then M5-9 and the release PR M5-10, which runs `publish-review` again on the commit that is published and points the README's links to the comparison page and the crate rustdoc's link to the README at the tag `v0.1.0`. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them. P-19 and P-20 are beside them too: after the warm-up of P-18, some constructions at 10 000 points still take 1.3 to 1.6 times as long in some rounds; `LinearNDInterpolator`'s evaluation at the pixels of an image is level with SciPy, and what it pays outside the walk is to be profiled.
+The rows of M5 that do not wait for `convx` are done. `convx` 0.1.0 is published, and M4 is done: M4-1 (#180) and M4-2 (#185). Next P-21, which takes `convx` 0.1.1 (its Delaunay build in two dimensions is now level with `spade`) once it is published, and measures the constructions on it again; then M5-9 and the release PR M5-10, which runs `publish-review` again on the commit that is published and points the README's links to the comparison page and the crate rustdoc's link to the README at the tag `v0.1.0`. P-10 and P-11 are what the comparison left open and change no result: beside the rows above, without holding them. P-19 and P-20 are beside them too: after the warm-up of P-18, some constructions at 10 000 points still take 1.3 to 1.6 times as long in some rounds; `LinearNDInterpolator`'s evaluation at the pixels of an image is level with SciPy, and what it pays outside the walk is to be profiled.
 
 ## Dependencies
 
@@ -62,7 +62,7 @@ The rows of M5 that do not wait for `convx` are done. `convx` 0.1.0 is published
 | ID   | Kind | Title                                                                                         | Issue | Status |
 | ---- | ---- | --------------------------------------------------------------------------------------------- | ----- | ------ |
 | M4-1 | Feat | `LinearNDInterpolator<D>`: Delaunay, a walk from cells, tolerances, brute-force fallback, `serde` | #180  | Done   |
-| M4-2 | Feat | `CloughTocher2DInterpolator`: global gradient estimate, Bernstein-Bézier patch, `serde`       |       | Todo   |
+| M4-2 | Feat | `CloughTocher2DInterpolator`: global gradient estimate, Bernstein-Bézier patch, `serde`       | #185  | Done   |
 
 ## P: What the comparison found (before M5-1)
 
@@ -90,6 +90,7 @@ The comparison (`docs/performance.md`) is run again for the cases of a row when 
 | P-18 | Task   | Some constructions of interpx take one of two times depending on the process (`CubicSpline` of 1000 points: 15 or 38 µs), so whether the comparison counts them as slower depends on the run | #172  | Done   |
 | P-19 | Task   | After the warm-up of P-18, some constructions at 10 000 points take 1.3 to 1.6 times as long in some rounds (`Akima1D`, `Pchip`: medians 83 to 138 µs, fastest 81 to 91 µs) | #181  | Todo   |
 | P-20 | Task   | `LinearNDInterpolator`: what each evaluation always pays, profiled (at the pixels of an image it is level with SciPy, 1.01 times; the walk is 1.8 steps) | #184  | Todo   |
+| P-21 | Task   | convx 0.1.1 (its 2-D Delaunay build level with `spade`): take it, and measure again what `LinearND` and `CloughTocher2D` pay on top of it; before M5-10 | #186  | Todo   |
 
 ## M5: Integration and quality
 

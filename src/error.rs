@@ -285,6 +285,11 @@ pub enum SolverError {
     /// The system has no solution, or more than one: its matrix is singular.
     #[error("the system is singular")]
     Singular,
+
+    /// An iterative solution did not come within its tolerance in as many
+    /// steps as it is given.
+    #[error("the iteration did not converge")]
+    NotConverged,
 }
 
 #[cfg(test)]
@@ -309,6 +314,10 @@ mod tests {
             (
                 E::SolverFailed(super::SolverError::Singular),
                 "the solver failed: the system is singular",
+            ),
+            (
+                E::SolverFailed(super::SolverError::NotConverged),
+                "the solver failed: the iteration did not converge",
             ),
             (
                 E::InvalidParameter {

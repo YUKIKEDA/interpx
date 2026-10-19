@@ -597,8 +597,8 @@ fn grids_come_back_and_a_broken_form_does_not() {
 #[test]
 fn scattered_types_come_back_and_a_broken_form_does_not() {
     use interpx::{
-        LinearNDInterpolator, NearestNDInterpolator, RBFInterpolator, RbfDegree, RbfKernel,
-        RbfOptions,
+        CloughTocher2DInterpolator, LinearNDInterpolator, NearestNDInterpolator, RBFInterpolator,
+        RbfDegree, RbfKernel, RbfOptions,
     };
 
     let mut rng = Lcg(23);
@@ -858,6 +858,22 @@ fn scattered_types_come_back_and_a_broken_form_does_not() {
     let mut broken = json!(wider);
     broken["simplex_tolerance"] = json!(0.0);
     assert!(serde_json::from_value::<LinearNDInterpolator<2>>(broken).is_err());
+    // CloughTocher2DInterpolator keeps the triangulation and its gradients:
+    // what is read gives the same values, and is not solved again.
+    let cubic = CloughTocher2DInterpolator::new(&data, &twice).expect("valid");
+    check("CloughTocher2D", &cubic, &points, &[], false);
+    let rescaled = CloughTocher2DInterpolator::rescaled(&data, &twice)
+        .and_then(|cubic| cubic.with_simplex_tolerance(20.0))
+        .expect("valid");
+    check("CloughTocher2D, rescaled", &rescaled, &points, &[], false);
+    let pairs = CloughTocher2DInterpolator::new(&data, &pairs_of(&twice)).expect("valid");
+    check("CloughTocher2D, two columns", &pairs, &points, &[], false);
+    let back: CloughTocher2DInterpolator = serde_json::from_value(json!(cubic)).expect("read");
+    assert_eq!(back.gradients(), cubic.gradients());
+    let mut broken = json!(cubic);
+    broken["simplex_tolerance"] = json!(-1.0);
+    assert!(serde_json::from_value::<CloughTocher2DInterpolator>(broken).is_err());
+
     // Without dimensions: no simplex, and the first value.
     let nowhere = LinearNDInterpolator::new(&[[], []], &[7.0, 8.0]).expect("valid");
     let back: LinearNDInterpolator<0> = serde_json::from_value(json!(nowhere)).expect("read");

@@ -25,6 +25,9 @@ pub(crate) mod sealed {
         fn combine<const N: usize>(inputs: [Self; N], f: impl Fn([T; N]) -> T) -> Self
         where
             Self: Sized;
+
+        /// The largest magnitude among the columns.
+        fn largest(&self) -> T;
     }
 
     impl<T: Scalar> Sealed<T> for T {
@@ -38,6 +41,10 @@ pub(crate) mod sealed {
 
         fn combine<const N: usize>(inputs: [Self; N], f: impl Fn([T; N]) -> T) -> Self {
             f(inputs)
+        }
+
+        fn largest(&self) -> T {
+            self.abs()
         }
     }
 
@@ -59,6 +66,10 @@ pub(crate) mod sealed {
                 *slot = f(inputs.map(|value| value[column]));
             }
             out
+        }
+
+        fn largest(&self) -> T {
+            self.iter().fold(T::zero(), |most, c| most.max(c.abs()))
         }
     }
 }

@@ -13,7 +13,8 @@
 //! - Values on a rectilinear grid: [`RegularGridInterpolator`], with the
 //!   methods of [`GridMethod`].
 //! - Scattered data (the `scattered` feature, on by default):
-//!   `NearestNDInterpolator`, `LinearNDInterpolator`, and `RBFInterpolator`.
+//!   `NearestNDInterpolator`, `LinearNDInterpolator`,
+//!   `CloughTocher2DInterpolator`, and `RBFInterpolator`.
 //!
 //! Every interpolator implements [`Interpolator`]: `eval` returns `None`
 //! outside the domain unless an [`Extrapolate`] mode says otherwise, and
@@ -172,7 +173,8 @@ pub use ppoly::PPoly;
 pub use scalar::Scalar;
 #[cfg(feature = "scattered")]
 pub use scattered::{
-    LinearNDInterpolator, NearestNDInterpolator, RBFInterpolator, RbfDegree, RbfKernel, RbfOptions,
+    CloughTocher2DInterpolator, LinearNDInterpolator, NearestNDInterpolator, RBFInterpolator,
+    RbfDegree, RbfKernel, RbfOptions,
 };
 pub use search::Hint;
 pub use value::Value;

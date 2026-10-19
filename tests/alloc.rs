@@ -217,6 +217,33 @@ fn scattered() -> Result<(), InterpolateError> {
         f64::NAN,
     );
 
+    // CloughTocher2DInterpolator: points of the plane (the first two
+    // coordinates of the points above), scalar and array values.
+    use interpx::CloughTocher2DInterpolator;
+    let plane: Vec<[f64; 2]> = points.iter().map(|p| [p[0], p[1]]).collect();
+    let plane_queries = [[10.2, 20.1], [50.0, 25.0], [500.0, 0.0], [f64::NAN, 1.0]];
+    let cubic = CloughTocher2DInterpolator::new(&plane, &values)?;
+    check(
+        "CloughTocher2DInterpolator",
+        &cubic,
+        &plane_queries,
+        f64::NAN,
+    );
+    let rescaled = CloughTocher2DInterpolator::rescaled(&plane, &values)?;
+    check(
+        "CloughTocher2DInterpolator, rescaled",
+        &rescaled,
+        &plane_queries,
+        f64::NAN,
+    );
+    let arrays = CloughTocher2DInterpolator::new(&plane, &pairs)?;
+    check(
+        "CloughTocher2DInterpolator<[f64; 2]>",
+        &arrays,
+        &plane_queries,
+        [f64::NAN; 2],
+    );
+
     // RBFInterpolator: each kind of kernel (with and without `epsilon`), with
     // and without polynomial terms, scalar and array values. The queries are
     // near, far, too far for a finite value, and not finite.
@@ -327,7 +354,8 @@ fn scattered() -> Result<(), InterpolateError> {
 #[cfg(feature = "scattered")]
 fn handed_over() -> Result<(), InterpolateError> {
     use interpx::{
-        LinearNDInterpolator, NearestNDInterpolator, RBFInterpolator, RbfKernel, RbfOptions,
+        CloughTocher2DInterpolator, LinearNDInterpolator, NearestNDInterpolator, RBFInterpolator,
+        RbfKernel, RbfOptions,
     };
 
     let points: Vec<[f64; 2]> = (0..300_u32)
@@ -403,6 +431,45 @@ fn handed_over() -> Result<(), InterpolateError> {
             moved + 2,
             copied,
             "LinearNDInterpolator, rescale: {rescale}"
+        );
+    }
+
+    // CloughTocher2DInterpolator keeps the points and the values, as
+    // LinearNDInterpolator does.
+    for rescale in [false, true] {
+        let copied = allocations(|| {
+            let built = if rescale {
+                CloughTocher2DInterpolator::rescaled(&points, &values)
+            } else {
+                CloughTocher2DInterpolator::new(&points, &values)
+            };
+            std::hint::black_box(built.is_ok());
+        });
+        let (given, numbers) = (points.clone(), values.clone());
+        let (from, numbers_from) = (given.as_ptr(), numbers.as_ptr());
+        let mut kept = None;
+        let moved = allocations(|| {
+            kept = if rescale {
+                CloughTocher2DInterpolator::rescaled_from_owned(given, numbers).ok()
+            } else {
+                CloughTocher2DInterpolator::from_owned(given, numbers).ok()
+            };
+        });
+        let kept = kept.ok_or(InterpolateError::NonFinite { index: 0 })?;
+        assert_eq!(
+            kept.points().as_ptr(),
+            from,
+            "the points are the ones handed over"
+        );
+        assert_eq!(
+            kept.values().as_ptr(),
+            numbers_from,
+            "the values are the ones handed over"
+        );
+        assert_eq!(
+            moved + 2,
+            copied,
+            "CloughTocher2DInterpolator, rescale: {rescale}"
         );
     }
 

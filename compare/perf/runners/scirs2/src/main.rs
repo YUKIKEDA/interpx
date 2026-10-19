@@ -1,5 +1,6 @@
 //! The `scirs2-interpolate` side of the comparison: the methods it shares
-//! with SciPy's interface, on one variable, on grids, and the global RBF.
+//! with SciPy's interface, on one variable, on grids, the global RBF, and the
+//! triangulations of the plane (linear and Clough-Tocher).
 //!
 //! Its evaluations return a new array; the values are copied into the place
 //! the harness gives, inside the timed call (that is the interface there is).
@@ -12,7 +13,9 @@ use scirs2_interpolate::interp1d::{ExtrapolateMode, Interp1d, InterpolationMetho
 use scirs2_interpolate::interpnd::{
     ExtrapolateMode as GridExtrapolate, InterpolationMethod as GridMethod, RegularGridInterpolator,
 };
-use scirs2_interpolate::triangulation_interp::make_linear_triangulation;
+use scirs2_interpolate::triangulation_interp::{
+    make_clough_tocher_interpolator, make_linear_triangulation,
+};
 use scirs2_interpolate::{AkimaSpline, CubicSpline, PchipInterpolator, RBFInterpolator, RBFKernel};
 
 const LIBRARY: &str = "scirs2";
@@ -176,6 +179,35 @@ fn linear_nd(case: &Case) {
     );
 }
 
+/// The Clough-Tocher interpolant on a Delaunay triangulation of the plane:
+/// `triangulation_interp::make_clough_tocher_interpolator`. It takes its
+/// arrays as `make_linear_triangulation` does, so the copy is part of its
+/// construction. How it estimates the gradients at the points is its own; its
+/// values are those of another interpolant where the report says so.
+fn clough_tocher(case: &Case) {
+    let (points, values, q) = (case.array("points"), case.array("values"), case.array("q"));
+    let points = ArrayView2::from_shape((points.len() / 2, 2), &points).expect("rows of points");
+    let q = ArrayView2::from_shape((q.len() / 2, 2), &q)
+        .expect("rows of points")
+        .to_owned();
+    let values = ArrayView1::from(&values);
+    run(
+        case,
+        LIBRARY,
+        q.nrows(),
+        || {
+            make_clough_tocher_interpolator(points.to_owned(), values.to_owned())
+                .unwrap_or_else(|error| refused(error))
+        },
+        |built, out| {
+            copy(
+                built.evaluate(&q).unwrap_or_else(|error| refused(error)),
+                out,
+            )
+        },
+    );
+}
+
 fn main() {
     let case = Case::from_args();
     match case.family() {
@@ -183,6 +215,7 @@ fn main() {
         "grid" => grid(&case),
         "rbf" => rbf(&case),
         "linear_nd" => linear_nd(&case),
+        "clough_tocher" => clough_tocher(&case),
         other => unsupported(&format!("no family {other}")),
     }
 }
