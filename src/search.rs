@@ -275,9 +275,6 @@ fn resolve_at_or_past_an_end<T: Scalar>(
     }
 }
 
-/// Evaluates at `x`: finds the interval and calls `at` with the interval and
-/// the point to evaluate it at. `even` is what [`evenly_spaced`] found for
-/// `grid`: the search then starts from a guess.
 /// The interval of an `x` that is known to be inside the grid, at or past its
 /// first entry and before its last: the search alone, without the checks of
 /// [`eval`] (the caller has made them).
@@ -289,6 +286,9 @@ pub(crate) fn interval_inside<T: Scalar>(grid: &[T], even: bool, x: T) -> usize 
     }
 }
 
+/// Evaluates at `x`: finds the interval and calls `at` with the interval and
+/// the point to evaluate it at. `even` is what [`evenly_spaced`] found for
+/// `grid`: the search then starts from a guess.
 pub(crate) fn eval<T: Scalar, V>(
     grid: &[T],
     even: bool,
