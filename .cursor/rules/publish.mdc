@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Publishing
 
-Ready means the owner runs the `Release` workflow (`.github/workflows/release.yml`) and no other step is left. An agent runs neither that workflow nor `cargo publish`, and pushes no tag. An agent may run `cargo publish --dry-run` and `cargo package`.
+From 0.1.1, ready means the owner runs the `Release` workflow (`.github/workflows/release.yml`) and no other step is left; 0.1.0 is published by hand (below). An agent runs neither that workflow nor `cargo publish`, and pushes no tag. An agent may run `cargo publish --dry-run` and `cargo package`.
 
 The process is that of convx and gprx, which were published before (the owner, 2026-10-20).
 

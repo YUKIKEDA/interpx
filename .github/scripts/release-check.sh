@@ -11,6 +11,8 @@ fail() {
 }
 
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "version '$version' is not MAJOR.MINOR.PATCH"
+# The version as a regular expression, its dots escaped.
+version_re="$(printf '%s' "$version" | sed 's/\./\\./g')"
 
 crate_version="$(cargo metadata --no-deps --format-version 1 \
     | python3 -c 'import json, sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
@@ -24,7 +26,7 @@ fi
 heading="## [$version]"
 count="$(grep -cxF "$heading" CHANGELOG.md || true)"
 [[ "$count" == 1 ]] || fail "CHANGELOG.md needs exactly one undated '$heading' line (found $count)"
-if grep -q "^## \[$version\] - " CHANGELOG.md; then
+if grep -q "^## \[$version_re\] - " CHANGELOG.md; then
     fail "CHANGELOG.md already dates $version"
 fi
 
@@ -38,7 +40,7 @@ bad="$(cargo package --list --allow-dirty | tr '\\' '/' | grep -Ev \
 # page they lead to is that of the version they describe. The changelog keeps
 # the links of each older section at that section's own tag.
 stale="$(grep -noE 'github\.com/YUKIKEDA/interpx/(blob|tree)/[^/)]+' README.md README.ja.md src/lib.rs \
-    | grep -vE "/(blob|tree)/v$version\$" || true)"
+    | grep -vE "/(blob|tree)/v$version_re\$" || true)"
 [[ -z "$stale" ]] || fail "links not at the tag v$version: $stale"
 
 echo "release-check: $version is ready"
