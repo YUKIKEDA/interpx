@@ -19,7 +19,7 @@ README and comparison pages are read by someone who has only the crate. They nev
 7. One link to the comparison page.
 8. License.
 
-SciPy is the reference interpx is verified against, not a compatibility target (ADR 0011). The README names SciPy, NumPy, or their functions in the Verification section and the link to the comparison page only: not in the first line, not as the counterpart of a type, not in the out-of-scope list. The README does not disclaim an affiliation with SciPy: there is none to disclaim (the owner, 2026-10-20).
+The README names SciPy, NumPy, or their functions in two places only: the Verification section and the link to the comparison page (ADR 0011). The first line, the description of a type, and the out-of-scope list say what interpx does in its own terms. About SciPy, the README says what it is used for and nothing else (`.cursor/rules/scipy-reference.mdc`).
 
 ## Rules
 

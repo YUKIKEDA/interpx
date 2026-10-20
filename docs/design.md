@@ -2,11 +2,11 @@ English | [日本語](design.ja.md)
 
 # `interpx` Architecture & Design Specification
 
-> **An interpolation library in pure Rust for one variable, curves, regular grids, and scattered data, with its results verified against SciPy 1.18.**
+> **An interpolation library in pure Rust for one variable, curves, regular grids, and scattered data.**
 
 This file is the English translation of [design.ja.md](design.ja.md), and both carry the whole specification. When the two differ, follow `design.ja.md`.
 
-The SciPy version of reference is fixed at **1.18** (the numerical agreement tests and the coverage table are all defined against this version). SciPy is the reference of verification, not a target of compatibility, nor a library whose API is reproduced (ADR 0011). Of the published documentation, only the README's Verification section and its link to the comparison page name SciPy; the rustdoc of the public API, the `description`, and the `keywords` do not. This document names SciPy only to cite the source of a method and to record verification.
+The SciPy version of reference is fixed at **1.18** (the numerical agreement tests and the coverage table are all defined against this version).
 
 ---
 

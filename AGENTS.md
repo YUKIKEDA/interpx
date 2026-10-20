@@ -41,7 +41,7 @@ Read the rules that match the work. `alwaysApply` rules apply to every change. A
 | `rust-docs`                 | English rustdoc with `# Errors` and examples                                  |
 | `numerics`                  | f32/f64, NaN, float comparison, stability                                     |
 | `api-contract`              | Owned, `Send + Sync`, typed errors, no `convx` types in the API               |
-| `scipy-reference`           | SciPy 1.18 is the verification reference only; goldens from the pinned script |
+| `scipy-reference`           | SciPy 1.18 verifies the results; goldens come from the pinned script           |
 | `numeric-tests`             | Independent reference, fixed tolerances, mutation checks                      |
 | `spec-checks`               | A test implements the whole design statement                                  |
 | `perf`                      | No allocation on evaluation; layout; dispatch; parallel and SIMD bit equality |
