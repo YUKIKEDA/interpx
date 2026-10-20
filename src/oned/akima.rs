@@ -6,8 +6,6 @@ use crate::{Extrapolate, Hint, InterpolateError, Interpolator, PPoly, Scalar, Va
 
 /// How an [`Akima1D`] weighs the secants around a data point.
 ///
-/// The `method` argument of SciPy's `Akima1DInterpolator`.
-///
 /// # Examples
 ///
 /// ```
@@ -32,22 +30,21 @@ use crate::{Extrapolate, Hint, InterpolateError, Interpolator, PPoly, Scalar, Va
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum AkimaMethod {
-    /// Akima's weights: how much the secant changes on each side. SciPy's
-    /// `method="akima"`.
+    /// Akima's weights: how much the secant changes on each side.
     Akima,
     /// The modified weights, which also grow with the size of the secants. A
     /// flat run of three points or more stays flat, where [`AkimaMethod::Akima`]
-    /// can overshoot into it. SciPy's `method="makima"`.
+    /// can overshoot into it.
     Makima,
 }
 
 /// The Akima interpolant through data points: piecewise cubic with a continuous
 /// first derivative, each slope taken from the five points around it.
 ///
-/// SciPy's `Akima1DInterpolator`. Because a slope depends on nearby points
-/// only, an outlier bends the curve next to it and nowhere else, and the curve
-/// does not ripple as a spline can. [`AkimaMethod`] chooses between Akima's
-/// weights and the modified ones (makima).
+/// Because a slope depends on nearby points only, an outlier bends the curve
+/// next to it and nowhere else, and the curve does not ripple as a spline can.
+/// [`AkimaMethod`] chooses between Akima's weights and the modified ones
+/// (makima).
 ///
 /// The slope at a point is a weighted mean of the secants before and after it.
 /// The weights look one secant further on each side, so past each end two
@@ -57,16 +54,14 @@ pub enum AkimaMethod {
 /// points give the line through them.
 ///
 /// Outside the data the result follows the [`Extrapolate`] mode. It starts as
-/// [`Extrapolate::Forbid`]: SciPy's Akima does not extrapolate by default.
+/// [`Extrapolate::Forbid`].
 ///
 /// The interpolant is a piecewise polynomial: [`as_ppoly`](Akima1D::as_ppoly)
 /// lends it, and its derivatives and integrals come from there.
 ///
-/// One thing differs from SciPy, for array values only. Each column is
-/// interpolated on its own here: the result for a column is, bit for bit, what
-/// that column gives alone. SciPy decides where the weights vanish against the
-/// largest weight over all columns together, so that a column of large values
-/// can change the result of another one.
+/// With array values, each column is interpolated on its own: the result for a
+/// column is, bit for bit, what that column gives alone, and a column of large
+/// values leaves the others as they are.
 ///
 /// # Examples
 ///

@@ -42,8 +42,7 @@ pub enum Parametrization {
     /// they lie. A curve through unevenly spaced points then wiggles.
     Uniform,
     /// By `d`: the parameter follows the length of the polygon through the
-    /// points, which approximates the length along the curve. The choice of
-    /// FITPACK's `splprep`.
+    /// points, which approximates the length along the curve.
     ChordLength,
     /// By the square root of `d`: between the two above, with less overshoot
     /// at sharp turns.
@@ -57,7 +56,7 @@ pub enum Parametrization {
 /// parameter. [`new`](BSplineCurve::new) chooses the parameters from the points
 /// by a [`Parametrization`], from 0 at the first point to 1 at the last;
 /// [`with_parameters`](BSplineCurve::with_parameters) takes them from the
-/// caller, as SciPy's `make_interp_spline` does with a two-dimensional `y`.
+/// caller.
 /// [`parameters`](BSplineCurve::parameters) returns them.
 ///
 /// The degree and the [`BoundaryCondition`] are those of [`BSpline1D`]: degrees
@@ -172,8 +171,7 @@ impl<T: Scalar, const D: usize> BSplineCurve<T, D> {
     /// Builds the curve of the given degree that is at `points[i]` at the
     /// parameter `t[i]`.
     ///
-    /// SciPy's `make_interp_spline(t, points)`. The result is, bit for bit, the
-    /// [`BSpline1D`] of the same arguments.
+    /// The result is, bit for bit, the [`BSpline1D`] of the same arguments.
     ///
     /// # Errors
     ///

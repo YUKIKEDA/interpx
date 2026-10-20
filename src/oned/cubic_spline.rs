@@ -10,11 +10,11 @@ use crate::{
 /// The cubic spline through data points: piecewise cubic, with a continuous
 /// first and second derivative.
 ///
-/// SciPy's `CubicSpline`. The [`BoundaryCondition`] fixes the two degrees of
-/// freedom the data leaves: not-a-knot (SciPy's default), periodic, or a first
-/// or second derivative at each end.
+/// The [`BoundaryCondition`] fixes the two degrees of freedom the data leaves:
+/// not-a-knot (the default), periodic, or a first or second derivative at each
+/// end.
 ///
-/// With few points the spline is what SciPy makes of them:
+/// With few points the spline is:
 ///
 /// - Two points: a not-a-knot end takes the slope of the line through them, so
 ///   not-a-knot at both ends gives that line.
@@ -22,14 +22,12 @@ use crate::{
 ///
 /// Outside the data the result follows the [`Extrapolate`] mode. It starts as
 /// [`Extrapolate::Extend`], and as [`Extrapolate::Periodic`] for the periodic
-/// boundary, as in SciPy.
+/// boundary.
 ///
 /// The interpolant is a piecewise polynomial: [`as_ppoly`](CubicSpline::as_ppoly)
 /// lends it, and its derivatives and integrals come from there.
 ///
-/// The data is checked more strictly than SciPy checks it: `x` must increase
-/// strictly as given (SciPy raises for a repeated `x` too, but this crate does
-/// not sort), and the values must be finite.
+/// `x` must increase strictly as given, and the values must be finite.
 ///
 /// # Examples
 ///
@@ -76,8 +74,8 @@ impl<T: Scalar, V: Value<T>> CubicSpline<T, V> {
     ///   [`ParamReason::NonFinite`] when a derivative of the boundary condition
     ///   is NaN or infinite.
     /// - [`InterpolateError::NotPeriodic`] when the boundary is periodic and the
-    ///   first and the last value differ by more than rounding (SciPy's
-    ///   tolerance: `1e-15`, relative and absolute, for `f64`).
+    ///   first and the last value differ by more than rounding (`1e-15`,
+    ///   relative and absolute, for `f64`).
     /// - [`InterpolateError::NonFinite`] when a slope or a coefficient
     ///   overflows. Its `index` is that of a data point near the overflow.
     ///

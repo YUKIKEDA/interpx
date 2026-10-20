@@ -69,8 +69,8 @@ pub trait Interpolator {
     /// Evaluates the interpolator at `point`, or returns `fill` where
     /// [`eval`](Interpolator::eval) returns `None`.
     ///
-    /// This is SciPy's `fill_value`, given at the call. Pass NaN to mark the
-    /// points that have no value.
+    /// The fill value is given at each call. Pass NaN to mark the points that
+    /// have no value.
     ///
     /// # Examples
     ///

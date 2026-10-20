@@ -1,12 +1,10 @@
-//! Pure Rust interpolation covering the main classes of SciPy 1.18's
-//! `scipy.interpolate`: one variable, curves, regular grids, and scattered
-//! data. Where SciPy computes the same interpolant, the values are SciPy's to
-//! rounding.
+//! Pure Rust interpolation: one variable, curves, regular grids, and scattered
+//! data.
 //!
-//! - One variable: [`Linear1D`] (`numpy.interp`), [`Nearest1D`] (the
-//!   nearest, previous, and next kinds of `interp1d`), [`CubicSpline`],
-//!   [`PchipInterpolator`], [`Akima1D`], [`CubicHermiteSpline`], and
-//!   [`BSpline1D`] (`make_interp_spline`).
+//! - One variable: [`Linear1D`], [`Nearest1D`] (the nearest, the previous, or
+//!   the next data value), [`CubicSpline`], [`PchipInterpolator`], [`Akima1D`],
+//!   [`CubicHermiteSpline`], and [`BSpline1D`] (the interpolating B-spline of
+//!   any degree).
 //! - The representations they evaluate through, which can be built directly,
 //!   differentiated, and integrated: [`PPoly`] and [`BSpline`].
 //! - A curve through points of several dimensions: [`BSplineCurve`].
@@ -27,8 +25,8 @@
 //! grids, and `f64` for scattered data; a value is a scalar or a fixed-size
 //! array ([`Value`]). Interpolators own their data and are `Send + Sync`.
 //!
-//! What differs from SciPy, what a caller must know, and an example for every
-//! public item are in the
+//! What a caller must know, how the results are verified, and an example for
+//! every public item are in the
 //! [README](https://github.com/YUKIKEDA/interpx/blob/v0.1.0/README.md).
 //!
 //! # Features
@@ -43,7 +41,7 @@
 //!   than a tenth of a millisecond of work is not shared out, and deciding
 //!   that costs up to 0.14 µs (up to two thirds more time on batches under a
 //!   microsecond, and up to a third more on batches up to a tenth of a
-//!   millisecond, over the 277 cases that this crate's comparison with SciPy
+//!   millisecond, over the 277 cases that this crate's performance comparison
 //!   had when this was measured, 8 threads).
 //! - `serde`: `Serialize` and `Deserialize` for every interpolator and for
 //!   the parameters they are built with. See below.

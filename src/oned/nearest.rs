@@ -4,9 +4,6 @@ use crate::{search, validate, Extrapolate, Hint, InterpolateError, Interpolator,
 
 /// Which data point a [`Nearest1D`] takes its value from.
 ///
-/// The `kind` argument of SciPy's `interp1d`, for its four kinds that return a
-/// data value as it is.
-///
 /// # Examples
 ///
 /// ```
@@ -32,37 +29,28 @@ use crate::{search, validate, Extrapolate, Hint, InterpolateError, Interpolator,
 #[non_exhaustive]
 pub enum NearestKind {
     /// The nearest point; halfway between two points, the one on the left.
-    /// SciPy's `kind="nearest"`.
     Nearest,
     /// The nearest point; halfway between two points, the one on the right.
-    /// SciPy's `kind="nearest-up"`.
     NearestUp,
-    /// The last point at or before the query. SciPy's `kind="previous"`.
+    /// The last point at or before the query.
     Previous,
-    /// The first point at or after the query. SciPy's `kind="next"`.
+    /// The first point at or after the query.
     Next,
 }
 
 /// Interpolation that returns the value of one data point: the nearest, the
 /// previous, or the next one.
 ///
-/// SciPy's `interp1d` with `kind` set to `"nearest"`, `"nearest-up"`,
-/// `"previous"`, or `"next"`; [`NearestKind`] says which. At a data point every
-/// kind returns the value of that point.
+/// [`NearestKind`] says which. At a data point every kind returns the value of
+/// that point.
 ///
 /// Outside the data the result follows the [`Extrapolate`] mode. It starts as
-/// [`Extrapolate::Forbid`] (`interp1d` raises an error there by default).
-/// [`Extrapolate::Clamp`] and [`Extrapolate::Extend`] both give the first or
-/// the last value, and [`Extrapolate::Periodic`] wraps the query.
+/// [`Extrapolate::Forbid`]. [`Extrapolate::Clamp`] and [`Extrapolate::Extend`]
+/// both give the first or the last value on both sides, for every kind, and
+/// [`Extrapolate::Periodic`] wraps the query.
 ///
-/// Three things differ from SciPy:
-///
-/// - A NaN query has no value. SciPy returns the last data value.
-/// - With `fill_value="extrapolate"`, SciPy's `"previous"` returns NaN left of
-///   the data and its `"next"` right of it. Here [`Extrapolate::Clamp`] and
-///   [`Extrapolate::Extend`] return the end value on both sides, for every kind.
-/// - The data is checked more strictly: two points at least (SciPy takes one)
-///   and `x` strictly increasing (SciPy sorts, and takes repeated `x`).
+/// A NaN query has no value. The data needs two points at least and `x`
+/// strictly increasing.
 ///
 /// # Examples
 ///

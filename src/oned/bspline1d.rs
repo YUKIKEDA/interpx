@@ -12,11 +12,9 @@ use crate::{
 /// The spline of a chosen degree through data points: piecewise polynomial of
 /// degree `k`, with `k - 1` continuous derivatives.
 ///
-/// SciPy's `make_interp_spline`. The degree is 1 to
-/// [`BSPLINE_MAX_DEGREE`]: degree 1 is the polygon through the points, degree
-/// 3 the cubic spline, and the higher degrees are smoother. (The step
-/// function, which SciPy has as degree 0, is
-/// [`Nearest1D`](crate::Nearest1D) with
+/// The degree is 1 to [`BSPLINE_MAX_DEGREE`]: degree 1 is the polygon through
+/// the points, degree 3 the cubic spline, and the higher degrees are smoother.
+/// (The step function is [`Nearest1D`](crate::Nearest1D) with
 /// [`NearestKind::Previous`](crate::NearestKind::Previous).)
 ///
 /// What the data leaves open is settled by the [`BoundaryCondition`]:
@@ -28,8 +26,7 @@ use crate::{
 ///   first `degree - 1` derivatives repeat from the last point on. The first
 ///   and the last value must agree.
 /// - [`BoundaryCondition::Ends`] with a first or a second derivative at an
-///   end, for degree 3 only (as in SciPy, where `"natural"` and `"clamped"`
-///   fit no other degree). The other end may be a derivative or
+///   end, for degree 3 only. The other end may be a derivative or
 ///   [`EndCondition::NotAKnot`].
 ///
 /// A spline of degree 3 is the curve of [`CubicSpline`](crate::CubicSpline)

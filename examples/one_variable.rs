@@ -9,11 +9,11 @@ fn main() -> Result<(), InterpolateError> {
     let x = [0.0, 1.0, 2.0, 3.5, 5.0];
     let y = [1.0, 2.7, 5.8, 4.0, 2.2];
 
-    // SciPy's `CubicSpline(x, y)`: the not-a-knot condition at both ends.
+    // The not-a-knot condition at both ends.
     let spline = CubicSpline::new(&x, &y, BoundaryCondition::NotAKnot)?;
     println!("s(2.5) = {:?}", spline.eval(&2.5));
 
-    // Outside the data the end pieces go on, as in SciPy. Without that, a point
+    // Outside the data the end pieces go on. Without that, a point
     // outside has no value, and `eval_or` gives the fill value instead.
     println!("s(6.0) = {:?}", spline.eval(&6.0));
     let inside_only = spline.with_extrapolate(Extrapolate::Forbid);

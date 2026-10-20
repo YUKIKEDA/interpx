@@ -8,7 +8,7 @@ use std::borrow::Cow;
 /// The interpolant that is linear on each simplex of the Delaunay
 /// triangulation of the points, for points anywhere in `D` dimensions.
 ///
-/// SciPy's `LinearNDInterpolator`. The points need no order and no structure.
+/// The points need no order and no structure.
 /// At a query point the value is the weighted sum of the values at the
 /// vertices of the simplex that holds it, the weights being the point's
 /// barycentric coordinates in that simplex. The interpolant is continuous,
@@ -41,21 +41,16 @@ use std::borrow::Cow;
 /// that does not arrive within as many steps as there are simplices, or that
 /// meets a degenerate simplex, gives way to a look at every simplex.
 ///
-/// # Differences from SciPy
+/// # Ties and small dimensions
 ///
 /// - Where four or more points lie on one circle (five on one sphere in three
 ///   dimensions, and so on), more than one Delaunay triangulation exists.
 ///   This crate's triangulation divides the region they bound by a rule of
-///   the points' indices; SciPy's (Qhull) divides it another way. Inside
-///   such a region the two interpolants differ; elsewhere they agree to
-///   rounding. Points on a grid are such points.
-/// - Of points with the same coordinates, the value of the one given first
-///   is taken. SciPy (Qhull) keeps one of them by its own choice, which is
-///   not always the first.
+///   the points' indices, so that the same points in the same order always
+///   give the same interpolant. Points on a grid are such points.
 /// - One dimension (`D = 1`) is linear interpolation between neighboring
-///   points; SciPy refuses one-dimensional points. Without dimensions
-///   (`D = 0`) every point is the one point there is, and its value is the
-///   first one given.
+///   points. Without dimensions (`D = 0`) every point is the one point there
+///   is, and its value is the first one given.
 ///
 /// # Examples
 ///
@@ -161,7 +156,7 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
     }
 
     /// Builds the interpolant with every coordinate brought to the same range
-    /// before the points are triangulated: SciPy's `rescale=True`.
+    /// before the points are triangulated.
     ///
     /// On each axis the mean of the points is taken off and the result is
     /// divided by their range (the largest coordinate less the smallest; an
@@ -269,7 +264,7 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
 
     /// Returns the points, as triangulated: as given, or after the change of
     /// coordinates of a [`rescaled`](LinearNDInterpolator::rescaled)
-    /// interpolant (SciPy's `points`, which are rescaled too).
+    /// interpolant.
     ///
     /// # Examples
     ///
@@ -311,20 +306,19 @@ impl<const D: usize, V: Value<f64>> LinearNDInterpolator<D, V> {
     }
 
     /// Returns the same interpolant, with the tolerance by which a query is
-    /// taken to be in a simplex multiplied by `tolerance`: SciPy's
-    /// `simplex_tolerance` (SciPy 1.18), which SciPy takes at each call.
+    /// taken to be in a simplex multiplied by `tolerance`.
     ///
     /// A barycentric coordinate down to `-100 * f64::EPSILON * tolerance`
     /// (and up to one more than that) counts as inside. Raise it when points
     /// on the edges of very oblique simplices find none. The wider leeway of
     /// the search toward a degenerate simplex (`sqrt(f64::EPSILON)`) does not
-    /// change, as in SciPy. The default is 1.
+    /// change. The default is 1.
     ///
     /// # Errors
     ///
     /// [`InterpolateError::InvalidParameter`] for `simplex_tolerance` when
     /// `tolerance` is NaN or infinite ([`ParamReason::NonFinite`](crate::ParamReason::NonFinite)), or zero
-    /// or below ([`ParamReason::NotPositive`](crate::ParamReason::NotPositive); SciPy raises `ValueError`).
+    /// or below ([`ParamReason::NotPositive`](crate::ParamReason::NotPositive)).
     ///
     /// # Examples
     ///

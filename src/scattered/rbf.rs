@@ -25,20 +25,19 @@ use std::cell::RefCell;
 /// The kernel of an [`RBFInterpolator`]: a function of the distance `r` from a
 /// data point.
 ///
-/// The kernels and their signs are SciPy's. Four of them take a shape
-/// parameter `epsilon`, which the distance is multiplied by: a larger
-/// `epsilon` makes a narrower bump. It must be finite and above zero. The
-/// other four do not depend on a scale (stretching all distances leaves the
-/// interpolant as it is), and take none.
+/// Four of the kernels take a shape parameter `epsilon`, which the distance is
+/// multiplied by: a larger `epsilon` makes a narrower bump. It must be finite
+/// and above zero. The other four do not depend on a scale (stretching all
+/// distances leaves the interpolant as it is), and take none.
 ///
 /// A kernel may need a polynomial beside it for its system to have one
 /// solution: the degree is given with each. [`RbfDegree::Default`] takes that
 /// degree, and a constant for the kernels that need no polynomial.
 ///
-/// SciPy takes an `epsilon` for the scale-free kernels as well. Without
-/// smoothing it changes nothing. With smoothing `s` it is the same as the
-/// smoothing `s / epsilon^p` here, with `p` 1 for the linear kernel, 2 for the
-/// thin plate spline, 3 for the cubic, and 5 for the quintic.
+/// To scale the distances of a scale-free kernel by `epsilon` with smoothing
+/// `s`, give the smoothing `s / epsilon^p`, with `p` 1 for the linear kernel, 2
+/// for the thin plate spline, 3 for the cubic, and 5 for the quintic. Without
+/// smoothing such a scale changes nothing.
 ///
 /// The enum is `#[non_exhaustive]`: later versions add kernels.
 ///
@@ -65,7 +64,7 @@ use std::cell::RefCell;
 pub enum RbfKernel {
     /// `-r`. Needs a polynomial of degree 0.
     Linear,
-    /// `r^2 log r`. Needs a polynomial of degree 1. SciPy's default kernel.
+    /// `r^2 log r`. Needs a polynomial of degree 1.
     ThinPlateSpline,
     /// `r^3`. Needs a polynomial of degree 1.
     Cubic,
@@ -99,8 +98,8 @@ pub enum RbfKernel {
     /// and stops improving as points are added.
     /// With `epsilon` 5 on 800 points of the unit square, the error on a
     /// smooth function was between 1e-5 and 1e-4 depending on the order
-    /// the points were given in (SciPy's moves in a range that overlaps
-    /// this one), where the multiquadric had 1e-6 in any order.
+    /// the points were given in, where the multiquadric had 1e-6 in any
+    /// order.
     ///
     /// Raising `epsilon` is not the way out. The system is then better
     /// conditioned, but the bumps are narrower and no longer reach from one
@@ -822,14 +821,14 @@ thread_local! {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum RbfDegree {
     /// The degree the kernel needs, and a constant term for the kernels that
-    /// need none: SciPy's default.
+    /// need none.
     #[default]
     Default,
-    /// No polynomial: the kernels alone (SciPy's `degree=-1`). With a kernel
+    /// No polynomial: the kernels alone. With a kernel
     /// that needs a polynomial the system may have no solution.
     None,
     /// Every monomial of this degree or less. A degree under the one the
-    /// kernel needs is refused (SciPy only warns).
+    /// kernel needs is refused.
     Degree(usize),
 }
 
@@ -910,8 +909,7 @@ impl RbfOptions {
     }
 
     /// Returns the options with a number of neighbors: every query is then
-    /// answered from the `neighbors` data points nearest to it alone (SciPy's
-    /// `neighbors`).
+    /// answered from the `neighbors` data points nearest to it alone.
     ///
     /// For many points, where one system over all of them is too large. See
     /// [`RBFInterpolator`] for what changes. With as many neighbors as there
@@ -952,7 +950,7 @@ impl RbfOptions {
 /// sum of one kernel centered at every data point, and a polynomial of low
 /// degree.
 ///
-/// SciPy's `RBFInterpolator`. The points need no order and no structure, in
+/// The points need no order and no structure, in
 /// any number of dimensions (with neighbors, the search for them suits few
 /// dimensions: see [`NearestNDInterpolator`](crate::NearestNDInterpolator)). The weights of the kernels solve one system of
 /// equations with a row for every point, at construction. Coordinates are
@@ -1006,23 +1004,18 @@ impl RbfOptions {
 /// a loop over `eval` (`ThinPlateSpline` over 10 neighbors, 10 000 random
 /// points, 1000 queries along a line across them).
 ///
-/// # Differences from SciPy
+/// # Choices
 ///
-/// - The system is solved by an LU factorization with partial pivoting;
-///   SciPy uses a symmetric indefinite one (LAPACK's `dsysv`). On the
-///   systems of this crate's tests the values differ by less than 1e-12 of
-///   the largest value.
-/// - There is no default kernel (SciPy's is the thin plate spline).
+/// - The system is solved by an LU factorization with partial pivoting.
+/// - There is no default kernel: the kernel is an argument.
 /// - `epsilon` belongs to the four kernels that need it, and must be finite
-///   and positive; SciPy takes it for every kernel.
-/// - A degree under the one the kernel needs is an error; SciPy warns and
-///   goes on.
-/// - Two points with the same coordinates are an error even with smoothing,
-///   which SciPy accepts.
+///   and positive.
+/// - A degree under the one the kernel needs is an error.
+/// - Two points with the same coordinates are an error, with or without
+///   smoothing.
 /// - The smoothing is one number, not one per point.
-/// - A query with a coordinate that is not finite has no value; SciPy
-///   returns NaN. With neighbors, a query whose neighbors have a singular
-///   system has no value; SciPy raises.
+/// - A query with a coordinate that is not finite has no value. With
+///   neighbors, a query whose neighbors have a singular system has no value.
 ///
 /// # Points
 ///
@@ -1030,7 +1023,7 @@ impl RbfOptions {
 /// smoothing. Points that all lie in a line (or, in three dimensions, in a
 /// plane) leave the polynomial undetermined: when they lie along an axis the
 /// system is found to have no solution, and otherwise the result can be
-/// without meaning, as in SciPy.
+/// without meaning.
 ///
 /// # Examples
 ///
@@ -1446,8 +1439,7 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
     /// **Under `f64::EPSILON` (2.2e-16) the system is singular to working
     /// precision: the interpolant was built, and its values mean little.**
     /// It then misses its own data, and how far says how little it is worth.
-    /// Neither this crate nor SciPy refuses such a system; this number is
-    /// how to tell.
+    /// Such a system is not refused; this number is how to tell.
     ///
     /// The number does not depend on the unit of the coordinates: it is that
     /// of the system balanced so that its kernels are of size one at most
@@ -1479,8 +1471,9 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
     ///
     /// (Degrees Celsius, from -52 to 44; the nearest station alone is off by
     /// 3.4.) Merging the stations nearer than 0.1 degrees brought the cubic
-    /// kernel to 3.8 and the thin plate spline to 3.1 (measured with SciPy,
-    /// which solves the same system); the quintic stayed unusable. With
+    /// kernel to 3.8 and the thin plate spline to 3.1 (measured with a
+    /// symmetric indefinite LDLᵀ solve of the same system); the quintic stayed
+    /// unusable. With
     /// such data: merge points that nearly coincide, take the linear kernel,
     /// or take neighbors ([`RbfOptions::with_neighbors`]).
     ///

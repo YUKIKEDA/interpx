@@ -7,7 +7,7 @@ use interpx::{GridMethod, InterpolateError, Interpolator, RegularGridInterpolato
 fn main() -> Result<(), InterpolateError> {
     let x: [f64; 6] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
     let y: [f64; 6] = [0.0, 0.5, 1.5, 3.0, 5.0, 7.5];
-    // In C order, the last axis fastest, as NumPy lays out `values[i, j]`.
+    // In C order, the last axis fastest: `values[i * 6 + j]`.
     let values: Vec<f64> = x
         .iter()
         .flat_map(|xi| y.iter().map(move |yj| (xi * 0.7).sin() * (yj * 0.3).cos()))

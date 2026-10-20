@@ -11,7 +11,7 @@ use std::sync::Arc;
 /// The interpolant that gives a query point the value of the data point
 /// nearest to it, for points anywhere in `D` dimensions.
 ///
-/// SciPy's `NearestNDInterpolator`. The points need no order and no structure.
+/// The points need no order and no structure.
 /// The distance is the Euclidean one. A value is a scalar or a fixed-length
 /// array, and the result is always one of the values given: nothing is
 /// averaged. Coordinates are `f64`.
@@ -24,7 +24,7 @@ use std::sync::Arc;
 /// Points with the same coordinates are taken as one, with the value of the
 /// one given first. Of several different points at the same distance from a
 /// query, one is taken; which one is fixed for a given set of points, and
-/// follows no rule (SciPy's choice follows none either, and may differ).
+/// follows no rule.
 ///
 /// [`rescaled`](NearestNDInterpolator::rescaled) measures the distance after
 /// each coordinate is brought to the same range, for data whose coordinates
@@ -140,7 +140,7 @@ impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {
     }
 
     /// Builds the interpolant with every coordinate brought to the same range
-    /// before a distance is measured: SciPy's `rescale=True`.
+    /// before a distance is measured.
     ///
     /// On each axis the mean of the points is taken off and the result is
     /// divided by their range (the largest coordinate less the smallest; an
@@ -251,7 +251,7 @@ impl<const D: usize, V: Value<f64>> NearestNDInterpolator<D, V> {
     }
 
     /// Returns the same interpolant, which gives a value only to queries whose
-    /// nearest point is nearer than `bound`: SciPy's `distance_upper_bound`.
+    /// nearest point is nearer than `bound`.
     ///
     /// A query at the distance `bound` exactly, or farther, has no value. For
     /// a [`rescaled`](NearestNDInterpolator::rescaled) interpolant the distance
