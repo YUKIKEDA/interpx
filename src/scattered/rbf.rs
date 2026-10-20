@@ -25,11 +25,10 @@ use std::cell::RefCell;
 /// The kernel of an [`RBFInterpolator`]: a function of the distance `r` from a
 /// data point.
 ///
-/// Four of the kernels take a shape
-/// parameter `epsilon`, which the distance is multiplied by: a larger
-/// `epsilon` makes a narrower bump. It must be finite and above zero. The
-/// other four do not depend on a scale (stretching all distances leaves the
-/// interpolant as it is), and take none.
+/// Four of the kernels take a shape parameter `epsilon`, which the distance is
+/// multiplied by: a larger `epsilon` makes a narrower bump. It must be finite
+/// and above zero. The other four do not depend on a scale (stretching all
+/// distances leaves the interpolant as it is), and take none.
 ///
 /// A kernel may need a polynomial beside it for its system to have one
 /// solution: the degree is given with each. [`RbfDegree::Default`] takes that

@@ -42,8 +42,9 @@ pub enum AkimaMethod {
 /// first derivative, each slope taken from the five points around it.
 ///
 /// Because a slope depends on nearby points only, an outlier bends the curve
-/// next to it and nowhere else, and the curve does not ripple as a spline can. [`AkimaMethod`] chooses between Akima's
-/// weights and the modified ones (makima).
+/// next to it and nowhere else, and the curve does not ripple as a spline can.
+/// [`AkimaMethod`] chooses between Akima's weights and the modified ones
+/// (makima).
 ///
 /// The slope at a point is a weighted mean of the secants before and after it.
 /// The weights look one secant further on each side, so past each end two

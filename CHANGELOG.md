@@ -6,7 +6,7 @@ Every version of interpx on crates.io, newest first, in the form of [Keep a Chan
 
 ### Changed
 
-- **The documentation** (the README, the crate documentation, the `description`, and the `keywords`) says what interpx computes in its own terms. SciPy 1.18, which the results are verified against, is named in the README's Verification section. No public item and no result changes.
+- **The documentation** (the README, the crate documentation, the `description`, and the `keywords`) is rewritten in interpx's own terms, and the README has a Verification section. No public item and no result changes.
 
 ## [0.1.0] - 2026-10-19
 

@@ -352,10 +352,10 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
     /// copy.
     ///
     /// [`Extrapolate::Extend`] is kept. Every other mode becomes
-    /// [`Extrapolate::Forbid`]: the antiderivative of a periodic function is not
-    /// periodic in general, and that of a clamped
-    /// function is linear outside the domain. [`integrate`](PPoly::integrate)
-    /// follows the mode of this polynomial.
+    /// [`Extrapolate::Forbid`]: the antiderivative of a periodic function is
+    /// not periodic in general, and that of a clamped function is linear
+    /// outside the domain. [`integrate`](PPoly::integrate) follows the mode of
+    /// this polynomial.
     ///
     /// # Errors
     ///

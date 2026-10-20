@@ -21,15 +21,14 @@ const SOLVED: f64 = 1e-14;
 /// Delaunay triangulation of the points, continuous with its first
 /// derivatives (C1), for points of the plane.
 ///
-/// Each triangle is cut at its
-/// centroid into three, and the interpolant is a cubic Bernstein-Bezier
-/// patch on each part: it takes the data values at the points, and the
-/// gradients there. The gradients are estimated from the data by the global
-/// method of Nielson (1983) and Renka and Cline (1984): those that make the
-/// interpolant bend least along the edges of the triangulation. The direction
-/// in which the derivative across an edge is made linear is taken from the
-/// centroids of the two triangles beside it, so that the interpolant does not
-/// change under an affine change of coordinates.
+/// Each triangle is cut at its centroid into three, and the interpolant is a
+/// cubic Bernstein-Bezier patch on each part: it takes the data values at the
+/// points, and the gradients there. The gradients are estimated from the data
+/// by the global method of Nielson (1983) and Renka and Cline (1984): those
+/// that make the interpolant bend least along the edges of the triangulation.
+/// The direction in which the derivative across an edge is made linear is taken
+/// from the centroids of the two triangles beside it, so that the interpolant
+/// does not change under an affine change of coordinates.
 ///
 /// A query outside the convex hull of the points has no value, nor has a
 /// query with a coordinate that is NaN or infinite. A value is a scalar or a

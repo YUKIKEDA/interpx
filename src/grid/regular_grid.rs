@@ -55,12 +55,11 @@ pub enum GridMethod {
     /// flat the interpolant is; the spline methods overshoot there. Needs two
     /// points an axis.
     ///
-    /// The axes are taken last first: the lines
-    /// along the last axis are interpolated at the last coordinate, then those
-    /// results along the axis before it, and so on down to the first. The
-    /// order matters, because the slopes of this cubic are not linear in the
-    /// values: the same values with two axes exchanged give another
-    /// interpolant.
+    /// The axes are taken last first: the lines along the last axis are
+    /// interpolated at the last coordinate, then those results along the axis
+    /// before it, and so on down to the first. The order matters, because the
+    /// slopes of this cubic are not linear in the values: the same values with
+    /// two axes exchanged give another interpolant.
     ///
     /// Only the slopes along the last axis are found, and checked, at
     /// construction. With values so far apart that a slope along an earlier
@@ -148,15 +147,15 @@ struct Tensor<T, const D: usize, V> {
 /// The interpolant of values on a rectilinear grid in `D` dimensions: the
 /// points are all combinations of one coordinate from each axis.
 ///
-/// The axes need not be evenly spaced. Each
-/// increases strictly or decreases strictly. For [`GridMethod::Nearest`] and
-/// [`GridMethod::Linear`] an axis may have one point alone: the grid is then
-/// constant in that direction, and a query has a value at the coordinate of
-/// that point (elsewhere it is outside the grid, see [`Extrapolate`]). The
-/// values are one flat slice in C order, the last axis varying fastest: with
-/// axes of `n0` and `n1` points, the value at point `i0` of the first axis and
-/// `i1` of the second is `values[i0 * n1 + i1]` (the standard layout of
-/// `ndarray`). A value is a scalar or a fixed-length array.
+/// The axes need not be evenly spaced. Each increases strictly or decreases
+/// strictly. For [`GridMethod::Nearest`] and [`GridMethod::Linear`] an axis may
+/// have one point alone: the grid is then constant in that direction, and a
+/// query has a value at the coordinate of that point (elsewhere it is outside
+/// the grid, see [`Extrapolate`]). The values are one flat slice in C order,
+/// the last axis varying fastest: with axes of `n0` and `n1` points, the value
+/// at point `i0` of the first axis and `i1` of the second is
+/// `values[i0 * n1 + i1]` (the standard layout of `ndarray`). A value is a
+/// scalar or a fixed-length array.
 ///
 /// An axis given in decreasing order is kept in increasing order, with the
 /// values reordered to match: [`axes`](RegularGridInterpolator::axes) and

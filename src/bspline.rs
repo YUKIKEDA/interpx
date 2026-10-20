@@ -471,10 +471,10 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
     /// derivatives below order `nu`, whatever the knots.
     ///
     /// [`Extrapolate::Extend`] is kept. Every other mode becomes
-    /// [`Extrapolate::Forbid`]: the antiderivative of a periodic function is not
-    /// periodic in general, and that of a clamped
-    /// function is linear outside the domain. [`integrate`](BSpline::integrate)
-    /// follows the mode of this spline.
+    /// [`Extrapolate::Forbid`]: the antiderivative of a periodic function is
+    /// not periodic in general, and that of a clamped function is linear
+    /// outside the domain. [`integrate`](BSpline::integrate) follows the mode
+    /// of this spline.
     ///
     /// # Errors
     ///
