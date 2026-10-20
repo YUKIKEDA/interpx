@@ -17,6 +17,6 @@ Allowed splits:
 Not allowed:
 
 - A public capability that one path supports and its pair does not. Examples: `eval_batch_par` for only some interpolators, `Extrapolate::Periodic` for `CubicSpline` but not `BSpline1D`, serde for one scattered type only.
-- Shipping a SciPy-named type whose behavior differs from SciPy 1.18 without the difference written in `docs/design.ja.md` or an ADR (`.cursor/rules/scipy-parity.mdc`).
+- Shipping a result that differs from SciPy 1.18 in verification without the difference written in `docs/design.ja.md` or an ADR (`.cursor/rules/scipy-reference.mdc`).
 
 Release scope: `v0.1.0` is published once, when M1 to M5 of `docs/roadmap.md` are all done. Milestones are internal. Do not publish a partial release.

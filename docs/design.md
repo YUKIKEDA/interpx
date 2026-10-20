@@ -2,7 +2,7 @@ English | [日本語](design.ja.md)
 
 # `interpx` Architecture & Design Specification
 
-> **An interpolation library in pure Rust that covers the main interpolation classes of `scipy.interpolate`.**
+> **An interpolation library in pure Rust for one variable, curves, regular grids, and scattered data.**
 
 This file is the English translation of [design.ja.md](design.ja.md), and both carry the whole specification. When the two differ, follow `design.ja.md`.
 

@@ -13,7 +13,7 @@ alwaysApply: false
 - Every item an outside crate can name with the default features is documented. A getter may link to another item's example.
 - A doctest uses `?`, not `unwrap`. Hide setup with `# ` lines.
 - Link types with intra-doc links. Do not restate the signature.
-- State the SciPy counterpart and any difference in behavior for each SciPy-named type (`.cursor/rules/scipy-parity.mdc`).
+- Public rustdoc and the crate `//!` do not name SciPy, NumPy, or their functions (ADR 0011): an item says what it computes in its own terms, and a behavior a caller must know is stated as interpx's, not as a difference from SciPy. Code comments and private items may name SciPy where it is the source of a method (`.cursor/rules/scipy-reference.mdc`).
 - A number or a bound in rustdoc names its source (Issue, PR, or measurement) and the inputs it was measured on. Document the memory cost of RBF (O(N²)) and the recommended dimension range of `scattered`.
 - Do not write Issue or PR numbers, milestone IDs, roadmap, `AGENTS.md`, `.cursor/rules`, or Grill in public rustdoc. Use a `//` comment where the reason of a line must be kept.
 - A new item goes before the doc comment of the next item or after that item's end, never between a doc comment and its item. After an edit that inserts before an item, read the diff for a doc comment that now documents the wrong item.

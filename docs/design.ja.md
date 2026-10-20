@@ -2,7 +2,7 @@
 
 # `interpx` Architecture & Design Specification
 
-> **Pure Rust による `scipy.interpolate` 主要補間クラス網羅の補間ライブラリ。**
+> **Pure Rust の補間ライブラリ。1 変数、曲線、規則格子、散布点の補間を扱う。**
 
 基準とする SciPy のバージョンは **1.18** で固定する（数値一致テスト・網羅表の定義はすべてこの版に従う）。
 

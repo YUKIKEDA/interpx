@@ -1,6 +1,6 @@
 # interpx: agent entry
 
-Pure Rust interpolation covering the main classes of `scipy.interpolate` (SciPy 1.18). This file is the entry point. Steps for people are in `CONTRIBUTING.md`. Enforced rules are in `.cursor/rules/`.
+Pure Rust interpolation: one variable, curves, regular grids, and scattered data, verified against SciPy 1.18. This file is the entry point. Steps for people are in `CONTRIBUTING.md`. Enforced rules are in `.cursor/rules/`.
 
 ## Source
 
@@ -41,7 +41,7 @@ Read the rules that match the work. `alwaysApply` rules apply to every change. A
 | `rust-docs`                 | English rustdoc with `# Errors` and examples                                  |
 | `numerics`                  | f32/f64, NaN, float comparison, stability                                     |
 | `api-contract`              | Owned, `Send + Sync`, typed errors, no `convx` types in the API               |
-| `scipy-parity`              | SciPy 1.18 is the reference; goldens come from the pinned script              |
+| `scipy-reference`           | SciPy 1.18 verifies the results; goldens come from the pinned script           |
 | `numeric-tests`             | Independent reference, fixed tolerances, mutation checks                      |
 | `spec-checks`               | A test implements the whole design statement                                  |
 | `perf`                      | No allocation on evaluation; layout; dispatch; parallel and SIMD bit equality |
@@ -64,4 +64,4 @@ Skills live in `.agents/skills/`. `skills-lock.json` pins the ones that come fro
 
 ## External references
 
-Rust API Guidelines and the rustdoc book. The reference for numerics is SciPy 1.18.
+Rust API Guidelines and the rustdoc book. The verification reference for numerics is SciPy 1.18 (ADR 0011).

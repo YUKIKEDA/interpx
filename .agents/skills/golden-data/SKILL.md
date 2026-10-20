@@ -8,7 +8,7 @@ description: >-
 
 # Golden data
 
-Golden data is the committed record of what SciPy 1.18 returns, so that `cargo test` can check interpx without Python. The rules are in `.cursor/rules/scipy-parity.mdc` and `.cursor/rules/numeric-tests.mdc`. The tolerances are in `docs/design.ja.md` §8.2.
+Golden data is the committed record of what SciPy 1.18 returns, so that `cargo test` can check interpx without Python. The rules are in `.cursor/rules/scipy-reference.mdc` and `.cursor/rules/numeric-tests.mdc`. The tolerances are in `docs/design.ja.md` §8.2.
 
 ## Files
 

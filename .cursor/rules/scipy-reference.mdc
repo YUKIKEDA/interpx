@@ -1,0 +1,19 @@
+---
+description: SciPy 1.18 verifies the results; golden data is regenerated only by the pinned script
+alwaysApply: true
+---
+
+# SciPy as the reference
+
+interpx is verified against SciPy **1.18**: the golden data is what it returns, and the tests hold interpx to it within the tolerances of `docs/design.ja.md` §8.2 (ADR 0001, ADR 0011). Behavior, defaults, and names are chosen for interpx.
+
+What SciPy is used for (verification) is written; what it is not is never written, in a page, a rule, the design, an Issue, or a pull request. A denial invites the suspicion it denies (the owner, 2026-10-20). V-1 wrote such sentences into the design, the ADR, and this rule, and the owner had them taken out.
+
+- A difference from SciPy 1.18 found in a test is a finding: either fix the code or write the difference, and why, in `docs/design.ja.md`. A difference a caller must know is stated in the rustdoc as interpx's own behavior, without naming SciPy (`.cursor/rules/rust-docs.mdc`), and the README's "Verification" section lists where interpx computes something other than SciPy (`.cursor/rules/reader-docs.mdc`).
+- What SciPy (or another library) does is run on it before it is written, in a reply to the owner as in a document or a comment; a statement drawn from reading its algorithm is marked as that. In M4-1 the agent wrote that SciPy gives no value to a data point that rounding puts beyond a face of the hull, from SciPy's walk alone; run on the same 34 points, SciPy gave every one a value, whichever point its walk started from.
+- A row that verifies a method against SciPy reads, in the installed SciPy (`inspect.signature`) and its documentation, every argument that changes the result, so that the goldens fix each one. In M4-1 the call's `simplex_tolerance` (added in 1.18.0) was found only just before the merge.
+- Golden data comes from the pinned SciPy only: `compare/generate_*.py` run through `uv` with the version fixed in `compare/pyproject.toml` and `uv.lock`. Never edit a golden JSON by hand. The generator records the SciPy version, the seed, and the input in the file.
+- Regenerating goldens is its own change: it states why, and lists the cases whose values moved. `cargo test` only reads the files.
+- Moving the reference to a newer SciPy is a `design` Issue (update the design and the goldens together).
+
+Skill: `.agents/skills/golden-data/SKILL.md`.
