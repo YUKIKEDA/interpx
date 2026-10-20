@@ -116,6 +116,7 @@ Where the documentation names SciPy (ADR 0011). The pages reach crates.io with t
 | --- | ------ | ----------------------------------------------------------------------------------------------------- | ----- | ----------- |
 | V-1 | Design | Where the documentation names SciPy: ADR 0011, the rules, the first line of the design                 | #215  | Done        |
 | V-2 | Docs   | The README, the rustdoc, the description, and the keywords, as ADR 0011 says                          | #217  | Done        |
+| V-3 | Task   | Release PR for 0.1.1: the documentation of V-2, through the `Release` workflow                        | #221  | Done        |
 
 ## After v0.1.0
 
