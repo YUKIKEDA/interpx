@@ -6,7 +6,7 @@ Order and status of work. A row holds ID, kind, title, Issue, and status only. A
 
 ## Current work
 
-The rows of M5 that do not wait for `convx` are done, and M4 is done: M4-1 (#180) and M4-2 (#185). P-21 (#186) took `convx` 0.1.1. The rows the comparison left open are done too, before the release (the owner, 2026-10-19): P-20 (#184), P-10 (#138), P-11 (#144), and P-19 (#181), which ran the whole comparison again for `docs/performance.md`. M5-9 (#201) checked the publish fields, and M5-12 (#203) ran `publish-review` again and fixed what it found. M5-10 (#207) prepared v0.1.0: the version, `CHANGELOG.md`, the `Release` workflow for the versions after it, and the links at the tag `v0.1.0`. The owner published 0.1.0 on crates.io on 2026-10-19 (UTC), by hand, and #213 dated it in the changelog. Every later version goes through the `Release` workflow. V-1 (#215) decided where the documentation names SciPy (ADR 0011). V-2 (#217) brought the README, the rustdoc, the description, and the keywords to it; they reach crates.io with the next published version. Next a row of After v0.1.0, which the owner chooses.
+The rows of M5 that do not wait for `convx` are done, and M4 is done: M4-1 (#180) and M4-2 (#185). P-21 (#186) took `convx` 0.1.1. The rows the comparison left open are done too, before the release (the owner, 2026-10-19): P-20 (#184), P-10 (#138), P-11 (#144), and P-19 (#181), which ran the whole comparison again for `docs/performance.md`. M5-9 (#201) checked the publish fields, and M5-12 (#203) ran `publish-review` again and fixed what it found. M5-10 (#207) prepared v0.1.0: the version, `CHANGELOG.md`, the `Release` workflow for the versions after it, and the links at the tag `v0.1.0`. The owner published 0.1.0 on crates.io on 2026-10-19 (UTC), by hand, and #213 dated it in the changelog. Every later version goes through the `Release` workflow. V-1 (#215) decided where the documentation names SciPy (ADR 0011). V-2 (#217) brought the README, the rustdoc, the description, and the keywords to it; they reach crates.io with the next published version. V-3 (#221) published 0.1.1 through the `Release` workflow, and V-4 (#224) ran CI and the release checks on Ubuntu 26.04. Next a row of After v0.1.0, which the owner chooses.
 
 ## Dependencies
 
@@ -117,6 +117,7 @@ Where the documentation names SciPy (ADR 0011). The pages reach crates.io with t
 | V-1 | Design | Where the documentation names SciPy: ADR 0011, the rules, the first line of the design                 | #215  | Done        |
 | V-2 | Docs   | The README, the rustdoc, the description, and the keywords, as ADR 0011 says                          | #217  | Done        |
 | V-3 | Task   | Release PR for 0.1.1: the documentation of V-2, through the `Release` workflow                        | #221  | Done        |
+| V-4 | Task   | CI and the release checks run once on Ubuntu 26.04 before `ubuntu-latest` moves there                 | #224  | Done        |
 
 ## After v0.1.0
 
