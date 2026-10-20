@@ -2,7 +2,9 @@
 
 Every version of interpx on crates.io, newest first, in the form of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). A 0.x minor version may break the public API (what the default features export); an entry says so when it does. The MSRV is raised only by a version that names it here.
 
-## [Unreleased]
+## [0.1.1]
+
+The documentation, rewritten. Nothing breaks 0.1.0.
 
 ### Changed
 

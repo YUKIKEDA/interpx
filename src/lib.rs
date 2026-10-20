@@ -27,7 +27,7 @@
 //!
 //! What a caller must know, how the results are verified, and an example for
 //! every public item are in the
-//! [README](https://github.com/YUKIKEDA/interpx/blob/v0.1.0/README.md).
+//! [README](https://github.com/YUKIKEDA/interpx/blob/v0.1.1/README.md).
 //!
 //! # Features
 //!

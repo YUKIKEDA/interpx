@@ -543,7 +543,7 @@ The results are checked against SciPy 1.18: the tests compare every interpolator
 
 ## Performance
 
-The comparison with SciPy 1.18 and the other pure-Rust interpolation crates, time and memory, with the machine, the versions, the data, and the command: [docs/performance.md](https://github.com/YUKIKEDA/interpx/blob/v0.1.0/docs/performance.md).
+The comparison with SciPy 1.18 and the other pure-Rust interpolation crates, time and memory, with the machine, the versions, the data, and the command: [docs/performance.md](https://github.com/YUKIKEDA/interpx/blob/v0.1.1/docs/performance.md).
 
 ## License
 
