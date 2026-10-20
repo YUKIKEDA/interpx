@@ -35,10 +35,10 @@ use std::cell::RefCell;
 /// solution: the degree is given with each. [`RbfDegree::Default`] takes that
 /// degree, and a constant for the kernels that need no polynomial.
 ///
-/// For a scale-free kernel, a scale `epsilon` on the distances would change
-/// nothing without smoothing, and with smoothing `s` it would be the
-/// smoothing `s / epsilon^p`, with `p` 1 for the linear kernel, 2 for the thin
-/// plate spline, 3 for the cubic, and 5 for the quintic: give that smoothing.
+/// To scale the distances of a scale-free kernel by `epsilon` with smoothing
+/// `s`, give the smoothing `s / epsilon^p`, with `p` 1 for the linear kernel, 2
+/// for the thin plate spline, 3 for the cubic, and 5 for the quintic. Without
+/// smoothing such a scale changes nothing.
 ///
 /// The enum is `#[non_exhaustive]`: later versions add kernels.
 ///
@@ -1472,8 +1472,9 @@ impl<const D: usize, V: Value<f64>> RBFInterpolator<D, V> {
     ///
     /// (Degrees Celsius, from -52 to 44; the nearest station alone is off by
     /// 3.4.) Merging the stations nearer than 0.1 degrees brought the cubic
-    /// kernel to 3.8 and the thin plate spline to 3.1 (measured with another
-    /// solver of the same system); the quintic stayed unusable. With
+    /// kernel to 3.8 and the thin plate spline to 3.1 (measured with a
+    /// symmetric indefinite LDLᵀ solve of the same system); the quintic stayed
+    /// unusable. With
     /// such data: merge points that nearly coincide, take the linear kernel,
     /// or take neighbors ([`RbfOptions::with_neighbors`]).
     ///

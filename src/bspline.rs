@@ -388,7 +388,8 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
     /// one control point away, and lowers the degree by one; the domain stays.
     /// Order 0 gives a copy.
     ///
-    /// Two cases have a result, as they have for [`PPoly`]:
+    /// Two cases that could have been refused are differentiated, as they are
+    /// for [`PPoly`]:
     ///
     /// - An order above the degree gives the spline of degree 0 on the same
     ///   domain that is zero everywhere.

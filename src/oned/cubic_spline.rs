@@ -14,7 +14,7 @@ use crate::{
 /// not-a-knot (the default), periodic, or a first or second derivative at each
 /// end.
 ///
-/// With few points:
+/// With few points the spline is:
 ///
 /// - Two points: a not-a-knot end takes the slope of the line through them, so
 ///   not-a-knot at both ends gives that line.

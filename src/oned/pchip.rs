@@ -6,8 +6,8 @@ use crate::{Extrapolate, Hint, InterpolateError, Interpolator, PPoly, Scalar, Va
 /// The shape-preserving cubic interpolant through data points: piecewise cubic
 /// with a continuous first derivative, monotone wherever the data is.
 ///
-/// PCHIP: piecewise cubic Hermite interpolating polynomial. The slope at each data point is chosen so that the interpolant
-/// does not overshoot: between two neighboring points it stays between their
+/// PCHIP: piecewise cubic Hermite interpolating polynomial. The slope at each
+/// data point is chosen so that the interpolant does not overshoot: between two neighboring points it stays between their
 /// values, and where the data turns (a local maximum or minimum, or a flat run)
 /// the slope is zero. The price is smoothness: the second derivative jumps at
 /// the data points, where a [`CubicSpline`](crate::CubicSpline) has it

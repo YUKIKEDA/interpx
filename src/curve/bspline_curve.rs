@@ -42,8 +42,7 @@ pub enum Parametrization {
     /// they lie. A curve through unevenly spaced points then wiggles.
     Uniform,
     /// By `d`: the parameter follows the length of the polygon through the
-    /// points, which approximates the length along the curve. The choice of
-    /// FITPACK's `splprep`.
+    /// points, which approximates the length along the curve.
     ChordLength,
     /// By the square root of `d`: between the two above, with less overshoot
     /// at sharp turns.
