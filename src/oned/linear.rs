@@ -6,26 +6,19 @@ use crate::{
 
 /// The polygon through data points: linear interpolation in one variable.
 ///
-/// NumPy's `numpy.interp`. SciPy's `interp1d(kind="linear")` is the same
-/// interpolant; it raises an error outside the data unless told otherwise,
-/// which is [`Extrapolate::Forbid`]. Between two neighboring points
-/// `(x[i], y[i])` and `(x[i + 1], y[i + 1])` the value is `y[i] + s (x - x[i])` with the slope
+/// Between two neighboring points `(x[i], y[i])` and `(x[i + 1], y[i + 1])`
+/// the value is `y[i] + s (x - x[i])` with the slope
 /// `s = (y[i + 1] - y[i]) / (x[i + 1] - x[i])`. At every `x[i]`, the last one
 /// included, the result is `y[i]` exactly.
 ///
 /// Outside the data the result follows the [`Extrapolate`] mode. It starts as
-/// [`Extrapolate::Clamp`], which gives the first or the last value, as
-/// `numpy.interp` does. `numpy.interp` has more arguments, which map as follows:
+/// [`Extrapolate::Clamp`], which gives the first or the last value. A fixed
+/// value outside is [`Extrapolate::Forbid`] with
+/// [`eval_or`](Interpolator::eval_or). [`Extrapolate::Periodic`] wraps a query
+/// into the range of the data.
 ///
-/// - `left` and `right`, the values to return outside: use
-///   [`Extrapolate::Forbid`] and [`eval_or`](Interpolator::eval_or).
-/// - `period`: not provided. [`Extrapolate::Periodic`] wraps a query into the
-///   range of the data, which is another thing (`numpy.interp` wraps the data
-///   points as well).
-///
-/// The data is checked more strictly than NumPy checks it: two points at least
-/// (NumPy takes one, as a constant), `x` strictly increasing (NumPy does not
-/// look), and finite values (NumPy takes infinities).
+/// The data needs two points at least, `x` strictly increasing, and finite
+/// values.
 ///
 /// # Examples
 ///
@@ -41,7 +34,7 @@ use crate::{
 /// assert_eq!(line.eval(&-1.0), Some(0.0));
 /// assert_eq!(line.eval(&9.0), Some(30.0));
 ///
-/// // `numpy.interp(x, xp, fp, left=-1, right=-1)`.
+/// // A fixed value outside.
 /// let line = line.with_extrapolate(Extrapolate::Forbid);
 /// assert_eq!(line.eval_or(&9.0, -1.0), -1.0);
 /// # Ok(())

@@ -30,7 +30,7 @@ pub enum EndCondition<V> {
 
 /// The boundary conditions of a spline.
 ///
-/// SciPy's `bc_type`. The default is [`BoundaryCondition::NotAKnot`], as in SciPy.
+/// The default is [`BoundaryCondition::NotAKnot`].
 /// A periodic spline is periodic at both ends, so there is no way to ask for one
 /// periodic end.
 ///
@@ -42,7 +42,7 @@ pub enum EndCondition<V> {
 /// ```
 /// use interpx::{BoundaryCondition, EndCondition};
 ///
-/// // SciPy's bc_type="natural": zero second derivative at both ends.
+/// // Zero second derivative at both ends.
 /// let natural = BoundaryCondition::<f64>::natural();
 /// assert_eq!(
 ///     natural,
@@ -52,7 +52,7 @@ pub enum EndCondition<V> {
 ///     ),
 /// );
 ///
-/// // SciPy's bc_type=((1, 0.5), (2, 0.0)): a slope on the left, no curvature on the right.
+/// // A slope on the left, no curvature on the right.
 /// let mixed = BoundaryCondition::Ends(
 ///     EndCondition::FirstDerivative(0.5),
 ///     EndCondition::SecondDerivative(0.0),

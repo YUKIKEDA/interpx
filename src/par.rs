@@ -109,7 +109,7 @@ fn timed<E>(work: impl FnOnce() -> Result<(), E>) -> Result<Duration, E> {
 /// that is not shared out costs more than the serial form: nothing more up to
 /// 16 points, and above that the two readings of the clock and, more than
 /// those, the batch being evaluated as two serial batches (the points timed,
-/// then the rest). Over the 277 cases that this crate's comparison with SciPy
+/// then the rest). Over the 277 cases that this crate's performance comparison
 /// had when this was measured (8 threads), that was up to 0.14 µs on batches under a microsecond (up to
 /// two thirds more time), and up to a third more time on batches from a
 /// microsecond to a tenth of a millisecond (7 µs at the most). For batches

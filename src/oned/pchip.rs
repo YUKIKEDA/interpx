@@ -6,22 +6,21 @@ use crate::{Extrapolate, Hint, InterpolateError, Interpolator, PPoly, Scalar, Va
 /// The shape-preserving cubic interpolant through data points: piecewise cubic
 /// with a continuous first derivative, monotone wherever the data is.
 ///
-/// SciPy's `PchipInterpolator` (PCHIP: piecewise cubic Hermite interpolating
-/// polynomial). The slope at each data point is chosen so that the interpolant
+/// PCHIP: piecewise cubic Hermite interpolating polynomial. The slope at each data point is chosen so that the interpolant
 /// does not overshoot: between two neighboring points it stays between their
 /// values, and where the data turns (a local maximum or minimum, or a flat run)
 /// the slope is zero. The price is smoothness: the second derivative jumps at
 /// the data points, where a [`CubicSpline`](crate::CubicSpline) has it
 /// continuous.
 ///
-/// The slopes are SciPy's: at an inner point the weighted harmonic mean of the
+/// The slopes: at an inner point the weighted harmonic mean of the
 /// two secants beside it (zero when they differ in sign or one is zero), at an
 /// end a three-point estimate limited to keep the shape, and for two points the
 /// slope of the line through them. For an array value the rule applies to each
 /// column on its own.
 ///
 /// Outside the data the result follows the [`Extrapolate`] mode. It starts as
-/// [`Extrapolate::Extend`], as in SciPy. The end pieces continued are cubics
+/// [`Extrapolate::Extend`]. The end pieces continued are cubics
 /// like any other: what holds between the data points, monotonicity and no
 /// overshoot, does not hold out there.
 ///

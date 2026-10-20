@@ -2,7 +2,7 @@ English | [日本語](README.ja.md)
 
 # interpx
 
-Pure Rust interpolation covering the main classes of SciPy 1.18's `scipy.interpolate`: one variable, curves, regular grids, and scattered data. The values are SciPy's to rounding wherever SciPy computes the same interpolant, and the tests hold them against values SciPy 1.18 produced.
+Pure Rust interpolation: one variable, curves, regular grids, and scattered data. Inputs are checked at construction, evaluation does not allocate, and every interpolator owns its data and can be shared between threads.
 
 ```toml
 [dependencies]
@@ -15,24 +15,6 @@ Features:
 - `rayon`: batches evaluated on several threads (`ParInterpolator`), with the same results as the serial batches, bit for bit.
 - `serde`: `Serialize` and `Deserialize` for every interpolator and the parameters it is built with.
 
-## Coming from SciPy
-
-What differs from SciPy, before the first example:
-
-- **The boundary condition is an argument.** `CubicSpline::new(x, y, bc)` and `BSpline1D::new(x, y, k, bc)` take it, and SciPy's default is `BoundaryCondition::NotAKnot` (also `BoundaryCondition::default()`).
-- **There is no `fill_value` at construction.** `eval` returns `Option`: `None` outside the domain when the interpolator does not extrapolate, and for a NaN query. The fill value is given at the call: `eval_or(point, fill)`, or `eval_batch_into(points, out, fill)`.
-- **What happens outside the domain is a mode, `Extrapolate`**, set with `with_extrapolate`. The defaults follow SciPy:
-  - `Extend` (the end pieces go on): `CubicSpline`, `PchipInterpolator`, `CubicHermiteSpline`, `BSpline1D`, `BSplineCurve`, `PPoly`, and `BSpline`. A spline built with a periodic boundary condition is `Periodic`.
-  - `Forbid` (no value): `Akima1D`, `Nearest1D`, and `RegularGridInterpolator`.
-  - `Clamp` (the end value): `Linear1D`, as `numpy.interp`.
-- **Input is checked, and rejected where SciPy would compute something else.** In one variable the coordinates must be increasing and distinct (SciPy's `interp1d` sorts them), and data must be finite everywhere: NaN or infinity in the data is an error (`InterpolateError::NonFinite`). A NaN of the data never ends up in the values.
-- **The grid's `cubic` and `quintic` are solved exactly.** SciPy's default solves them with an iterative solver, whose values are 1e-5 to 1e-2 of the largest value away from the spline on smooth data (2-D and 3-D grids, evenly spaced or not), and as far as the values themselves on random values. interpx gives the spline itself: SciPy's `method="cubic_legacy"` to rounding.
-- **`RBFInterpolator` has no default kernel**, solves its system by an LU decomposition (SciPy: a symmetric one; on this crate's test systems the values differ by less than 1e-12 of the largest value), and refuses duplicate points and a polynomial degree below the minimum its kernel needs (for the degree, SciPy only warns).
-- **`LinearNDInterpolator` divides the region that four or more points on one circle (five on one sphere, ...) bound by its own rule.** Inside such a region its values differ from SciPy's, whose triangulation (Qhull) splits it otherwise; points on a grid are such points. Of points with the same coordinates it takes the value of the one given first (Qhull keeps one, not always the first), and it takes one-dimensional points, which SciPy refuses.
-- **`CloughTocher2DInterpolator` solves for its gradients until they are the solution.** SciPy stops at `tol=1e-6` or `maxiter=400` and only warns when it has not converged; its values were up to 3e-8 of the largest value away from the solution on the 11 sets compared. There are no `tol` and `maxiter`; a system not solved is an error. Where four or more points lie on one circle, the triangulation differs from SciPy's as for `LinearNDInterpolator`, and since the gradients come from one system over all edges, the values differ everywhere, not only in that region.
-- **Values are real.** No complex dtypes. A value can be a fixed-size array, `[T; M]`, for `M` columns interpolated at once.
-- **Methods are chosen at construction**, not at each evaluation.
-
 ## Example
 
 ```rust
@@ -42,7 +24,7 @@ fn main() -> Result<(), InterpolateError> {
     let x = [0.0, 1.0, 2.0, 3.5, 5.0];
     let y = [1.0, 2.7, 5.8, 4.0, 2.2];
 
-    // SciPy's `CubicSpline(x, y)`.
+    // The not-a-knot cubic spline.
     let spline = CubicSpline::new(&x, &y, BoundaryCondition::NotAKnot)?;
     let at = spline.eval(&2.5);
     assert!(at.is_some());
@@ -61,14 +43,23 @@ The same with prints: `cargo run --example one_variable`. The other examples: `g
 
 ## What a caller must know
 
+- **The boundary condition is an argument.** `CubicSpline::new(x, y, bc)` and `BSpline1D::new(x, y, k, bc)` take it; `BoundaryCondition::default()` is `NotAKnot`.
+- **The fill value is given at the call.** `eval` returns `Option`: `None` outside the domain when the interpolator does not extrapolate, and for a NaN query. `eval_or(point, fill)` and `eval_batch_into(points, out, fill)` take the value to fill.
+- **What happens outside the domain is a mode, `Extrapolate`**, set with `with_extrapolate`. Each interpolator starts with the mode of its method:
+  - `Extend` (the end pieces go on): `CubicSpline`, `PchipInterpolator`, `CubicHermiteSpline`, `BSpline1D`, `BSplineCurve`, `PPoly`, and `BSpline`. A spline built with a periodic boundary condition is `Periodic`.
+  - `Forbid` (no value): `Akima1D`, `Nearest1D`, and `RegularGridInterpolator`.
+  - `Clamp` (the end value): `Linear1D`.
+- **Input is checked at construction.** In one variable the coordinates must be strictly increasing as given, and data must be finite everywhere: NaN or infinity in the data is an error (`InterpolateError::NonFinite`). A NaN of the data never ends up in the values.
+- **Methods are chosen at construction**, not at each evaluation. `RBFInterpolator` takes its kernel as an argument.
+- **Values are real.** A value can be a fixed-size array, `[T; M]`, for `M` columns interpolated at once.
 - **Every interpolator owns its data** and is `Send + Sync + 'static`: it can be kept, moved to another thread, and shared. Constructors copy what they are given. The types that keep some of their data as it is given (`PPoly`, `BSpline`, `RegularGridInterpolator`, `NearestNDInterpolator`, `LinearNDInterpolator`, `CloughTocher2DInterpolator`, `RBFInterpolator`) also have `from_owned`, which takes that data as a `Vec` and keeps it without a copy.
 - **Coordinates are `f32` or `f64`** in one variable, curves, and grids. Scattered data is `f64` only.
-- **Grid values are in C order**: the last axis fastest, as NumPy lays out `values[i, j, k]`.
+- **Grid values are in C order**: the last axis varies fastest.
 - **NaN and infinity**: in the data they are an error at construction. A NaN query gives no value (`None`, or the fill value). An infinite query is outside the domain: no value under `Forbid` and `Periodic`, the end value under `Clamp`, and under `Extend` the value of the end piece there, which can be infinite or NaN.
 - **`RBFInterpolator` over all points holds an `N` by `N` matrix while it is built**: 940 MB for 10 838 points. Over the nearest points (`RbfOptions::with_neighbors`) it solves a small system at each query instead. `reciprocal_condition` says how well the system over all points was solved.
 - **Evaluation does not allocate**, except: `eval_batch` and `eval_batch_par`, which return a `Vec` (`eval_batch_par` one for each chunk too); `eval_batch_into_par`, where `rayon` allocates to share a batch out among threads; and an `RBFInterpolator` over neighbors, which allocates the working space a thread keeps at its first evaluation on that thread, and widens it when an interpolator with more neighbors is evaluated there.
 - **0.x releases**: a minor version (0.1 to 0.2) may break the public API. The API is what the default features export.
-- **Not in this crate**: `interp2d` (removed from SciPy), and `interp1d` as a type (`Linear1D`, `Nearest1D`, and `BSpline1D` cover its kinds). There is no `griddata` function either: build the interpolator of its `method` and evaluate it (`NearestNDInterpolator` for `nearest`, `LinearNDInterpolator` for `linear`, `CloughTocher2DInterpolator` for `cubic`). Not yet: derivatives of grid and scattered interpolants, `roots` and `solve`, `NdPPoly`, `BarycentricInterpolator` and `KroghInterpolator`, the FITPACK family (`UnivariateSpline`, `splrep`, `splprep`, `RectBivariateSpline`), dimensions or output widths chosen at run time, `no_std`, and a fallback to a pseudo-inverse for an `RBFInterpolator` system that is singular.
+- **Not yet in this crate**: derivatives of grid and scattered interpolants, roots of a piecewise polynomial, piecewise polynomials in several variables, barycentric and Krogh interpolation, smoothing splines, dimensions or output widths chosen at run time, `no_std`, and a fallback to a pseudo-inverse for an `RBFInterpolator` system that is singular.
 
 ## Usage
 
@@ -200,7 +191,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `PPoly`
 
-A piecewise polynomial (SciPy's `PPoly`): breakpoints, and the coefficients of each interval, the highest power first. It has `derivative`, `antiderivative`, `eval_derivative`, and `integrate`, as `BSpline` has.
+A piecewise polynomial: breakpoints, and the coefficients of each interval, the highest power first. It has `derivative`, `antiderivative`, `eval_derivative`, and `integrate`, as `BSpline` has.
 
 ```rust
 use interpx::{InterpolateError, Interpolator, PPoly};
@@ -219,7 +210,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `BSpline` and `BSPLINE_MAX_DEGREE`
 
-A B-spline from knots and control points (SciPy's `BSpline`), of degree up to `BSPLINE_MAX_DEGREE` (15). It converts to and from `PPoly`.
+A B-spline from knots and control points, of degree up to `BSPLINE_MAX_DEGREE` (15). It converts to and from `PPoly`.
 
 ```rust
 use interpx::{BSpline, InterpolateError, Interpolator, PPoly, BSPLINE_MAX_DEGREE};
@@ -240,7 +231,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `Linear1D`
 
-Linear interpolation (`numpy.interp`, `interp1d(kind="linear")`). At every data point the value is the data value exactly.
+Linear interpolation. At every data point the value is the data value exactly.
 
 ```rust
 use interpx::{InterpolateError, Interpolator, Linear1D};
@@ -255,7 +246,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `Nearest1D` and `NearestKind`
 
-The data value of a neighbor (`interp1d` with `kind` `"nearest"`, `"nearest-up"`, `"previous"`, or `"next"`).
+The data value of a neighbor: the nearest (ties to the left or to the right), the previous, or the next.
 
 ```rust
 use interpx::{InterpolateError, Interpolator, Nearest1D, NearestKind};
@@ -273,7 +264,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `CubicSpline`, `BoundaryCondition`, and `EndCondition`
 
-The C² cubic spline (SciPy's `CubicSpline`). `BoundaryCondition` is `NotAKnot`, `Periodic`, or `Ends` with an `EndCondition` at each end (`NotAKnot`, `FirstDerivative`, `SecondDerivative`); `natural()` and `clamped()` are SciPy's `"natural"` and `"clamped"`.
+The C² cubic spline. `BoundaryCondition` is `NotAKnot`, `Periodic`, or `Ends` with an `EndCondition` at each end (`NotAKnot`, `FirstDerivative`, `SecondDerivative`); `natural()` is a zero second derivative at both ends, and `clamped()` a zero first derivative.
 
 ```rust
 use interpx::{BoundaryCondition, CubicSpline, EndCondition, InterpolateError, Interpolator};
@@ -298,7 +289,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `PchipInterpolator`
 
-The shape-preserving C¹ cubic (SciPy's `PchipInterpolator`): monotone where the data is, and never past the range of the data.
+The shape-preserving C¹ cubic (PCHIP): monotone where the data is, and never past the range of the data.
 
 ```rust
 use interpx::{InterpolateError, Interpolator, PchipInterpolator};
@@ -313,7 +304,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `Akima1D` and `AkimaMethod`
 
-Akima's C¹ cubic (SciPy's `Akima1DInterpolator`, `method="akima"` or `"makima"`): each slope from the five nearest points.
+Akima's C¹ cubic, with Akima's weights or the modified ones (makima): each slope from the five nearest points.
 
 ```rust
 use interpx::{Akima1D, AkimaMethod, InterpolateError, Interpolator};
@@ -331,7 +322,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `CubicHermiteSpline`
 
-A cubic through given values with given slopes (SciPy's `CubicHermiteSpline`).
+A cubic through given values with given slopes.
 
 ```rust
 use interpx::{CubicHermiteSpline, InterpolateError, Interpolator};
@@ -346,7 +337,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `BSpline1D`
 
-An interpolating B-spline of degree 1 to 15 (SciPy's `make_interp_spline`). `as_bspline` lends the `BSpline` it is.
+An interpolating B-spline of degree 1 to 15. `as_bspline` lends the `BSpline` it is.
 
 ```rust
 use interpx::{BSpline1D, BoundaryCondition, InterpolateError, Interpolator};
@@ -365,7 +356,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `BSplineCurve` and `Parametrization`
 
-A parametric curve through points of `D` dimensions. `new` chooses the parameters (`Uniform`, `ChordLength`, or `Centripetal`); `with_parameters` takes them, as `make_interp_spline(t, points)` does.
+A parametric curve through points of `D` dimensions. `new` chooses the parameters (`Uniform`, `ChordLength`, or `Centripetal`); `with_parameters` takes them from the caller.
 
 ```rust
 use interpx::{BSplineCurve, BoundaryCondition, InterpolateError, Interpolator, Parametrization};
@@ -386,7 +377,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `RegularGridInterpolator` and `GridMethod`
 
-Values on a rectilinear grid in `D` dimensions (SciPy's `RegularGridInterpolator`): `Nearest`, `Linear`, `Cubic`, `Quintic`, or `Pchip`. Axes may be unevenly spaced, and may be given in descending order.
+Values on a rectilinear grid in `D` dimensions: `Nearest`, `Linear`, `Cubic`, `Quintic`, or `Pchip`. Axes may be unevenly spaced, and may be given in descending order.
 
 ```rust
 use interpx::{Extrapolate, GridMethod, InterpolateError, Interpolator, RegularGridInterpolator};
@@ -411,7 +402,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `NearestNDInterpolator`
 
-The value of the nearest data point, in `D` dimensions (SciPy's `NearestNDInterpolator`). `rescaled` measures distances after each coordinate is brought to the same range (`rescale=True`); `with_distance_bound` gives no value beyond a distance.
+The value of the nearest data point, in `D` dimensions. `rescaled` measures distances after each coordinate is brought to the same range; `with_distance_bound` gives no value beyond a distance.
 
 ```rust
 use interpx::{InterpolateError, Interpolator, NearestNDInterpolator};
@@ -432,7 +423,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `LinearNDInterpolator`
 
-Linear interpolation on the Delaunay triangulation of the points, in `D` dimensions (SciPy's `LinearNDInterpolator`). No value outside the convex hull of the points. `rescaled` triangulates after each coordinate is brought to the same range (`rescale=True`). `with_simplex_tolerance` widens what counts as inside a simplex (SciPy 1.18's `simplex_tolerance`, which SciPy takes at each call).
+Linear interpolation on the Delaunay triangulation of the points, in `D` dimensions. No value outside the convex hull of the points. `rescaled` triangulates after each coordinate is brought to the same range. `with_simplex_tolerance` widens what counts as inside a simplex.
 
 ```rust
 use interpx::{InterpolateError, Interpolator, LinearNDInterpolator};
@@ -453,7 +444,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `CloughTocher2DInterpolator`
 
-A piecewise cubic that is continuous with its first derivatives, on the Delaunay triangulation of points of the plane (SciPy's `CloughTocher2DInterpolator`). The gradients at the points are estimated from the data so that the surface bends least along the edges; `gradients()` returns them. No value outside the convex hull. `rescaled`, `with_simplex_tolerance`, and the search for the triangle of a query are those of `LinearNDInterpolator`.
+A piecewise cubic that is continuous with its first derivatives, on the Delaunay triangulation of points of the plane. The gradients at the points are estimated from the data so that the surface bends least along the edges; `gradients()` returns them. No value outside the convex hull. `rescaled`, `with_simplex_tolerance`, and the search for the triangle of a query are those of `LinearNDInterpolator`.
 
 ```rust
 use interpx::{CloughTocher2DInterpolator, InterpolateError, Interpolator};
@@ -474,7 +465,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `RBFInterpolator`, `RbfKernel`, `RbfDegree`, and `RbfOptions`
 
-Radial basis function interpolation in `D` dimensions (SciPy's `RBFInterpolator`). The kernels are those of SciPy; the four with a shape parameter carry their `epsilon`. `RbfOptions` sets the smoothing, the degree of the polynomial terms (`RbfDegree`), and the number of neighbors.
+Radial basis function interpolation in `D` dimensions, with eight kernels; the four with a shape parameter carry their `epsilon`. `RbfOptions` sets the smoothing, the degree of the polynomial terms (`RbfDegree`), and the number of neighbors.
 
 ```rust
 use interpx::{InterpolateError, Interpolator, RBFInterpolator, RbfDegree, RbfKernel, RbfOptions};
@@ -532,6 +523,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## Verification
+
+The results are checked against SciPy 1.18: the tests compare every interpolator with values SciPy 1.18 produced, committed in the package (`compare/goldens/`), within fixed tolerances. Where SciPy 1.18 computes something else, the results differ as follows.
+
+- **Grid `Cubic` and `Quintic`**: interpx solves the spline exactly, and matches SciPy's `method="cubic_legacy"` and `"quintic_legacy"` to rounding. SciPy's `cubic` and `quintic` use an iterative solver by default, whose values were 1e-5 to 1e-2 of the largest value away from the spline on smooth data (2-D and 3-D grids), and as far as the values themselves on random values.
+- **`CloughTocher2DInterpolator`**: interpx solves for the gradients until the residual is 1e-14 of the right-hand side. SciPy stops at `tol=1e-6` or `maxiter=400`; its values were up to 3e-8 of the largest value away from the solution on the 11 sets compared.
+- **`LinearNDInterpolator` and `CloughTocher2DInterpolator`**: where four or more points lie on one circle (five on one sphere, ...), the region they bound is divided by a rule of the points' indices, and SciPy's triangulation (Qhull) divides it otherwise; points on a grid are such points. Inside such a region the linear interpolant differs; the Clough-Tocher interpolant differs everywhere, since its gradients come from one system over all edges. Of points with the same coordinates, interpx takes the value of the one given first, and Qhull keeps one, not always the first. `LinearNDInterpolator` takes one-dimensional points, which SciPy refuses.
+- **`RBFInterpolator`**: the system is solved by an LU decomposition, and SciPy uses a symmetric indefinite one; on the test systems the values differ by less than 1e-12 of the largest value. SciPy has a default kernel (the thin plate spline), takes `epsilon` for every kernel, warns for a polynomial degree below the minimum of the kernel, and takes duplicate points with smoothing; interpx refuses the last three. A query that is not finite has no value (SciPy: NaN), and with neighbors, a query whose neighbors give a singular system has no value (SciPy raises).
+- **One variable**: SciPy's `interp1d` sorts the coordinates, and `numpy.interp` reads them as given unchecked; interpx refuses coordinates that are not strictly increasing, and needs two points at least (SciPy and NumPy take one). `Nearest1D` gives no value at a NaN query (SciPy: the last data value), and its `Clamp` and `Extend` give the end value on both sides for every kind (SciPy's `"previous"` and `"next"` give NaN on one side). `Akima1D` interpolates each column of array values on its own; SciPy decides where the weights vanish over all columns together.
+- **NaN in the data**: refused at construction. SciPy's `RegularGridInterpolator` takes it and returns NaN near it.
+- **`PPoly` and `BSpline`**: `integrate` with a limit outside the domain under `Forbid` gives `None` (SciPy: NaN for `PPoly`, the part inside the domain for `BSpline`). A derivative of an order above the degree is the zero spline, where SciPy raises. `BSpline::antiderivative` is zero at the left end of the domain for any knots; SciPy's is so when the first knot is repeated `degree + 1` times. A `PPoly` built from a `BSpline` has no interval of zero width at a repeated knot, where SciPy's keeps one.
+- **Grid `Pchip`** needs two points an axis; SciPy asks for four.
 
 ## Performance
 

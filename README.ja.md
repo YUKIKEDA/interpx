@@ -2,7 +2,7 @@
 
 # interpx
 
-SciPy 1.18 の `scipy.interpolate` の主なクラスを、純粋な Rust で実装した補間ライブラリです。1 変数、曲線、規則格子、散布点を扱います。SciPy が同じ補間を計算する場合、値は丸め誤差の範囲で SciPy と一致し、テストは SciPy 1.18 が出した値と照合しています。
+純粋な Rust で書いた補間ライブラリです。1 変数、曲線、規則格子、散布点を扱います。入力は構築時に検査し、評価ではメモリを確保しません。補間器はすべて自分のデータを持ち、スレッドの間で共有できます。
 
 ```toml
 [dependencies]
@@ -15,24 +15,6 @@ interpx = "0.1"
 - `rayon`: 一括評価を複数のスレッドで行います（`ParInterpolator`）。結果は直列の一括評価とビット単位で同じです。
 - `serde`: すべての補間器と、その構築に使う引数に `Serialize` と `Deserialize` を実装します。
 
-## SciPy から移る方へ
-
-最初の例の前に、SciPy と違う点をまとめます。
-
-- **境界条件は引数です。** `CubicSpline::new(x, y, bc)` と `BSpline1D::new(x, y, k, bc)` は境界条件を受け取ります。SciPy の既定に当たるのは `BoundaryCondition::NotAKnot`（`BoundaryCondition::default()` も同じ）です。
-- **構築時の `fill_value` はありません。** `eval` は `Option` を返します。外挿しない補間器で定義域の外を問い合わせたとき、および NaN を問い合わせたときは `None` です。埋める値は呼び出し時に渡します: `eval_or(point, fill)`、または `eval_batch_into(points, out, fill)`。
-- **定義域の外での振る舞いは、外挿のモード `Extrapolate` で決まります。** `with_extrapolate` で設定します。既定は SciPy に合わせてあります。
-  - `Extend`（端の区間の式をそのまま延ばす）: `CubicSpline`、`PchipInterpolator`、`CubicHermiteSpline`、`BSpline1D`、`BSplineCurve`、`PPoly`、`BSpline`。周期境界条件で作ったスプラインは `Periodic` です。
-  - `Forbid`（値なし）: `Akima1D`、`Nearest1D`、`RegularGridInterpolator`。
-  - `Clamp`（端の値）: `Linear1D`。`numpy.interp` と同じです。
-- **入力は検査され、SciPy が別のものを計算する入力は拒否されます。** 1 変数では座標が狭義単調増加である必要があります（SciPy の `interp1d` は並べ替えます）。データはどこでも有限である必要があり、NaN や無限大を含むデータはエラー（`InterpolateError::NonFinite`）になります。データの NaN が補間の値に紛れ込むことはありません。
-- **規則格子の `cubic` と `quintic` は厳密に解きます。** SciPy の既定は反復解法で解くため、値がスプラインからずれます。ずれは、滑らかなデータで最大値の 1e-5〜1e-2（2 次元・3 次元の格子、等間隔でも不等間隔でも）、乱数の値では値そのものの大きさに達します。interpx はスプラインそのものを返し、SciPy の `method="cubic_legacy"` と丸め誤差の範囲で一致します。
-- **`RBFInterpolator` に既定のカーネルはありません。** 系は LU 分解で解きます（SciPy は対称な分解。この crate のテストで解いた系では、値の差は値の最大の絶対値の 1e-12 倍未満）。重複した点と、カーネルが求める最小の次数より低い多項式の次数は拒否します（次数については、SciPy は警告を出すだけです）。
-- **`LinearNDInterpolator` は、同じ円の上にある 4 点以上（球の上なら 5 点以上、…）が作る区画を、独自の規則で分割します。** SciPy の三角形分割（Qhull）は別の分け方をするので、そのような区画の中では値が SciPy と違います。格子の上の点がこれに当たります。座標が同じ点が複数あるときは、最初に渡された点の値を使います（Qhull はそのうちの 1 つを残しますが、最初の点とは限りません）。また、SciPy が受け付けない 1 次元の点も扱えます。
-- **`CloughTocher2DInterpolator` は、点での傾きを、連立方程式を最後まで解いて求めます。** SciPy は反復を `tol=1e-6` か `maxiter=400` で打ち切り、収束しなかったときも警告を出すだけです。比べた 11 組のデータでは、SciPy の値と解とのずれは、最大で値の最大の絶対値の 3e-8 倍でした。interpx には `tol` と `maxiter` がなく、解けなかったときはエラーを返します。同じ円の上に 4 点以上あると、`LinearNDInterpolator` と同じく三角形分割が SciPy と違います。傾きはすべての辺をまとめた 1 つの連立方程式から決まるので、同じ円の上の点の周りだけでなく、全体で値が違ってきます。
-- **値は実数です。** 複素数は扱いません。値を固定長の配列 `[T; M]` にすると、`M` 列をまとめて補間できます。
-- **補間の方式は構築時に決めます。** 評価のたびには変えられません。
-
 ## 例
 
 ```rust
@@ -42,7 +24,7 @@ fn main() -> Result<(), InterpolateError> {
     let x = [0.0, 1.0, 2.0, 3.5, 5.0];
     let y = [1.0, 2.7, 5.8, 4.0, 2.2];
 
-    // SciPy の `CubicSpline(x, y)`。
+    // not-a-knot の 3 次スプライン。
     let spline = CubicSpline::new(&x, &y, BoundaryCondition::NotAKnot)?;
     let at = spline.eval(&2.5);
     assert!(at.is_some());
@@ -61,14 +43,23 @@ fn main() -> Result<(), InterpolateError> {
 
 ## 使う前に知っておくこと
 
+- **境界条件は引数です。** `CubicSpline::new(x, y, bc)` と `BSpline1D::new(x, y, k, bc)` は境界条件を受け取ります。`BoundaryCondition::default()` は `NotAKnot` です。
+- **埋める値は呼び出し時に渡します。** `eval` は `Option` を返します。外挿しない補間器で定義域の外を問い合わせたとき、および NaN を問い合わせたときは `None` です。`eval_or(point, fill)` と `eval_batch_into(points, out, fill)` は、埋める値を受け取ります。
+- **定義域の外での振る舞いは、外挿のモード `Extrapolate` で決まります。** `with_extrapolate` で設定します。補間器はそれぞれ、方式に合ったモードで始まります。
+  - `Extend`（端の区間の式をそのまま延ばす）: `CubicSpline`、`PchipInterpolator`、`CubicHermiteSpline`、`BSpline1D`、`BSplineCurve`、`PPoly`、`BSpline`。周期境界条件で作ったスプラインは `Periodic` です。
+  - `Forbid`（値なし）: `Akima1D`、`Nearest1D`、`RegularGridInterpolator`。
+  - `Clamp`（端の値）: `Linear1D`。
+- **入力は構築時に検査します。** 1 変数では、座標が渡された順のまま狭義単調増加である必要があります。データはどこでも有限である必要があり、NaN や無限大を含むデータはエラー（`InterpolateError::NonFinite`）になります。データの NaN が補間の値に紛れ込むことはありません。
+- **補間の方式は構築時に決めます。** 評価のたびには変えられません。`RBFInterpolator` はカーネルを引数で受け取ります。
+- **値は実数です。** 値を固定長の配列 `[T; M]` にすると、`M` 列をまとめて補間できます。
 - **補間器はすべて自分のデータを所有し**、`Send + Sync + 'static` です。保持しておくことも、別のスレッドへ渡すことも、共有することもできます。コンストラクタは渡されたものを複製します。データの一部を渡されたまま保持する型（`PPoly`、`BSpline`、`RegularGridInterpolator`、`NearestNDInterpolator`、`LinearNDInterpolator`、`CloughTocher2DInterpolator`、`RBFInterpolator`）には `from_owned` もあり、そのデータを `Vec` で受け取って複製せずに保持します。
 - **座標は `f32` か `f64` です**（1 変数、曲線、規則格子）。散布点は `f64` だけです。
-- **規則格子の値は C 順です。** 最後の軸が最も速く変わります。NumPy が `values[i, j, k]` を並べる順と同じです。
+- **規則格子の値は C 順です。** 最後の軸が最も速く変わります。
 - **NaN と無限大**: データに含まれるとき、構築時のエラーになります。NaN を問い合わせると値はありません（`None`、または埋める値）。無限大の問い合わせは定義域の外として扱います。`Forbid` と `Periodic` では値なし、`Clamp` では端の値です。`Extend` では端の区間の式をその点で評価するので、値が無限大や NaN になることがあります。
 - **全点の `RBFInterpolator` は、構築の間 `N` × `N` の行列を持ちます。** 10 838 点で 940 MB です。近傍の点だけを使う設定（`RbfOptions::with_neighbors`）では、代わりに問い合わせごとに小さな系を解きます。`reciprocal_condition` は、全点の系がどれだけ正確に解けたかを示します。
 - **評価はメモリを確保しません。** 例外は 3 つあります。1 つ目は `Vec` を返す `eval_batch` と `eval_batch_par` で、`eval_batch_par` はチャンクごとにも `Vec` を 1 つ確保します。2 つ目は `eval_batch_into_par` で、バッチをスレッドに分けるときに `rayon` が確保します。3 つ目は近傍を使う `RBFInterpolator` で、スレッドで最初に評価するときに作業領域を確保し、そのスレッドが持ち続けます。それより近傍の数が多い補間器をそのスレッドで評価すると、作業領域を広げます。
 - **0.x のリリース**: マイナーバージョン（0.1 から 0.2）で公開 API が変わることがあります。ここでいう公開 API は、既定のフィーチャーで公開されるものを指します。
-- **この crate にないもの**: `interp2d`（SciPy から削除済み）と、型としての `interp1d`（その種類は `Linear1D`、`Nearest1D`、`BSpline1D` で扱えます）。関数の `griddata` もありません。代わりに、`method` に当たる補間器を作って評価してください（`nearest` は `NearestNDInterpolator`、`linear` は `LinearNDInterpolator`、`cubic` は `CloughTocher2DInterpolator`）。まだないもの: 規則格子と散布点の補間の導関数、`roots` と `solve`、`NdPPoly`、`BarycentricInterpolator` と `KroghInterpolator`、FITPACK 系（`UnivariateSpline`、`splrep`、`splprep`、`RectBivariateSpline`）、実行時に決める次元と出力の幅、`no_std`、`RBFInterpolator` の系が特異なときに、代わりに疑似逆行列で解く手段。
+- **この crate にまだないもの**: 規則格子と散布点の補間の導関数、区分多項式の根、多変数の区分多項式、重心補間と Krogh 補間、平滑化スプライン、実行時に決める次元と出力の幅、`no_std`、`RBFInterpolator` の系が特異なときに、代わりに疑似逆行列で解く手段。
 
 ## 使い方
 
@@ -200,7 +191,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `PPoly`
 
-区分多項式（SciPy の `PPoly`）です。区切りの点と、区間ごとの係数（次数の高い順）から作ります。`BSpline` と同じく、`derivative`、`antiderivative`、`eval_derivative`、`integrate` を持ちます。
+区分多項式です。区切りの点と、区間ごとの係数（次数の高い順）から作ります。`BSpline` と同じく、`derivative`、`antiderivative`、`eval_derivative`、`integrate` を持ちます。
 
 ```rust
 use interpx::{InterpolateError, Interpolator, PPoly};
@@ -219,7 +210,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `BSpline` と `BSPLINE_MAX_DEGREE`
 
-ノットと制御点から作る B スプライン（SciPy の `BSpline`）です。次数は `BSPLINE_MAX_DEGREE`（15）までです。`PPoly` と相互に変換できます。
+ノットと制御点から作る B スプラインです。次数は `BSPLINE_MAX_DEGREE`（15）までです。`PPoly` と相互に変換できます。
 
 ```rust
 use interpx::{BSpline, InterpolateError, Interpolator, PPoly, BSPLINE_MAX_DEGREE};
@@ -240,7 +231,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `Linear1D`
 
-線形補間（`numpy.interp`、`interp1d(kind="linear")`）です。データ点での値は、データの値と厳密に一致します。
+線形補間です。データ点での値は、データの値と厳密に一致します。
 
 ```rust
 use interpx::{InterpolateError, Interpolator, Linear1D};
@@ -255,7 +246,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `Nearest1D` と `NearestKind`
 
-近くのデータ点の値を返します（`interp1d` の `kind` が `"nearest"`、`"nearest-up"`、`"previous"`、`"next"` のもの）。
+近くのデータ点の値を返します。いちばん近い点（等距離なら左か右）、直前の点、直後の点から選びます。
 
 ```rust
 use interpx::{InterpolateError, Interpolator, Nearest1D, NearestKind};
@@ -273,7 +264,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `CubicSpline`、`BoundaryCondition`、`EndCondition`
 
-C² 級の 3 次スプライン（SciPy の `CubicSpline`）です。`BoundaryCondition` は `NotAKnot`、`Periodic`、または両端に `EndCondition`（`NotAKnot`、`FirstDerivative`、`SecondDerivative`）を指定する `Ends` です。`natural()` と `clamped()` は、SciPy の `"natural"` と `"clamped"` に当たります。
+C² 級の 3 次スプラインです。`BoundaryCondition` は `NotAKnot`、`Periodic`、または両端に `EndCondition`（`NotAKnot`、`FirstDerivative`、`SecondDerivative`）を指定する `Ends` です。`natural()` は両端で 2 階導関数を 0 に、`clamped()` は両端で 1 階導関数を 0 にします。
 
 ```rust
 use interpx::{BoundaryCondition, CubicSpline, EndCondition, InterpolateError, Interpolator};
@@ -298,7 +289,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `PchipInterpolator`
 
-形を保つ C¹ 級の 3 次補間（SciPy の `PchipInterpolator`）です。データが単調な区間では補間も単調で、データの値の範囲を越えません。
+形を保つ C¹ 級の 3 次補間（PCHIP）です。データが単調な区間では補間も単調で、データの値の範囲を越えません。
 
 ```rust
 use interpx::{InterpolateError, Interpolator, PchipInterpolator};
@@ -313,7 +304,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `Akima1D` と `AkimaMethod`
 
-秋間の C¹ 級の 3 次補間（SciPy の `Akima1DInterpolator`、`method="akima"` または `"makima"`）です。各点の傾きを、近くの 5 点から決めます。
+秋間の C¹ 級の 3 次補間です。重みは、秋間のものと、修正したもの（makima）から選びます。各点の傾きを、近くの 5 点から決めます。
 
 ```rust
 use interpx::{Akima1D, AkimaMethod, InterpolateError, Interpolator};
@@ -331,7 +322,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `CubicHermiteSpline`
 
-与えた値と傾きを通る 3 次補間（SciPy の `CubicHermiteSpline`）です。
+与えた値と傾きを通る 3 次補間です。
 
 ```rust
 use interpx::{CubicHermiteSpline, InterpolateError, Interpolator};
@@ -346,7 +337,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `BSpline1D`
 
-データ点を通る 1〜15 次の B スプライン（SciPy の `make_interp_spline`）です。`as_bspline` で、中身の `BSpline` を参照できます。
+データ点を通る 1〜15 次の B スプラインです。`as_bspline` で、中身の `BSpline` を参照できます。
 
 ```rust
 use interpx::{BSpline1D, BoundaryCondition, InterpolateError, Interpolator};
@@ -365,7 +356,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `BSplineCurve` と `Parametrization`
 
-`D` 次元の点列を通るパラメトリック曲線です。`new` は、決め方（`Uniform`、`ChordLength`、`Centripetal`）に従ってパラメータを求めます。`with_parameters` は、`make_interp_spline(t, points)` と同じくパラメータを受け取ります。
+`D` 次元の点列を通るパラメトリック曲線です。`new` は、決め方（`Uniform`、`ChordLength`、`Centripetal`）に従ってパラメータを求めます。`with_parameters` は、パラメータを呼び出し側から受け取ります。
 
 ```rust
 use interpx::{BSplineCurve, BoundaryCondition, InterpolateError, Interpolator, Parametrization};
@@ -386,7 +377,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `RegularGridInterpolator` と `GridMethod`
 
-`D` 次元の直交格子の上の値を補間します（SciPy の `RegularGridInterpolator`）。方式は `Nearest`、`Linear`、`Cubic`、`Quintic`、`Pchip` です。軸の間隔は不均一でもよく、降順で与えることもできます。
+`D` 次元の直交格子の上の値を補間します。方式は `Nearest`、`Linear`、`Cubic`、`Quintic`、`Pchip` です。軸の間隔は不均一でもよく、降順で与えることもできます。
 
 ```rust
 use interpx::{Extrapolate, GridMethod, InterpolateError, Interpolator, RegularGridInterpolator};
@@ -411,7 +402,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `NearestNDInterpolator`
 
-`D` 次元で、いちばん近いデータ点の値を返します（SciPy の `NearestNDInterpolator`）。`rescaled` は、各座標を同じ範囲にそろえてから距離を測ります（`rescale=True`）。`with_distance_bound` は、ある距離より遠い問い合わせを値なしにします。
+`D` 次元で、いちばん近いデータ点の値を返します。`rescaled` は、各座標を同じ範囲にそろえてから距離を測ります。`with_distance_bound` は、ある距離より遠い問い合わせを値なしにします。
 
 ```rust
 use interpx::{InterpolateError, Interpolator, NearestNDInterpolator};
@@ -432,7 +423,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `LinearNDInterpolator`
 
-`D` 次元で、点の Delaunay 分割の上で線形に補間します（SciPy の `LinearNDInterpolator`）。点の凸包の外では値がありません。`rescaled` は、各座標を同じ範囲にそろえてから三角形分割します（`rescale=True`）。`with_simplex_tolerance` は、単体の内側とみなす範囲を広げます（SciPy 1.18 の `simplex_tolerance` にあたります。SciPy では評価のたびに渡します）。
+`D` 次元で、点の Delaunay 分割の上で線形に補間します。点の凸包の外では値がありません。`rescaled` は、各座標を同じ範囲にそろえてから三角形分割します。`with_simplex_tolerance` は、単体の内側とみなす範囲を広げます。
 
 ```rust
 use interpx::{InterpolateError, Interpolator, LinearNDInterpolator};
@@ -453,7 +444,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `CloughTocher2DInterpolator`
 
-平面の点の Delaunay 分割の上で、区分 3 次の補間をします（SciPy の `CloughTocher2DInterpolator`）。値も 1 階導関数も連続です。点での傾きは、曲面が辺に沿ってなるべく曲がらないように、データから推定します。推定した傾きは `gradients()` で取り出せます。点の凸包の外では値がありません。`rescaled`、`with_simplex_tolerance`、問い合わせ点を含む三角形の探し方は、`LinearNDInterpolator` と同じです。
+平面の点の Delaunay 分割の上で、区分 3 次の補間をします。値も 1 階導関数も連続です。点での傾きは、曲面が辺に沿ってなるべく曲がらないように、データから推定します。推定した傾きは `gradients()` で取り出せます。点の凸包の外では値がありません。`rescaled`、`with_simplex_tolerance`、問い合わせ点を含む三角形の探し方は、`LinearNDInterpolator` と同じです。
 
 ```rust
 use interpx::{CloughTocher2DInterpolator, InterpolateError, Interpolator};
@@ -474,7 +465,7 @@ fn main() -> Result<(), InterpolateError> {
 
 ### `RBFInterpolator`、`RbfKernel`、`RbfDegree`、`RbfOptions`
 
-`D` 次元の放射基底関数による補間（SciPy の `RBFInterpolator`）です。カーネルは SciPy と同じです。形状パラメータのある 4 つのカーネルでは、`epsilon` を指定します。`RbfOptions` で、平滑化、多項式の項の次数（`RbfDegree`）、近傍の点の数を設定します。
+`D` 次元の放射基底関数による補間です。カーネルは 8 つあり、形状パラメータのある 4 つでは `epsilon` を指定します。`RbfOptions` で、平滑化、多項式の項の次数（`RbfDegree`）、近傍の点の数を設定します。
 
 ```rust
 use interpx::{InterpolateError, Interpolator, RBFInterpolator, RbfDegree, RbfKernel, RbfOptions};
@@ -532,6 +523,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## 検証
+
+結果は SciPy 1.18 と照らして検証しています。テストは、SciPy 1.18 が出した値（パッケージに含まれる `compare/goldens/`）と、すべての補間器の値を、決まった許容誤差で比べます。SciPy 1.18 が別のものを計算する場合は、結果が次のように違います。
+
+- **規則格子の `Cubic` と `Quintic`**: interpx はスプラインを厳密に解き、SciPy の `method="cubic_legacy"` と `"quintic_legacy"` に丸め誤差の範囲で一致します。SciPy の `cubic` と `quintic` は既定で反復解法を使います。その値とスプラインのずれは、滑らかなデータ（2 次元・3 次元の格子）で値の最大の絶対値の 1e-5〜1e-2 倍、乱数の値では値そのものの大きさに達しました。
+- **`CloughTocher2DInterpolator`**: interpx は、残差が右辺の 1e-14 倍を下回るまで傾きを解きます。SciPy は `tol=1e-6` か `maxiter=400` で止まります。比べた 11 組のデータでは、SciPy の値と解のずれは、最大で値の最大の絶対値の 3e-8 倍でした。
+- **`LinearNDInterpolator` と `CloughTocher2DInterpolator`**: 同じ円の上に 4 点以上（球の上なら 5 点以上、…）あると、それらが作る区画を、点の番号による規則で分割します。SciPy の三角形分割（Qhull）は別の分け方をします。格子の上の点がこれに当たります。線形補間では、その区画の中で値が違います。Clough-Tocher 補間では、傾きがすべての辺をまとめた 1 つの連立方程式から決まるので、全体で値が違います。座標が同じ点が複数あるとき、interpx は最初に渡された点の値を使います。Qhull はそのうちの 1 つを残しますが、最初の点とは限りません。`LinearNDInterpolator` は 1 次元の点も扱えますが、SciPy は受け付けません。
+- **`RBFInterpolator`**: 系は LU 分解で解き、SciPy は対称な不定値の分解を使います。テストで解いた系では、値の差は値の最大の絶対値の 1e-12 倍未満です。SciPy には既定のカーネル（thin plate spline）があり、どのカーネルにも `epsilon` を受け取り、カーネルが求める最小より低い多項式の次数には警告を出し、平滑化があれば重複した点も受け付けます。interpx は、このうち後ろの 3 つを拒否します。有限でない問い合わせは値なしです（SciPy は NaN）。近傍を使うとき、近傍の系が特異になる問い合わせは値なしです（SciPy は例外を出します）。
+- **1 変数**: SciPy の `interp1d` は座標を並べ替え、`numpy.interp` は渡された座標を検査せずに使います。interpx は狭義単調増加でない座標を拒否し、2 点以上を求めます（SciPy と NumPy は 1 点でも受け付けます）。`Nearest1D` は NaN の問い合わせに値を返しません（SciPy は最後のデータの値）。`Clamp` と `Extend` では、どの種類でも両側で端の値を返します（SciPy の `"previous"` と `"next"` は片側で NaN を返します）。`Akima1D` は配列の値を列ごとに補間します。SciPy は、重みが消える位置を全部の列をまとめて決めます。
+- **データの NaN**: 構築時に拒否します。SciPy の `RegularGridInterpolator` は受け付け、その近くで NaN を返します。
+- **`PPoly` と `BSpline`**: `Forbid` のとき、定義域の外に端がある `integrate` は `None` です（SciPy は、`PPoly` では NaN、`BSpline` では定義域の中の部分の積分）。次数より高い階数の導関数は 0 のスプラインで、SciPy は例外を出します。`BSpline::antiderivative` は、ノットによらず定義域の左端で 0 です。SciPy では、最初のノットが `degree + 1` 回重なっているときにそうなります。`BSpline` から作る `PPoly` は、重なったノットで幅 0 の区間を持ちません。SciPy は持ちます。
+- **規則格子の `Pchip`** は、軸ごとに 2 点あれば使えます。SciPy は 4 点を求めます。
 
 ## 性能
 

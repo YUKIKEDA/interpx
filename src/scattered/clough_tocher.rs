@@ -21,7 +21,7 @@ const SOLVED: f64 = 1e-14;
 /// Delaunay triangulation of the points, continuous with its first
 /// derivatives (C1), for points of the plane.
 ///
-/// SciPy's `CloughTocher2DInterpolator`. Each triangle is cut at its
+/// Each triangle is cut at its
 /// centroid into three, and the interpolant is a cubic Bernstein-Bezier
 /// patch on each part: it takes the data values at the points, and the
 /// gradients there. The gradients are estimated from the data by the global
@@ -29,7 +29,7 @@ const SOLVED: f64 = 1e-14;
 /// interpolant bend least along the edges of the triangulation. The direction
 /// in which the derivative across an edge is made linear is taken from the
 /// centroids of the two triangles beside it, so that the interpolant does not
-/// change under an affine change of coordinates (as in SciPy).
+/// change under an affine change of coordinates.
 ///
 /// A query outside the convex hull of the points has no value, nor has a
 /// query with a coordinate that is NaN or infinite. A value is a scalar or a
@@ -39,8 +39,7 @@ const SOLVED: f64 = 1e-14;
 /// The gradient estimate does not depend on the size of the values or of the
 /// coordinates: it is solved with both brought near one by powers of two.
 /// Two limits remain. Values above about `6e307` in magnitude overflow the
-/// sums of the patch, and evaluations give NaN (SciPy 1.18's gradients are
-/// NaN from about `1e306`). Axes whose spans are `1e200` or more apart
+/// sums of the patch, and evaluations give NaN. Axes whose spans are `1e200` or more apart
 /// overflow the system of the estimate, an error that
 /// [`rescaled`](CloughTocher2DInterpolator::rescaled) avoids.
 ///
@@ -50,20 +49,17 @@ const SOLVED: f64 = 1e-14;
 /// same [`with_simplex_tolerance`](CloughTocher2DInterpolator::with_simplex_tolerance)
 /// and [`rescaled`](CloughTocher2DInterpolator::rescaled).
 ///
-/// # Differences from SciPy
+/// # The gradient estimate and ties
 ///
 /// - The gradients are the solution of the system of the estimate, solved
 ///   until its residual is below `1e-14` of its right-hand side in every
-///   column. SciPy stops its Gauss-Seidel iteration at its `tol` (`1e-6`) or
-///   `maxiter` (400), and only warns when it has not converged; its
-///   gradients are that far from the solution, and its values with them.
-///   There are no `tol` and `maxiter`, and a system that is not solved is an
-///   error.
-/// - Where four or more points lie on one circle, the triangulation, and so
-///   the interpolant, can differ from SciPy's (as for
-///   [`LinearNDInterpolator`](crate::LinearNDInterpolator)).
-/// - Of points with the same coordinates, the value of the one given first
-///   is taken. SciPy (Qhull) keeps one of them by its own choice.
+///   column. A system that is not solved is an error
+///   ([`SolverError::NotConverged`](crate::SolverError::NotConverged)).
+/// - Where four or more points lie on one circle, the triangulation divides
+///   the region they bound by a rule of the points' indices, as for
+///   [`LinearNDInterpolator`](crate::LinearNDInterpolator). The gradients come
+///   from one system over all edges, so that the choice reaches the values
+///   everywhere.
 ///
 /// # Examples
 ///
@@ -158,8 +154,8 @@ impl<V: Value<f64>> CloughTocher2DInterpolator<V> {
     }
 
     /// Builds the interpolant with both coordinates brought to the same range
-    /// before the points are triangulated: SciPy's `rescale=True`, the change
-    /// of [`LinearNDInterpolator::rescaled`](crate::LinearNDInterpolator::rescaled).
+    /// before the points are triangulated: the change of
+    /// [`LinearNDInterpolator::rescaled`](crate::LinearNDInterpolator::rescaled).
     ///
     /// # Errors
     ///
@@ -279,7 +275,7 @@ impl<V: Value<f64>> CloughTocher2DInterpolator<V> {
     /// Returns the estimated gradient at each point, by `x` and by `y`, in the
     /// order of the points given (after the change of coordinates of a
     /// rescaled interpolant; zero at a point given again, which is no
-    /// vertex). SciPy's `grad`.
+    /// vertex).
     ///
     /// # Examples
     ///
@@ -319,8 +315,7 @@ impl<V: Value<f64>> CloughTocher2DInterpolator<V> {
     }
 
     /// Returns the same interpolant, with the tolerance by which a query is
-    /// taken to be in a triangle multiplied by `tolerance`: SciPy's
-    /// `simplex_tolerance` (SciPy 1.18), as
+    /// taken to be in a triangle multiplied by `tolerance`, as
     /// [`LinearNDInterpolator::with_simplex_tolerance`](crate::LinearNDInterpolator::with_simplex_tolerance).
     ///
     /// # Errors

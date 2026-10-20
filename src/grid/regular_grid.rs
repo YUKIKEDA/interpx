@@ -11,9 +11,6 @@ use crate::{search, validate, Extrapolate, Hint, InterpolateError, Interpolator,
 /// The method is chosen at construction and stays. The enum is
 /// `#[non_exhaustive]`: later versions add methods.
 ///
-/// SciPy's `slinear` is [`GridMethod::Linear`]: the two are one function
-/// under two names.
-///
 /// # Examples
 ///
 /// ```
@@ -37,31 +34,28 @@ use crate::{search, validate, Extrapolate, Hint, InterpolateError, Interpolator,
 #[non_exhaustive]
 pub enum GridMethod {
     /// The value of the nearest grid point, axis by axis. Halfway between two
-    /// points of an axis the lower one is taken, as in SciPy.
+    /// points of an axis the lower one is taken.
     Nearest,
     /// Linear in each coordinate inside a cell of the grid (multilinear): the
     /// weighted mean of the values at the corners of the cell. Continuous, with
     /// kinks across the faces of the cells.
     Linear,
     /// A cubic spline in each coordinate (a tensor-product spline of degree
-    /// 3): two continuous derivatives. Needs four points an axis.
-    ///
-    /// The spline is the one SciPy's `cubic_legacy` evaluates. SciPy's
-    /// `cubic` aims at the same spline with an iterative solver by default,
-    /// and stops well short of it: its results are not reproduced.
+    /// 3): two continuous derivatives. Needs four points an axis. The
+    /// coefficients are solved exactly, axis by axis, at construction.
     Cubic,
     /// A quintic spline in each coordinate (degree 5): four continuous
-    /// derivatives. Needs six points an axis. As for
-    /// [`Cubic`](GridMethod::Cubic), the spline of SciPy's `quintic_legacy`.
+    /// derivatives. Needs six points an axis. Solved exactly, as
+    /// [`Cubic`](GridMethod::Cubic) is.
     Quintic,
     /// The shape-preserving cubic of
-    /// [`PchipInterpolator`](crate::PchipInterpolator) in each coordinate:
-    /// SciPy's `pchip`. One continuous derivative. Inside the grid no value
+    /// [`PchipInterpolator`](crate::PchipInterpolator) in each coordinate.
+    /// One continuous derivative. Inside the grid no value
     /// goes past the values at the corners of its cell, and where the data is
     /// flat the interpolant is; the spline methods overshoot there. Needs two
-    /// points an axis, where SciPy asks for four.
+    /// points an axis.
     ///
-    /// The axes are taken in SciPy's order, the last one first: the lines
+    /// The axes are taken last first: the lines
     /// along the last axis are interpolated at the last coordinate, then those
     /// results along the axis before it, and so on down to the first. The
     /// order matters, because the slopes of this cubic are not linear in the
@@ -154,15 +148,15 @@ struct Tensor<T, const D: usize, V> {
 /// The interpolant of values on a rectilinear grid in `D` dimensions: the
 /// points are all combinations of one coordinate from each axis.
 ///
-/// SciPy's `RegularGridInterpolator`. The axes need not be evenly spaced. Each
+/// The axes need not be evenly spaced. Each
 /// increases strictly or decreases strictly. For [`GridMethod::Nearest`] and
 /// [`GridMethod::Linear`] an axis may have one point alone: the grid is then
 /// constant in that direction, and a query has a value at the coordinate of
 /// that point (elsewhere it is outside the grid, see [`Extrapolate`]). The
 /// values are one flat slice in C order, the last axis varying fastest: with
 /// axes of `n0` and `n1` points, the value at point `i0` of the first axis and
-/// `i1` of the second is `values[i0 * n1 + i1]` (the layout of a NumPy array
-/// and of `ndarray`). A value is a scalar or a fixed-length array.
+/// `i1` of the second is `values[i0 * n1 + i1]` (the standard layout of
+/// `ndarray`). A value is a scalar or a fixed-length array.
 ///
 /// An axis given in decreasing order is kept in increasing order, with the
 /// values reordered to match: [`axes`](RegularGridInterpolator::axes) and
@@ -182,9 +176,8 @@ struct Tensor<T, const D: usize, V> {
 /// along the last axis beside the values, twice the memory as well, and works
 /// out the rest at each evaluation, from four points an axis at most.
 ///
-/// Values that are NaN or infinite are refused at construction, where SciPy
-/// takes them and returns NaN near them: fill the gaps of a grid before it is
-/// interpolated.
+/// Values that are NaN or infinite are refused at construction: fill the gaps
+/// of a grid before it is interpolated.
 ///
 /// # Examples
 ///

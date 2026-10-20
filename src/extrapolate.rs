@@ -2,9 +2,9 @@
 
 /// The behavior of a 1D, curve, or grid interpolator outside its domain.
 ///
-/// There is no one default. Each interpolator starts with the mode SciPy uses for
-/// its counterpart: `numpy.interp` clamps, `CubicSpline` extends, and
-/// `Akima1DInterpolator` forbids, for example.
+/// There is no one default. Each interpolator starts with the mode that suits
+/// its method, and its documentation names it: `Linear1D` clamps, `CubicSpline`
+/// extends, and `Akima1D` forbids, for example.
 ///
 /// Scattered-data interpolators have no extrapolation mode. `LinearNDInterpolator`
 /// and `CloughTocher2DInterpolator` have no value outside the convex hull of the

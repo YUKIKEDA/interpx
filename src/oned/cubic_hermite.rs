@@ -6,7 +6,7 @@ use crate::{Extrapolate, Hint, InterpolateError, Interpolator, PPoly, Scalar, Va
 /// The cubic interpolant through data points with a given slope at each:
 /// piecewise cubic with a continuous first derivative.
 ///
-/// SciPy's `CubicHermiteSpline`. Where [`CubicSpline`](crate::CubicSpline),
+/// Where [`CubicSpline`](crate::CubicSpline),
 /// [`PchipInterpolator`](crate::PchipInterpolator), and
 /// [`Akima1D`](crate::Akima1D) each choose the slopes by a rule of their own,
 /// this type takes them as they are given. Use it when the derivative of the
@@ -20,7 +20,7 @@ use crate::{Extrapolate, Hint, InterpolateError, Interpolator, PPoly, Scalar, Va
 /// the slope given at its left end, bit for bit.
 ///
 /// Outside the data the result follows the [`Extrapolate`] mode. It starts as
-/// [`Extrapolate::Extend`], as in SciPy. [`Extrapolate::Periodic`] repeats the
+/// [`Extrapolate::Extend`]. [`Extrapolate::Periodic`] repeats the
 /// interpolant as it is: nothing checks that the values and the slopes at the
 /// two ends agree, and where they do not, the result jumps from one period to
 /// the next.

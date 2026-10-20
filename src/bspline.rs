@@ -8,8 +8,7 @@ use crate::{
 /// The largest degree a [`BSpline`] can have: 15.
 ///
 /// Evaluation keeps `degree + 1` basis values in an array on the stack, so that
-/// it does not allocate. SciPy's `make_interp_spline` is used with degrees up to
-/// 5. A larger degree is rejected with [`InterpolateError::InvalidParameter`].
+/// it does not allocate. A larger degree is rejected with [`InterpolateError::InvalidParameter`].
 ///
 /// # Examples
 ///
@@ -38,7 +37,7 @@ const LOW_ORDER: usize = 4;
 
 /// A spline in the B-spline basis.
 ///
-/// SciPy's `BSpline`. With `n` control points `c` and degree `k`, the knots are
+/// With `n` control points `c` and degree `k`, the knots are
 /// `t[0] <= t[1] <= ... <= t[n + k]` and the value is the sum of `c[i] B[i](x)`,
 /// where `B[i]` is the B-spline basis function of degree `k` on the knots
 /// `t[i]..=t[i + k + 1]`.
@@ -49,7 +48,7 @@ const LOW_ORDER: usize = 4;
 /// follows the [`Extrapolate`] mode, which is [`Extrapolate::Extend`] unless
 /// [`with_extrapolate`](BSpline::with_extrapolate) changes it. Under
 /// [`Extrapolate::Periodic`] a period holds its left end only: the right end of
-/// the domain is the left end again, as in SciPy.
+/// the domain is the left end again.
 ///
 /// The degree is at most [`BSPLINE_MAX_DEGREE`].
 ///
@@ -385,12 +384,11 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
 
     /// Returns the derivative of order `nu` as a B-spline.
     ///
-    /// SciPy's `BSpline.derivative`. Every order takes one knot off each end and
+    /// Every order takes one knot off each end and
     /// one control point away, and lowers the degree by one; the domain stays.
     /// Order 0 gives a copy.
     ///
-    /// Two cases SciPy raises an error for have a result here, as they have for
-    /// [`PPoly`]:
+    /// Two cases have a result, as they have for [`PPoly`]:
     ///
     /// - An order above the degree gives the spline of degree 0 on the same
     ///   domain that is zero everywhere.
@@ -464,18 +462,16 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
 
     /// Returns the antiderivative of order `nu` as a B-spline.
     ///
-    /// SciPy's `BSpline.antiderivative`. Every order repeats the knot at each end
+    /// Every order repeats the knot at each end
     /// once more, adds a control point, and raises the degree by one; the domain
     /// stays. Order 0 gives a copy.
     ///
     /// The antiderivative is zero at the left end of the domain, as are its
-    /// derivatives below order `nu`. SciPy's is so when the first knot is
-    /// repeated `degree + 1` times, as `make_interp_spline` returns it; for other
-    /// knots SciPy's differs from this one by a constant.
+    /// derivatives below order `nu`, whatever the knots.
     ///
     /// [`Extrapolate::Extend`] is kept. Every other mode becomes
     /// [`Extrapolate::Forbid`]: the antiderivative of a periodic function is not
-    /// periodic in general (SciPy drops the mode as well), and that of a clamped
+    /// periodic in general, and that of a clamped
     /// function is linear outside the domain. [`integrate`](BSpline::integrate)
     /// follows the mode of this spline.
     ///
@@ -524,7 +520,7 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
 
     /// Returns the derivative of order `nu` at `x`.
     ///
-    /// SciPy's `BSpline.__call__(x, nu)`. This is the derivative of the function
+    /// This is the derivative of the function
     /// [`eval`](Interpolator::eval) gives, piece by piece:
     ///
     /// - Order 0 is `eval`, bit for bit.
@@ -575,7 +571,7 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
 
     /// Returns the integral from `a` to `b`.
     ///
-    /// SciPy's `BSpline.integrate`. This is the integral of the function
+    /// This is the integral of the function
     /// [`eval`](Interpolator::eval) gives, so outside the domain it follows the
     /// [`Extrapolate`] mode:
     ///
@@ -583,7 +579,7 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
     /// - [`Extrapolate::Clamp`] integrates the end values, which are constant.
     /// - [`Extrapolate::Periodic`] integrates the function repeated.
     /// - [`Extrapolate::Forbid`] gives `None` when `a` or `b` is outside the
-    ///   domain. (SciPy integrates over the part inside the domain.)
+    ///   domain.
     ///
     /// With `a > b` the result is minus the integral from `b` to `a`. A limit
     /// that is NaN or infinite gives `None`.
@@ -729,11 +725,10 @@ impl<T: Scalar, V: Value<T>> BSpline<T, V> {
 impl<T: Scalar, V: Value<T>> PPoly<T, V> {
     /// Builds the piecewise polynomial that equals a B-spline.
     ///
-    /// SciPy's `PPoly.from_spline`. The break points are the distinct knots of the
-    /// domain of `spline`, and the coefficients of a piece are the Taylor
-    /// coefficients of the spline at the left end of the piece. SciPy keeps every
-    /// knot as a break point, so repeated knots give it intervals of zero width;
-    /// here those intervals are left out. The extrapolation mode is kept.
+    /// The break points are the distinct knots of the domain of `spline`, and
+    /// the coefficients of a piece are the Taylor coefficients of the spline at
+    /// the left end of the piece. Repeated knots give one break point, so no
+    /// interval has zero width. The extrapolation mode is kept.
     ///
     /// # Errors
     ///

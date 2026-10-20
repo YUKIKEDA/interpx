@@ -76,8 +76,9 @@ pub(crate) mod sealed {
 
 /// A value an interpolator returns: a scalar `T`, or an array `[T; M]` of them.
 ///
-/// SciPy accepts `values` with several columns. Here the number of columns is
-/// part of the type: an interpolator of `[f64; 3]` values returns `[f64; 3]`.
+/// An interpolator can carry several columns of values at once. The number of
+/// columns is part of the type: an interpolator of `[f64; 3]` values returns
+/// `[f64; 3]`.
 /// The trait is sealed and is implemented for `T` and `[T; M]` only.
 ///
 /// The operations are the ones a linear combination of data needs.

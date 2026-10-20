@@ -8,7 +8,7 @@ use crate::{
 
 /// A piecewise polynomial in one variable.
 ///
-/// SciPy's `PPoly`. Between the break points `x[i]` and `x[i + 1]` the value is
+/// Between the break points `x[i]` and `x[i + 1]` the value is
 ///
 /// ```text
 /// c[i][0] (x - x[i])^k + c[i][1] (x - x[i])^(k - 1) + ... + c[i][k]
@@ -16,15 +16,14 @@ use crate::{
 ///
 /// with `k` the degree. The coefficients are stored interval by interval, the
 /// highest power first, so that one interval's coefficients are adjacent and
-/// are read front to back. SciPy stores the same numbers power by power
-/// (`c[power][interval]`).
+/// are read front to back.
 ///
 /// An interval contains its left break point and not its right one; the last
 /// interval contains both. Outside the break points the result follows the
 /// [`Extrapolate`] mode, which is [`Extrapolate::Extend`] unless
 /// [`with_extrapolate`](PPoly::with_extrapolate) changes it. Under
 /// [`Extrapolate::Periodic`] a period holds its left end only: the last break
-/// point is the first one again, as in SciPy.
+/// point is the first one again.
 ///
 /// Cloning copies the break points and the coefficients.
 ///
@@ -286,7 +285,7 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
 
     /// Returns the derivative of order `nu` as a piecewise polynomial.
     ///
-    /// SciPy's `PPoly.derivative`. The break points stay and the degree drops by
+    /// The break points stay and the degree drops by
     /// `nu`. An order above the degree gives the polynomial of degree 0 that is
     /// zero everywhere, and order 0 gives a copy.
     ///
@@ -347,14 +346,14 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
 
     /// Returns the antiderivative of order `nu` as a piecewise polynomial.
     ///
-    /// SciPy's `PPoly.antiderivative`. The break points stay and the degree rises
+    /// The break points stay and the degree rises
     /// by `nu`. The antiderivative is continuous, and it is zero at the first
     /// break point, as are its derivatives below order `nu`. Order 0 gives a
     /// copy.
     ///
     /// [`Extrapolate::Extend`] is kept. Every other mode becomes
     /// [`Extrapolate::Forbid`]: the antiderivative of a periodic function is not
-    /// periodic in general (SciPy drops the mode as well), and that of a clamped
+    /// periodic in general, and that of a clamped
     /// function is linear outside the domain. [`integrate`](PPoly::integrate)
     /// follows the mode of this polynomial.
     ///
@@ -447,7 +446,7 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
 
     /// Returns the derivative of order `nu` at `x`.
     ///
-    /// SciPy's `PPoly.__call__(x, nu)`. This is the derivative of the function
+    /// This is the derivative of the function
     /// [`eval`](Interpolator::eval) gives, piece by piece:
     ///
     /// - Order 0 is `eval`, bit for bit.
@@ -493,7 +492,7 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
 
     /// Returns the integral from `a` to `b`.
     ///
-    /// SciPy's `PPoly.integrate`. This is the integral of the function
+    /// This is the integral of the function
     /// [`eval`](Interpolator::eval) gives, so outside the domain it follows the
     /// [`Extrapolate`] mode:
     ///
@@ -501,10 +500,10 @@ impl<T: Scalar, V: Value<T>> PPoly<T, V> {
     /// - [`Extrapolate::Clamp`] integrates the end values, which are constant.
     /// - [`Extrapolate::Periodic`] integrates the function repeated.
     /// - [`Extrapolate::Forbid`] gives `None` when `a` or `b` is outside the
-    ///   domain. (SciPy returns NaN.)
+    ///   domain.
     ///
     /// With `a > b` the result is minus the integral from `b` to `a`. A limit
-    /// that is NaN or infinite gives `None`. (SciPy raises for a NaN.)
+    /// that is NaN or infinite gives `None`.
     ///
     /// This does not allocate. Its cost grows with the number of intervals
     /// between `a` and `b`. To integrate the same polynomial many times over

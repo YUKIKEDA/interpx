@@ -3,10 +3,10 @@ name = "interpx"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.89"
-description = "Pure Rust interpolation covering the main classes of SciPy 1.18's scipy.interpolate: one variable, curves, regular grids, and scattered data."
+description = "Pure Rust interpolation: one variable, curves, regular grids, and scattered data, with checked inputs and no allocation on evaluation."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/YUKIKEDA/interpx"
-keywords = ["interpolation", "scipy", "spline", "scattered-data", "numerics"]
+keywords = ["interpolation", "spline", "scattered-data", "rbf", "numerics"]
 categories = ["mathematics", "science", "algorithms"]
 include = [
     "/src/",
