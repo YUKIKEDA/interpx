@@ -526,19 +526,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 検証
 
-結果は SciPy 1.18 と照らし合わせて検証しています。テストは、SciPy 1.18 が出した値（`Linear1D` では NumPy 2.5 の `numpy.interp` の値。パッケージに含まれる `compare/goldens/`）と、すべての補間器の値を、決まった許容誤差で比べます。SciPy 1.18 が別のものを計算する場合は、結果が次のように違います。
+結果は SciPy 1.18 と照らし合わせて検証しています。テストは、SciPy 1.18 が出した値（`Linear1D` だけは NumPy 2.5 の `numpy.interp` の値）と、すべての補間器の値を、決まった許容誤差で比べます。この値はパッケージの `compare/goldens/` に含まれます。SciPy 1.18 が別のものを計算する場合は、結果が次のように違います。
 
 - **規則格子の `Cubic` と `Quintic`**: interpx はスプラインを厳密に解き、SciPy の `method="cubic_legacy"` と `"quintic_legacy"` に丸め誤差の範囲で一致します。SciPy の `cubic` と `quintic` は既定で反復解法を使います。その値とスプラインのずれは、滑らかなデータ（2 次元・3 次元の格子）で値の最大の絶対値の 1e-5〜1e-2 倍、乱数の値では値そのものの大きさに達しました。
 - **`CloughTocher2DInterpolator`**: interpx は、残差が右辺の 1e-14 倍を下回るまで傾きを解きます。SciPy は `tol=1e-6` か `maxiter=400` で止まります。比べた 11 組のデータでは、SciPy の値と解のずれは、最大で値の最大の絶対値の 3e-8 倍でした。
 - **`LinearNDInterpolator` と `CloughTocher2DInterpolator`**: 同じ円の上に 4 点以上（球の上なら 5 点以上、…）あると、それらが作る区画を、点の番号による規則で分割します。SciPy の三角形分割（Qhull）は別の分け方をします。格子の上の点がこれに当たります。線形補間では、その区画の中で値が違います。Clough-Tocher 補間では、傾きがすべての辺をまとめた 1 つの連立方程式から決まるので、全体で値が違います。座標が同じ点が複数あるとき、interpx は最初に渡された点の値を使います。Qhull はそのうちの 1 つを残しますが、最初の点とは限りません。`LinearNDInterpolator` は 1 次元の点も扱えますが、SciPy は受け付けません。
-- **`RBFInterpolator`**: 系は LU 分解で解き、SciPy は対称な不定値の分解を使います。テストで解いた系では、値の差は値の最大の絶対値の 1e-12 倍未満です。SciPy には既定のカーネル（thin plate spline）があり、どのカーネルでも `epsilon` を受け取ります。interpx ではカーネルは引数で、`epsilon` を持つのは形状パラメータのある 4 つのカーネルです。SciPy は、カーネルが求める最小より低い多項式の次数には警告を出し、平滑化があれば重複した点も受け付けます。interpx はどちらも拒否します。有限でない問い合わせは値なしです（SciPy は NaN）。近傍を使うとき、近傍の系が特異になる問い合わせは値なしです（SciPy は例外を出します）。同じ距離にある近傍は最初に渡された点を選ぶので、SciPy と違う点を選ぶことがあります。
+- **`RBFInterpolator`**: 系は LU 分解で解き、SciPy は対称な不定値の分解を使います。テストで解いた系では、値の差は値の最大の絶対値の 1e-12 倍未満です。SciPy には既定のカーネル（thin plate spline）があり、どのカーネルでも `epsilon` を受け取ります。interpx ではカーネルは引数で、`epsilon` を持つのは形状パラメータのある 4 つのカーネルです。SciPy は、カーネルが求める最小より低い多項式の次数には警告を出し、平滑化があれば重複した点も受け付けます。interpx はどちらも拒否します。有限でない問い合わせは値なしです（SciPy は NaN）。近傍を使うとき、近傍の系が特異になる問い合わせは値なしです（SciPy は例外を出します）。同じ距離に近傍が複数あるとき、interpx は最初に渡された点を選びます。SciPy とは違う点になることがあります。
 - **1 変数**: SciPy の `interp1d` は座標を並べ替え、`numpy.interp` は渡された座標を検査せずに使います。interpx は狭義単調増加でない座標を拒否し、2 点以上を求めます（SciPy と NumPy は 1 点でも受け付けます）。`Nearest1D` は NaN の問い合わせに値を返しません（SciPy は最後のデータの値）。`Nearest1D` の `Clamp` と `Extend` は、どの種類でも両側で端の値を返します（SciPy の `"previous"` と `"next"` は片側で NaN を返します）。`Akima1D` は配列の値を列ごとに補間します。SciPy は、重みが消える位置を全部の列をまとめて決めます。
-- **`NearestNDInterpolator`**: 有限でない問い合わせは値なしです（SciPy は例外を出します）。座標が同じ点が複数あるとき、interpx は最初に渡された点を選び、SciPy の選び方は木の形によります。`rescaled` は座標ごとの平均を別の順に足すので、距離の上限ちょうどの問い合わせの判定が違うことがあります。
-- **`LinearNDInterpolator`**: 丸め誤差で凸包の面のわずかに外に出た問い合わせは、すべての単体から探します。重心座標は LU 分解で解きます。SciPy は逆行列を掛けます。条件数が約 1e4 の四面体で 1 次関数を補間すると、誤差はこちらが 1.8e-15、SciPy が 1.8e-12 でした。
-- **`BSpline1D`**: 0 次は拒否します（階段関数は `NearestKind::Previous` の `Nearest1D` です）。3 次では、片端に not-a-knot、もう片端に導関数を指定できますが、SciPy は拒否します。1 次の `Periodic` は周期的に外挿しますが、SciPy はしません。偶数次で、2 つのデータ点の中点に置くノットが丸めでデータ点に重なるときは `DuplicatePoints` です（SciPy は特異行列か NaN）。中点を求める和があふれるときも、あふれずに求めます（SciPy はノットが無限大になります）。
+- **`NearestNDInterpolator`**: 有限でない問い合わせは値なしです（SciPy は例外を出します）。座標が同じ点が複数あるとき、interpx は最初に渡された点を選び、SciPy の選び方は木の形によります。`rescaled` は座標ごとの平均を SciPy とは別の順に足すので、距離がちょうど上限にある問い合わせでは判定が違うことがあります。
+- **`LinearNDInterpolator`**: 丸め誤差で凸包の面からわずかに外へ出た問い合わせは、すべての単体から探します。重心座標は LU 分解で解きます。SciPy は逆行列を掛けます。条件数が約 1e4 の四面体で 1 次関数を補間すると、誤差は interpx が 1.8e-15、SciPy が 1.8e-12 でした。
+- **`BSpline1D`**: 0 次は拒否します（階段関数は `NearestKind::Previous` の `Nearest1D` です）。3 次では、片端に not-a-knot、もう片端に導関数を指定できますが、SciPy は拒否します。1 次の `Periodic` は周期的に外挿しますが、SciPy はしません。偶数次で、2 つのデータ点の中点に置くノットが丸めでデータ点に重なるときは `DuplicatePoints` です（SciPy は特異行列か NaN）。そのまま足すとあふれる 2 点でも、中点はあふれずに求めます（SciPy はノットが無限大になります）。
 - **データの NaN と無限大**: 構築時に拒否します。SciPy の `RegularGridInterpolator` は NaN を受け付けてその近くで NaN を返し、`numpy.interp` は無限大を受け付けます。
 - **`RegularGridInterpolator` の格子の外**: `Forbid` では値なしです。SciPy は既定で例外を出します（`bounds_error=True`）。
-- **`PPoly` と `BSpline`**: `Forbid` のとき、積分の上限か下限が定義域の外にある `integrate` は `None` です（SciPy は、`PPoly` では NaN、`BSpline` では定義域の中の部分の積分）。上限か下限が NaN のときも `None` です（SciPy は、`PPoly` では例外、`BSpline` では NaN）。`BSpline` で次数より高い階数の導関数は 0 のスプラインで、内側のノットが `degree + 1` 回重なる `BSpline` は区間ごとに微分します。SciPy の `BSpline` は、どちらにも例外を出します。`BSpline::antiderivative` は、ノットによらず定義域の左端で 0 です。SciPy では、最初のノットが `degree + 1` 回重なっているときにそうなります。`BSpline` から作る `PPoly` は、重なったノットで幅 0 の区間を持ちません。SciPy は持ちます。
+- **`PPoly` と `BSpline`**: `Forbid` のとき、積分の上限か下限が定義域の外にある `integrate` は `None` です（SciPy は、`PPoly` では NaN、`BSpline` では定義域の中の部分の積分）。上限か下限が NaN のときは、どのモードでも `None` です（SciPy は、`PPoly` では例外、`BSpline` では NaN）。`BSpline` で次数より高い階数の導関数は 0 のスプラインで、内側のノットが `degree + 1` 回重なる `BSpline` は区間ごとに微分します。SciPy の `BSpline` は、どちらにも例外を出します。`BSpline::antiderivative` は、ノットによらず定義域の左端で 0 です。SciPy では、最初のノットが `degree + 1` 回重なっているときにそうなります。`BSpline` から作る `PPoly` は、重なったノットで幅 0 の区間を持ちません。SciPy は持ちます。
 - **規則格子の `Pchip`** は、軸ごとに 2 点あれば使えます。SciPy は 4 点を求めます。
 
 ## 性能
